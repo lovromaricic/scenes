@@ -109,6 +109,7 @@ export async function storeOpenedFile(
 	const mapId = (id: string) => ids.get(id) ?? id;
 	for (const scene of project.scenes) if (scene.kind !== 'card') scene.mediaId = mapId(scene.mediaId);
 	for (const sound of project.sounds) sound.mediaId = mapId(sound.mediaId);
+	for (const o of project.overlays) if (o.kind !== 'card') o.mediaId = mapId(o.mediaId);
 	project.library = project.library.map(mapId).filter((id, i, all) => all.indexOf(id) === i);
 	if (options.mode === 'copy') {
 		project.id = newId();

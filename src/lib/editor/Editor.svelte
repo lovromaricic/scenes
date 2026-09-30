@@ -11,7 +11,7 @@
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
 	import Save from '@lucide/svelte/icons/save';
 	import SaveAll from '@lucide/svelte/icons/save-all';
-	import type { MenuItem } from '$lib/ui';
+	import { ConfirmDialog, type MenuItem } from '$lib/ui';
 	import AddColumn from './AddColumn.svelte';
 	import DropOverlay from './DropOverlay.svelte';
 	import Inspector from './Inspector.svelte';
@@ -266,6 +266,21 @@
 
 	<Storyboard onaddscene={pick} />
 </div>
+
+{#if editor.removingScene}
+	{@const removing = editor.removingScene}
+	<ConfirmDialog
+		title="Remove this scene’s layers too?"
+		message={removing.count === 1
+			? 'One layer starts over this scene. Remove it with the scene, or keep it where it is?'
+			: `${removing.count} layers start over this scene. Remove them with the scene, or keep them where they are?`}
+		actions={[
+			{ label: 'Keep in place', onclick: () => editor.deleteScene(removing.id, 'keep') },
+			{ label: 'Remove them too', onclick: () => editor.deleteScene(removing.id, 'remove') }
+		]}
+		oncancel={() => (editor.removingScene = null)}
+	/>
+{/if}
 
 {#if dragDepth > 0}
 	<DropOverlay />

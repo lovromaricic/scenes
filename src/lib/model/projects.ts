@@ -8,10 +8,13 @@ import type { Project } from './types';
  */
 
 /** Every stored file (clip, photo, sound) a project refers to, including "Your media". */
-export function projectMediaIds(project: Pick<Project, 'scenes' | 'sounds' | 'library'>): string[] {
+export function projectMediaIds(
+	project: Pick<Project, 'scenes' | 'sounds' | 'library'> & { overlays?: Project['overlays'] }
+): string[] {
 	const ids = [
 		...project.scenes.filter((s) => s.kind !== 'card').map((s) => s.mediaId),
 		...project.sounds.map((s) => s.mediaId),
+		...(project.overlays ?? []).filter((o) => o.kind !== 'card').map((o) => o.mediaId),
 		...(project.library ?? [])
 	].filter(Boolean);
 	return ids.filter((id, i) => ids.indexOf(id) === i);
@@ -55,6 +58,8 @@ export function migrateProject<T extends Partial<Project> & { aspect?: string }>
 	project.scenes ??= [];
 	project.texts ??= [];
 	project.sounds ??= [];
+	// Before the Layers track.
+	project.overlays ??= [];
 	project.mood ??= 'natural';
 	project.title ??= 'My video';
 	// Words in a style this version doesn't know are shown in the plain style.

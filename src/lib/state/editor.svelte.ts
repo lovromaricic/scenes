@@ -18,6 +18,23 @@ import {
 } from '$lib/media/db';
 import { getHandle, registerBlob } from '$lib/media/handles';
 import { saveProjectToFile } from '$lib/files/save';
+import {
+	MAX_VIDEO_OVERLAYS,
+	MIN_OVERLAY_SECONDS,
+	OVERLAY_SECONDS,
+	DEFAULT_OVERLAY_STYLE,
+	defaultBox,
+	rowCount,
+	tooManyVideos,
+	assignRow,
+	compactRows,
+	maxOverlayDuration,
+	moveOverlayTo,
+	overlaysOf,
+	placeOverlays,
+	relinkByTime,
+	type Overlay
+} from '$lib/model/overlay';
 import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
 import { computePeaks, PEAKS_PER_SECOND } from '$lib/media/waveform';
 import { mixdown } from '$lib/audio/mixdown';
@@ -73,6 +90,8 @@ import { Autosaver, emergencyCopy, type SaveStatus } from './autosave';
 import { exportVideo, type ExportProgress, type ExportResult } from '$lib/export/exporter';
 import { presetById, type PresetId } from '$lib/export/presets';
 import { newCardScene, newId, newProject, sceneFromMedia } from './project';
+import { nameFromFile } from '$lib/media/kinds';
+import { defaultCard } from '$lib/model/card';
 import { toasts } from './toasts.svelte';
 
 interface EditOptions {
@@ -135,6 +154,11 @@ export class EditorStore {
 	selectedScene = $derived(this.placed.find((p) => p.scene.id === this.selectedId) ?? null);
 	selectedText = $derived(this.project.texts.find((t) => t.id === this.selectedId) ?? null);
 	selectedSound = $derived(this.project.sounds.find((s) => s.id === this.selectedId) ?? null);
+	/** Overlays with their times, lowest row first. */
+	placedOverlays = $derived(placeOverlays(this.project.overlays, this.placed));
+	selectedOverlay = $derived(this.placedOverlays.find((p) => p.overlay.id === this.selectedId) ?? null);
+	/** A scene being removed that has overlays: the question "remove them too?" is showing. */
+	removingScene = $state<{ id: string; count: number } | null>(null);
 	/** The scene under the playhead (the last one at the very end). */
 	sceneAtPlayhead = $derived(
 		this.placed.find((p) => this.time >= p.start && this.time < p.end) ?? this.placed.at(-1) ?? null
@@ -432,7 +456,8 @@ export class EditorStore {
 		return (
 			this.project.scenes.some((s) => s.id === id) ||
 			this.project.texts.some((t) => t.id === id) ||
-			this.project.sounds.some((s) => s.id === id)
+			this.project.sounds.some((s) => s.id === id) ||
+			this.project.overlays.some((o) => o.id === id)
 		);
 	}
 
@@ -483,6 +508,8 @@ export class EditorStore {
 		// Selecting something shows it: jump there unless the playhead is already inside it.
 		const placed = this.placed.find((p) => p.scene.id === id);
 		if (placed && !(this.time >= placed.start && this.time < placed.end)) this.seek(placed.start);
+		const layer = this.placedOverlays.find((p) => p.overlay.id === id);
+		if (layer && !(this.time >= layer.start && this.time < layer.end)) this.seek(layer.start);
 		const voice = this.project.sounds.find((s) => s.id === id && s.kind === 'voice');
 		if (voice && !(this.time >= voice.start && this.time < voice.start + voice.duration)) {
 			this.seek(voice.start);
@@ -671,7 +698,17 @@ export class EditorStore {
 			);
 			return;
 		}
-		this.edit('Split', (p) => ({ ...p, scenes: result.scenes }), { select: result.secondId });
+		const before = this.placed;
+		this.edit(
+			'Split',
+			(p) => ({
+				...p,
+				scenes: result.scenes,
+				// Overlays stay where they are in time, linked to whichever half they start over.
+				overlays: relinkByTime(p.overlays, before, placeScenes(result.scenes))
+			}),
+			{ select: result.secondId }
+		);
 	}
 
 	// ─── Cards ──────────────────────────────────────────────────────────────────────────────
@@ -738,14 +775,35 @@ export class EditorStore {
 		if (placed) this.seek(placed.start);
 	}
 
-	deleteScene(id: string): void {
+	/**
+	 * Remove a scene. If overlays are linked to it, asks first (`removingScene`) whether to remove
+	 * them too or keep them where they are; answer with `overlays`.
+	 */
+	deleteScene(id: string, overlays?: 'remove' | 'keep'): void {
 		const index = this.project.scenes.findIndex((s) => s.id === id);
 		if (index === -1) return;
+		const linked = overlaysOf(this.project.overlays, id);
+		if (linked.length && !overlays) {
+			this.removingScene = { id, count: linked.length };
+			return;
+		}
+		this.removingScene = null;
 		const after = removeScene(this.project.scenes, id);
 		const nextSelected = after[Math.min(index, after.length - 1)]?.id ?? null;
-		this.edit('Delete scene', (p) => ({ ...p, scenes: removeScene(p.scenes, id) }), {
-			select: nextSelected
-		});
+		const before = this.placed;
+		const ids = new Set(linked.map((o) => o.id));
+		this.edit(
+			'Delete scene',
+			(p) => {
+				const scenes = removeScene(p.scenes, id);
+				const kept =
+					overlays === 'remove'
+						? p.overlays.filter((o) => !ids.has(o.id))
+						: relinkByTime(p.overlays, before, placeScenes(scenes), ids);
+				return { ...p, scenes, overlays: compactRows(kept) };
+			},
+			{ select: nextSelected }
+		);
 	}
 
 	/** Delete whatever is selected. */
@@ -755,6 +813,155 @@ export class EditorStore {
 		if (this.project.scenes.some((s) => s.id === id)) this.deleteScene(id);
 		else if (this.project.texts.some((t) => t.id === id)) this.deleteText(id);
 		else if (this.project.sounds.some((s) => s.id === id)) this.deleteSound(id);
+		else if (this.project.overlays.some((o) => o.id === id)) this.deleteOverlay(id);
+	}
+
+	// ─── Layers (overlays) ──────────────────────────────────────────────────────────────────
+
+	private updateOverlay(label: string, id: string, change: (o: Overlay) => Overlay, key?: string): void {
+		this.edit(label, (p) => ({ ...p, overlays: p.overlays.map((o) => (o.id === id ? change(o) : o)) }), {
+			key
+		});
+	}
+
+	/** Longest this overlay may show (a video can't outlast its clip). */
+	overlayMaxDuration(o: Overlay): number {
+		return maxOverlayDuration(o, this.media[o.mediaId]?.duration);
+	}
+
+	/** Move an overlay to `start` (linking it to the scene there), into `row` (or a new row above
+	 * it, if it would overlap something there). */
+	placeOverlay(id: string, start: number, row: number, label = 'Move layer'): void {
+		const o = this.project.overlays.find((o) => o.id === id);
+		if (!o) return;
+		const latest = Math.max(0, this.duration - MIN_OVERLAY_SECONDS);
+		const at = Math.min(Math.max(0, start), latest);
+		this.edit(label, (p) => {
+			const moved = p.overlays.map((x) => (x.id === id ? moveOverlayTo(x, at, placeScenes(p.scenes)) : x));
+			return { ...p, overlays: assignRow(moved, id, row, placeScenes(p.scenes)) };
+		});
+	}
+
+	/** New timing for an overlay's start or end edge (`delta` in seconds). */
+	resizeOverlay(o: Overlay, edge: 'start' | 'end', delta: number): { start: number; duration: number; sourceStart: number } {
+		const start = this.placedOverlays.find((p) => p.overlay.id === o.id)?.start ?? 0;
+		const max = this.overlayMaxDuration(o);
+		if (edge === 'end') {
+			const end = Math.min(this.duration, start + o.duration + delta);
+			const duration = Math.min(max, Math.max(MIN_OVERLAY_SECONDS, end - start));
+			return { start, duration, sourceStart: o.sourceStart };
+		}
+		// Moving the start: a video shows a later (or earlier) part of its clip.
+		let d = Math.min(delta, o.duration - MIN_OVERLAY_SECONDS);
+		d = Math.max(d, -start);
+		if (o.kind === 'video') d = Math.max(d, -o.sourceStart);
+		return { start: start + d, duration: o.duration - d, sourceStart: o.sourceStart + (o.kind === 'video' ? d : 0) };
+	}
+
+	/** Change an overlay's timing (start in timeline seconds). */
+	setOverlayTiming(id: string, start: number, duration: number, sourceStart?: number, key?: string): void {
+		const o = this.project.overlays.find((o) => o.id === id);
+		if (!o) return;
+		const latest = Math.max(0, this.duration - MIN_OVERLAY_SECONDS);
+		const at = Math.min(Math.max(0, start), latest);
+		const length = Math.min(this.overlayMaxDuration({ ...o, sourceStart: sourceStart ?? o.sourceStart }), Math.max(MIN_OVERLAY_SECONDS, duration));
+		this.edit(
+			'Layer timing',
+			(p) => {
+				const scenes = placeScenes(p.scenes);
+				const overlays = p.overlays.map((x) =>
+					x.id === id
+						? { ...moveOverlayTo(x, at, scenes), duration: length, sourceStart: sourceStart ?? x.sourceStart }
+						: x
+				);
+				// Longer or moved, it may now overlap something in its row.
+				return { ...p, overlays: assignRow(overlays, id, o.row, scenes) };
+			},
+			{ key }
+		);
+	}
+
+	/**
+	 * Add an overlay at `start` in `row` (default: the top row), and select it. Returns its id, or
+	 * null if it couldn't be added (too many videos at that moment).
+	 */
+	private insertOverlay(o: Omit<Overlay, 'sceneId' | 'offset' | 'row'>, start: number, row?: number): string | null {
+		const at = Math.min(Math.max(0, start), Math.max(0, this.duration - MIN_OVERLAY_SECONDS));
+		if (o.kind === 'video' && tooManyVideos(this.placedOverlays, at, o.duration)) {
+			toasts.show(
+				`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment. Try another time, or use a photo.`,
+				'error'
+			);
+			return null;
+		}
+		const target = row ?? rowCount(this.project.overlays) - 1;
+		this.edit(
+			'Add layer',
+			(p) => {
+				const scenes = placeScenes(p.scenes);
+				const overlay: Overlay = { ...o, ...moveOverlayTo({ ...o, row: target } as Overlay, at, scenes), row: target };
+				return { ...p, overlays: assignRow([...p.overlays, overlay], overlay.id, target, scenes) };
+			},
+			{ select: o.id }
+		);
+		const placed = this.placedOverlays.find((p) => p.overlay.id === o.id);
+		if (placed && !(this.time >= placed.start && this.time < placed.end)) this.seek(placed.start);
+		return o.id;
+	}
+
+	/** A photo or video from "Your media" as an overlay (5 s, or the clip's length if shorter). */
+	addOverlayFromMedia(mediaId: string, start = this.time, row?: number): string | null {
+		const info = this.media[mediaId];
+		if (!info || info.kind === 'audio') return null;
+		const kind = info.kind === 'video' ? 'video' : 'photo';
+		const room = Math.max(MIN_OVERLAY_SECONDS, this.duration - Math.max(0, start));
+		const length = Math.min(OVERLAY_SECONDS, room, kind === 'video' ? info.duration : Infinity);
+		return this.insertOverlay(
+			{
+				id: newId(),
+				kind,
+				mediaId,
+				name: nameFromFile(info.name),
+				duration: Math.max(MIN_OVERLAY_SECONDS, length),
+				sourceStart: kind === 'video' ? info.startTime : 0,
+				box: defaultBox(info, this.project.format),
+				style: { ...DEFAULT_OVERLAY_STYLE },
+				enter: 'none',
+				exit: 'none',
+				sound: { on: false, volume: 1 }
+			},
+			start,
+			row
+		);
+	}
+
+	/** A card (colour and rectangle) as an overlay. */
+	addCardOverlay(start = this.time, row?: number): string | null {
+		const room = Math.max(MIN_OVERLAY_SECONDS, this.duration - Math.max(0, start));
+		return this.insertOverlay(
+			{
+				id: newId(),
+				kind: 'card',
+				mediaId: '',
+				name: 'Card',
+				duration: Math.min(OVERLAY_SECONDS, room),
+				sourceStart: 0,
+				box: defaultBox(this.project.format, this.project.format),
+				card: defaultCard(),
+				style: { ...DEFAULT_OVERLAY_STYLE },
+				enter: 'none',
+				exit: 'none',
+				sound: { on: false, volume: 1 }
+			},
+			start,
+			row
+		);
+	}
+
+	deleteOverlay(id: string): void {
+		this.edit('Remove layer', (p) => ({ ...p, overlays: compactRows(p.overlays.filter((o) => o.id !== id)) }), {
+			select: this.selectedId === id ? null : this.selectedId
+		});
 	}
 
 	// ─── Sound ──────────────────────────────────────────────────────────────────────────────

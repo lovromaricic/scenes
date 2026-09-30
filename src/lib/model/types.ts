@@ -9,6 +9,7 @@ import type { SceneFrame } from './framing';
 import type { Crop } from './crop';
 import type { CardContent } from './card';
 import type { TextColors, TextFont } from './textStyle';
+import type { Overlay } from './overlay';
 
 /** Shapes offered by the design-page demo switch. Projects use `ProjectFormat`. */
 export type AspectRatio = '16:9' | '9:16' | '1:1';
@@ -96,6 +97,8 @@ export interface Project {
 	scenes: Scene[];
 	texts: TextItem[];
 	sounds: SoundItem[];
+	/** Videos, photos and cards on the Layers track, drawn over the scenes. */
+	overlays: Overlay[];
 	/** Every photo and video imported into this project, in import order ("Your media"). */
 	library: string[];
 	createdAt: number;

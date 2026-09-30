@@ -754,6 +754,57 @@ npm run check        # svelte-check (TypeScript strict)
     4 parallel workers × 8 runs).
   - The framing panel also has a "Zoom" slider, so older tests now match it exactly.
 
+### 2. The Layers track
+
+- **Model** (`model/overlay.ts`, pure and unit-tested). `Project.overlays: Overlay[]`, which older
+  projects get as `[]` in `migrateProject`. Each overlay has:
+  - its kind (video, photo or card) and media;
+  - `sceneId` + `offset`: linked to the scene it starts over, starting that far into it;
+  - `duration`, and `sourceStart` for videos;
+  - `row`, `box` (fractions of the frame), and optional `crop` and `card`;
+  - `style` (radius, border, shadow, opacity), `enter` and `exit` animations, and `sound`.
+
+  All fields for the later sections are there from the start, so the saved format only
+  changes once.
+- **Linking.** An overlay's time is its scene's start plus `offset`. Moving, trimming or
+  reordering scenes carries it along with nothing to update. Moving the overlay relinks it
+  to the scene under its new start (`linkAt`).
+  - Splitting a scene keeps overlays where they are in time (`relinkByTime`).
+  - Removing a scene with overlays asks "Remove this scene's layers too?": Keep in place (relinked
+    by time) or Remove them too. Each is one undo step.
+- **Rows.** `row` 0 is the lowest and is drawn first.
+  - `assignRow` puts an overlay in the row it's dropped on. If it would overlap something
+    there, it goes in a new row just above (rows above shift up).
+  - `compactRows` removes empty rows after every change.
+  - The storyboard shows the highest row at the top.
+- **Track UI** (`LayersTrack.svelte`, above Scenes, labelled "Layers").
+  - Items look like small scene cards: picture strip, name and length.
+  - Drag to move in time, or up and down between rows. Dragging above the top row shows a
+    dashed "new row". Drag the ends to change the length; a video can't outlast its clip.
+  - Alt+←/→ nudges. Items are at least 48 px wide, placed through the same `TimeMap`.
+  - An empty track shows the hint. Empty space in it deselects.
+  - A selected item draws a dotted accent line down to the start of its scene.
+- **Row choice while dragging** comes from how far the pointer has moved vertically (whole rows
+  from the starting row), not from the track's position. The storyboard is anchored to the
+  bottom of the window: when the "new row" appears, the track grows upwards and its edges
+  move (also during its height animation). Measuring against the track made the new row
+  flicker on and off under a still pointer. Found with a 4-worker stress run.
+- The store has `placedOverlays`, `selectedOverlay`, `placeOverlay`, `resizeOverlay`,
+  `setOverlayTiming`, `addOverlayFromMedia`, `addCardOverlay` and `deleteOverlay`. New
+  overlays get 5 s, or the clip's length if shorter; at most 4 videos may play at once (see
+  section 6). Delete removes the selected overlay.
+- The right column shows a basic "Layer" panel for now (section 5 fills it in).
+- Overlay media counts as used for project files, clean-up and the per-file media list.
+- Tests: 12 unit tests for the model. e2e:
+  - The track sits above Scenes, labels are ordered, and the empty hint shows.
+  - Items show name and length, sit at the right time, and move with a gap; trimming works,
+    capped at the clip's length.
+  - Overlapping items make a row above; moving one into free space removes the empty row;
+    dragging above the top row makes a new one.
+  - Items follow their scene through a move and a trim; the link line shows; removing the
+    scene asks, both answers work and undo.
+  - All stress-tested with 4 workers.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

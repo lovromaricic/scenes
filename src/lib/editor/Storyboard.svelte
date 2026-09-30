@@ -11,6 +11,7 @@
 	import TransitionPicker from './TransitionPicker.svelte';
 	import SoundLane from './SoundLane.svelte';
 	import WordsLane from './WordsLane.svelte';
+	import LayersTrack from './LayersTrack.svelte';
 	import { stackRows } from '$lib/model/edits';
 	import { formatRatio } from '$lib/model/format';
 	import { dragHasCard, dragHasMedia, MEDIA_DRAG_TYPE } from '$lib/media/dragTypes';
@@ -199,6 +200,9 @@
 		}
 		return { items, end: x };
 	});
+
+	const LAYER_ROW_H = 58;
+	let layersH = $state(LAYER_ROW_H);
 
 	const WORD_ROW_H = 28;
 	/** Stack by where items sit on screen (with minimum widths), so short ones never overlap. */
@@ -432,7 +436,7 @@
 		if (event.button !== 0 || editor.cropping) return;
 		const target = event.target as Element;
 		const onItem = target.closest(
-			'button, input, .zoom, [role="button"], .card-slot, .pill-slot, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
+			'button, input, .zoom, [role="button"], .card-slot, .layer-slot, .pill-slot, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
 		);
 		if (!onItem) editor.deselect();
 	}
@@ -459,6 +463,7 @@
 <section class="storyboard" class:zooming aria-label="Storyboard" onpointerdown={onEmptyPointerDown}>
 	<div class="labels" aria-hidden="true">
 		<span class="label ruler-label"></span>
+		<span class="label layers-label" style:height="{layersH}px">Layers</span>
 		<span class="label scenes-label">Scenes</span>
 		<span class="label words-label" style:height="{wordsH}px">Words</span>
 		<span class="label sound-label" style:height="{soundH}px">Sound</span>
@@ -476,6 +481,11 @@
 				{#each rulerTicks as t (t)}
 					<span class="tick mono" style:left="{map.x(t)}px">{formatClock(t)}</span>
 				{/each}
+			</div>
+
+			<!-- Layers: overlays drawn on top of the scenes -->
+			<div class="row lane layers-lane" role="group" aria-label="Layers">
+				<LayersTrack {map} rowHeight={LAYER_ROW_H} gap={10} bind:height={layersH} />
 			</div>
 
 			<!-- Scenes -->

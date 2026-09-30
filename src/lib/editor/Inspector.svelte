@@ -12,6 +12,7 @@
 	import FrameSettings from './FrameSettings.svelte';
 	import CropPanel from './CropPanel.svelte';
 	import CardSettings from './CardSettings.svelte';
+	import OverlayInspector from './OverlayInspector.svelte';
 
 	const editor = useEditor();
 
@@ -48,6 +49,10 @@
 	{:else if editor.selectedSound}
 		{#key editor.selectedSound.id}
 			<SoundInspector sound={editor.selectedSound} />
+		{/key}
+	{:else if editor.selectedOverlay}
+		{#key editor.selectedOverlay.overlay.id}
+			<OverlayInspector placed={editor.selectedOverlay} />
 		{/key}
 	{:else if editor.selectedText}
 		{#key editor.selectedText.id}
