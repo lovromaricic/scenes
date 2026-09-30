@@ -14,7 +14,7 @@ const hd = { width: 1920, height: 1080, fps: 30 };
 describe('outputSize', () => {
 	it('uses the project size', () => {
 		expect(outputSize(hd, presetById('best'))).toEqual({ width: 1920, height: 1080 });
-		expect(outputSize({ width: 1080, height: 1920 }, presetById('social'))).toEqual({
+		expect(outputSize({ width: 1080, height: 1920 }, presetById('balanced'))).toEqual({
 			width: 1080,
 			height: 1920
 		});
@@ -35,12 +35,18 @@ describe('outputSize', () => {
 describe('bitrates and sizes', () => {
 	it('gives sensible bitrates', () => {
 		const best = videoBitrate(presetById('best'), 1920, 1080);
-		const social = videoBitrate(presetById('social'), 1920, 1080);
+		const balanced = videoBitrate(presetById('balanced'), 1920, 1080);
 		const small = videoBitrate(presetById('small'), 1280, 720);
 		expect(best).toBeGreaterThan(10_000_000);
 		expect(best).toBeLessThan(14_000_000);
-		expect(social).toBeLessThan(best);
-		expect(small).toBeLessThan(social);
+		expect(balanced).toBeLessThan(best);
+		expect(small).toBeLessThan(balanced);
+	});
+	it('uses more bits for higher frame rates, but less than proportionally', () => {
+		const at30 = videoBitrate(presetById('best'), 1920, 1080, 30);
+		const at60 = videoBitrate(presetById('best'), 1920, 1080, 60);
+		expect(at60).toBeGreaterThan(at30);
+		expect(at60).toBeLessThan(at30 * 2);
 	});
 	it('estimates the file size', () => {
 		const bytes = estimateBytes(presetById('best'), hd, 30);

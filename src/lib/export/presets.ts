@@ -1,5 +1,5 @@
 /** The three ways to save a video, in friendly terms. */
-export type PresetId = 'best' | 'social' | 'small';
+export type PresetId = 'best' | 'balanced' | 'small';
 
 export interface ExportPreset {
 	id: PresetId;
@@ -16,29 +16,30 @@ export const PRESETS: ExportPreset[] = [
 	{
 		id: 'best',
 		label: 'Best quality',
-		description: 'Full HD 1080p. Best for keeping and for big screens.',
+		description: 'Your video’s full size, with the most detail. Best for keeping and big screens.',
 		bitsPerPixel: 0.19,
 		audioBitrate: 192_000
 	},
 	{
-		id: 'social',
-		label: 'For social',
+		id: 'balanced',
+		label: 'Balanced',
 		description:
-			'1080p in your video’s shape, with a smaller file. Ready for Instagram, TikTok or YouTube.',
+			'Your video’s full size in about half the space. Great for YouTube, Instagram or TikTok.',
 		bitsPerPixel: 0.09,
 		audioBitrate: 128_000
 	},
 	{
 		id: 'small',
 		label: 'Small file',
-		description: '720p. Quick to send in messages and email.',
+		description: 'Up to 720p and a light file. Quick to send in messages and email.',
 		maxShortSide: 720,
 		bitsPerPixel: 0.08,
 		audioBitrate: 96_000
 	}
 ];
 
-export const EXPORT_FPS = 30;
+/** The frame rate bitrates are tuned for; higher rates need proportionally a little less per frame. */
+const BASE_FPS = 30;
 
 export function presetById(id: PresetId): ExportPreset {
 	return PRESETS.find((p) => p.id === id)!;
@@ -63,9 +64,12 @@ export function videoBitrate(
 	preset: ExportPreset,
 	width: number,
 	height: number,
-	fps = EXPORT_FPS
+	fps = BASE_FPS
 ): number {
-	return Math.round(preset.bitsPerPixel * width * height * fps);
+	// Consecutive frames are more alike at higher frame rates, so bitrate grows less than linearly.
+	return Math.round(
+		preset.bitsPerPixel * width * height * BASE_FPS * Math.pow(fps / BASE_FPS, 0.7)
+	);
 }
 
 /** Rough file size in bytes (encoders vary; shown as "about"). */

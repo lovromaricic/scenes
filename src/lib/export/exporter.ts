@@ -20,7 +20,7 @@ import type { Project, Scene } from '$lib/model/types';
 import { Compositor, type CompositeFrame } from '$lib/render/compositor';
 import { layerInput, textDrawsAt } from '$lib/render/frame';
 import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
-import { EXPORT_FPS, exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
+import { exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
 import { PhotoExportReader, VideoExportReader, type ExportFrameReader } from './reader';
 
 /**
@@ -146,7 +146,8 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
 
 	const { width, height } = outputSize(project.format, preset);
-	const bitrate = videoBitrate(preset, width, height);
+	const fps = project.format.fps;
+	const bitrate = videoBitrate(preset, width, height, fps);
 	const format = request.format ?? (await chooseFormat(width, height, bitrate));
 	const started = performance.now();
 	const elapsed = () => (performance.now() - started) / 1000;
@@ -174,7 +175,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 		codec: format.audioCodec,
 		bitrate: preset.audioBitrate
 	});
-	output.addVideoTrack(videoSource, { frameRate: EXPORT_FPS });
+	output.addVideoTrack(videoSource, { frameRate: fps });
 	output.addAudioTrack(audioSource);
 
 	const readers = new Map<string, Promise<ExportFrameReader>>();
@@ -197,7 +198,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	};
 
 	const clips = projectAudioClips(project, request.hasAudio);
-	const totalFrames = Math.max(1, Math.round(duration * EXPORT_FPS));
+	const totalFrames = Math.max(1, Math.round(duration * fps));
 	let audioUntil = 0;
 
 	const checkAbort = () => {
@@ -208,7 +209,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 		await output.start();
 		for (let i = 0; i < totalFrames; i++) {
 			checkAbort();
-			const t = i / EXPORT_FPS;
+			const t = i / fps;
 
 			// Keep the soundtrack a little ahead of the picture, one short chunk at a time.
 			while (audioUntil < Math.min(duration, t + AUDIO_CHUNK)) {
@@ -225,7 +226,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 				texts: textDrawsAt(project.texts, t, width, height, sprites)
 			};
 			compositor.render(frame);
-			await videoSource.add(t, 1 / EXPORT_FPS);
+			await videoSource.add(t, 1 / fps);
 			sprites.endFrame();
 
 			// Scenes well behind the playhead won't be needed again: free their decoders.

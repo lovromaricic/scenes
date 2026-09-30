@@ -61,7 +61,7 @@
 		const p = PRESETS.find((x) => x.id === preset)!;
 		const { width, height } = size;
 		format = null;
-		void chooseFormat(width, height, videoBitrate(p, width, height))
+		void chooseFormat(width, height, videoBitrate(p, width, height, editor.project.format.fps))
 			.then((f) => (format = f))
 			.catch((error) => {
 				console.warn('No video format available', error);
@@ -184,7 +184,7 @@
 					</span>
 					<span class="desc">{p.description}</span>
 					<span class="meta mono">
-						{s.width} × {s.height} · about {formatBytes(
+						{s.width} × {s.height} · {editor.project.format.fps} fps · about {formatBytes(
 							estimateBytes(p, editor.project.format, editor.duration)
 						)}
 					</span>

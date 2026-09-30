@@ -357,12 +357,29 @@ npm run check        # svelte-check (TypeScript strict)
   `Compositor.dispose()` crashed on gaps in its buffer lists (only blur buffers allocated), which
   turned a successful export into an error.
 
+### 6. Save video follows the project format
+
+- Export renders at the project's size and **frame rate** (24/25/30/60), through the same framing
+  and compositor as the preview.
+- Presets now control quality relative to the format: **Best quality** (project size, high
+  bitrate), **Balanced** (project size, about half the bitrate), **Small file** (short side scaled
+  down to 720 if the project is bigger, never up; lower bitrate). Bitrate scales with pixels and
+  with frame rate to the power 0.7 (consecutive frames at 60 fps are more alike, so doubling the
+  frame rate doesn't need double the bits).
+- Each preset card shows the final size, frame rate and an estimated file size before saving.
+- Tests: a 1080p 60 fps project saves as 1920×1080 at 60/1 fps with Balanced; Small file turns a
+  vertical 1080p project into 720×1280 at its 25 fps; the framing test saves a 720×1280 project and
+  compares its frames with the preview in Fill, Fit-with-blur and Custom.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
 - Stepper hold-to-repeat works with a pointer; keyboard users press repeatedly.
 - The Words, Sound and Looks panels are still placeholders (Phases 4–6). Clips works.
 - Mood swatches are stored per scene but only change the picture from Phase 6.
+- Framing ideas: rotate, "follow the subject" pan over time (Ken Burns), per-scene background colour.
+- The reframe ghost uses the preview-quality frame (≤1280px); fine for positioning, soft when
+  zoomed far in.
 - Only one project exists at a time (no project list). Ideas: a small "Your videos" page.
 - Undo history isn't persisted across reloads.
 
@@ -392,6 +409,10 @@ How to run: see "How to run" at the top (`npm install`, `npm run dev`; `npm test
 `npm run test:e2e` for the tests — the e2e suite uses installed Google Chrome, and the save-video
 tests use ffmpeg/ffprobe to inspect the output if they're installed).
 
-Tests: ~120 unit/component tests (editing model, history, timing, text animation, moods,
-transition composition, audio clips, export presets, autosave) and 28 Playwright tests in real
-Chrome covering every phase's "done when" scenario, plus automated accessibility checks.
+Round 2 added real filmstrips, a project format (shape, resolution, frame rate), per-scene
+framing (fill / fit with bars / custom reframe on the preview), a "Your media" library, and a preview
+that fills the stage in any shape.
+
+Tests: ~140 unit/component tests (editing model, history, timing, text animation, moods,
+transition composition, audio clips, export presets, autosave) and ~37 Playwright tests in real
+Chrome covering every phase's and round's "done when" scenario, plus automated accessibility checks.
