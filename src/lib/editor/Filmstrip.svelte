@@ -1,0 +1,81 @@
+<!--
+	@component
+	A scene's filmstrip: frames sampled evenly across the part of the clip the scene shows, one per
+	tile. Tiles have the video's shape. Frames arrive in the background and are cached.
+-->
+<script lang="ts">
+	import { requestFrames, sampleTimes, type StripFrame } from '$lib/media/filmstrip';
+
+	interface Props {
+		mediaId: string;
+		sourceStart: number;
+		sourceEnd: number;
+		/** Width ÷ height of a tile (the project's shape). */
+		tileAspect: number;
+	}
+
+	let { mediaId, sourceStart, sourceEnd, tileAspect }: Props = $props();
+
+	let canvas: HTMLCanvasElement;
+	let width = $state(0);
+	let height = $state(0);
+
+	const tileWidth = $derived(Math.max(8, height * tileAspect));
+	const count = $derived(width > 0 && height > 0 ? Math.max(1, Math.ceil(width / tileWidth)) : 0);
+	const times = $derived(count ? sampleTimes(sourceStart, sourceEnd, count) : []);
+
+	let generation = 0;
+
+	$effect(() => {
+		if (!canvas || count === 0) return;
+		const gen = ++generation;
+		const dpr = window.devicePixelRatio || 1;
+		canvas.width = Math.round(width * dpr);
+		canvas.height = Math.round(height * dpr);
+		const ctx = canvas.getContext('2d')!;
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		ctx.clearRect(0, 0, width, height);
+		const tw = tileWidth;
+		const th = height;
+		const list = times;
+
+		const draw = (i: number, frame: StripFrame) => {
+			if (gen !== generation) return;
+			const x = i * tw;
+			ctx.save();
+			ctx.beginPath();
+			ctx.rect(x, 0, tw, th);
+			ctx.clip();
+			// Cover the tile, like "Fill" framing.
+			const scale = Math.max(tw / frame.width, th / frame.height);
+			const w = frame.width * scale;
+			const h = frame.height * scale;
+			ctx.drawImage(frame.image, x + (tw - w) / 2, (th - h) / 2, w, h);
+			ctx.restore();
+		};
+
+		list.forEach((t, i) => requestFrames(mediaId, [t], (_t, frame) => draw(i, frame)));
+	});
+</script>
+
+<div class="strip" bind:clientWidth={width} bind:clientHeight={height}>
+	<canvas
+		bind:this={canvas}
+		data-testid="filmstrip"
+		data-tiles={count}
+		data-tile-width={tileWidth}
+		style:width="{width}px"
+		style:height="{height}px"
+		aria-hidden="true"
+	></canvas>
+</div>
+
+<style>
+	.strip {
+		position: absolute;
+		inset: 0;
+	}
+	canvas {
+		display: block;
+	}
+</style>

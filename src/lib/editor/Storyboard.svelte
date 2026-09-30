@@ -12,6 +12,7 @@
 	import SoundLane from './SoundLane.svelte';
 	import WordsLane from './WordsLane.svelte';
 	import { stackRows } from '$lib/model/edits';
+	import { aspectRatioValue } from '$lib/model/catalog';
 	import { fitPxPerSec, ticks } from './scale';
 
 	interface Props {
@@ -374,6 +375,8 @@
 							duration={item.duration}
 							width={Math.max(24, item.width - CARD_GAP)}
 							thumbnail={thumbnailFor(item.scene)}
+							scene={item.scene}
+							tileAspect={aspectRatioValue(editor.project.aspect)}
 							{selected}
 							onselect={() => onCardClick(item.scene.id)}
 							onkeydown={(e) => onCardKeydown(e, item)}

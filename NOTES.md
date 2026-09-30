@@ -268,6 +268,26 @@ npm run check        # svelte-check (TypeScript strict)
   the 214MB file decodes cleanly in ffmpeg; the JS heap stayed between 54 and 127MB during export.
   Nothing needed fixing.
 
+## Round 2: fixes and features
+
+### 1. Filmstrip thumbnails (bug fix)
+
+- **Root cause:** there was no filmstrip. Each card showed the _single_ 320px thumbnail made at
+  import (one frame ~1s into the clip), repeated along the card with CSS `background-repeat`.
+  It ignored the scene's trim, speed and length entirely — a Phase 2 shortcut (it was even written
+  down as "one frame, repeated") that looked like a filmstrip but wasn't one.
+- **Now:** `Filmstrip.svelte` draws one tile per slot along the card, each the video's shape, and
+  samples the middle of each tile's slice of the scene's _visible source range_
+  (`sampleTimes(sourceStart, sourceEnd, tiles)`), so trimming, splitting and speed changes (which
+  change the card's width, hence the number of tiles) all update it.
+- **Background decoding:** `src/lib/media/filmstrip.ts` keeps one small (144px tall), separate
+  decoder per file, processes requests one file at a time with `canvasesAtTimestamps` (one pass per
+  batch), yields to the main thread between frames, and caches frames (as ImageBitmaps, up to 800,
+  LRU) by file and time rounded to 0.1s. The import thumbnail shows until the tiles arrive.
+- Test: `e2e/filmstrip.test.ts` imports the clip that changes colour every second and checks the
+  tiles show five-plus different colours in order, then trims to 2s and checks only red and green
+  remain.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

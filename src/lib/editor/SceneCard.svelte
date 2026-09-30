@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { formatShort } from '$lib/model/time';
+	import type { Scene } from '$lib/model/types';
+	import Filmstrip from './Filmstrip.svelte';
 
 	interface Props {
 		index: number;
@@ -7,8 +9,12 @@
 		duration: number;
 		/** Pixel width, proportional to duration. */
 		width: number;
-		/** CSS background for the thumbnail (an image URL or gradient). */
+		/** CSS background shown while the filmstrip loads (an image URL or gradient). */
 		thumbnail: string;
+		/** When given, the card shows a filmstrip of this scene. */
+		scene?: Scene;
+		/** Width ÷ height of the video, for filmstrip tiles. */
+		tileAspect?: number;
 		selected?: boolean;
 		onselect?: () => void;
 		onkeydown?: (event: KeyboardEvent) => void;
@@ -20,6 +26,8 @@
 		duration,
 		width,
 		thumbnail,
+		scene,
+		tileAspect = 16 / 9,
 		selected = false,
 		onselect,
 		onkeydown
@@ -38,7 +46,16 @@
 	onclick={onselect}
 	{onkeydown}
 >
-	<span class="thumb" style:background-image={thumbnail}></span>
+	<span class="thumb" style:background-image={thumbnail}>
+		{#if scene}
+			<Filmstrip
+				mediaId={scene.mediaId}
+				sourceStart={scene.sourceStart}
+				sourceEnd={scene.sourceEnd}
+				{tileAspect}
+			/>
+		{/if}
+	</span>
 	<span class="meta">
 		<span class="name"><span class="num">{index + 1}</span> · {name}</span>
 		<span class="dur mono">{formatShort(duration)}</span>
@@ -79,10 +96,11 @@
 		min-height: 0;
 		border-radius: calc(var(--radius-card) - 4px);
 		background-color: var(--color-surface);
-		/* Repeat the thumbnail along long cards, like a filmstrip. */
-		background-size: auto 100%;
-		background-repeat: repeat-x;
-		background-position: left center;
+		/* The import thumbnail shows until the filmstrip's frames arrive. */
+		position: relative;
+		overflow: hidden;
+		background-size: cover;
+		background-position: center;
 	}
 	.meta {
 		display: flex;
