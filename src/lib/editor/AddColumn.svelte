@@ -43,35 +43,38 @@
 <svelte:window {onkeydown} />
 
 <aside class="add-column" aria-label="Add">
-	<h2 class="serif heading">Add</h2>
-	<div class="buttons">
-		{#each items as item (item.id)}
-			{#if item.id === 'cards'}
-				<!-- Cards is an action, not a panel: click adds one; drag it onto the storyboard. -->
-				<AddButton
-					icon={item.icon}
-					label={item.label}
-					hint={item.hint}
-					togglesPanel={false}
-					onclick={() => {
-						open = null;
-						editor.addCard();
-					}}
-					ondragstart={onCardDragStart}
-				/>
-			{:else}
-				<AddButton
-					icon={item.icon}
-					label={item.label}
-					hint={item.hint}
-					active={open === item.id}
-					onclick={() => toggle(item.id as AddKind)}
-				/>
-			{/if}
-		{/each}
-	</div>
+	<!-- Short windows (or many tracks below): this part scrolls; the panel beside it doesn't. -->
+	<div class="scroll">
+		<h2 class="serif heading">Add</h2>
+		<div class="buttons">
+			{#each items as item (item.id)}
+				{#if item.id === 'cards'}
+					<!-- Cards is an action, not a panel: click adds one; drag it onto the storyboard. -->
+					<AddButton
+						icon={item.icon}
+						label={item.label}
+						hint={item.hint}
+						togglesPanel={false}
+						onclick={() => {
+							open = null;
+							editor.addCard();
+						}}
+						ondragstart={onCardDragStart}
+					/>
+				{:else}
+					<AddButton
+						icon={item.icon}
+						label={item.label}
+						hint={item.hint}
+						active={open === item.id}
+						onclick={() => toggle(item.id as AddKind)}
+					/>
+				{/if}
+			{/each}
+		</div>
 
-	<MediaLibrary />
+		<MediaLibrary />
+	</div>
 
 	{#if open}
 		<div class="popover">
@@ -95,6 +98,18 @@
 		gap: var(--space-4);
 		min-height: 0;
 		padding: var(--space-5) var(--space-4) var(--space-4) var(--space-6);
+	}
+	.scroll {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		gap: var(--space-4);
+		min-height: 0;
+		/* Room for focus rings at the edges. */
+		margin: -4px;
+		padding: 4px;
+		overflow-y: auto;
+		scrollbar-width: thin;
 	}
 	.heading {
 		font-size: var(--text-heading);

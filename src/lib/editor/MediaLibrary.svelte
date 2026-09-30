@@ -85,7 +85,8 @@
 		padding: 2px;
 		list-style: none;
 		overflow-y: auto;
-		min-height: 0;
+		/* At least a row of tiles; below that the whole Add column scrolls. */
+		min-height: 88px;
 	}
 	.item {
 		position: relative;

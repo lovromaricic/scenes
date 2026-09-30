@@ -30,6 +30,9 @@
 				[['S'], 'Split the scene at the playhead (or the selected sound)'],
 				[['C'], 'Crop the scene (Enter to finish, Esc to cancel)'],
 				[['Delete'], 'Remove what’s selected'],
+				[['Shift', 'Click'], 'Select several items on the tracks (or drag a box)'],
+				[[mod, 'C'], `Copy the selected items (${mod} + X to cut)`],
+				[[mod, 'V'], 'Paste on the selected track, at the playhead'],
 				[['Alt', '←'], 'Move the selected scene earlier (Alt + → later)'],
 				[['Esc'], 'Deselect']
 			]

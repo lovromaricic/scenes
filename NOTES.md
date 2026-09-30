@@ -1242,6 +1242,52 @@ Overlays aren't linked to scenes any more.
   - eight extra tracks: vertical scroll with the ruler and Scenes in view, headers pinned when
     scrolled sideways.
 
+### 3. Placing and moving
+
+- **Dragging items** (`TrackLane`, with `targetAt` from the storyboard):
+  - Drag left or right to change the time. Drag up or down onto another track of the right kind:
+    pictures and text go on overlay tracks, sound on audio tracks. Anywhere else, only the time
+    changes.
+  - Between two tracks, or above the top one, a line shows and the drop makes a new track there
+    (`moveItemToNewTrack`).
+  - Dropped on another item, it goes on a new track just above (`settle`). Nothing ever overlaps
+    on a track.
+  - A picture overlay dragged onto Scenes becomes a scene. A scene dragged onto an overlay track
+    becomes an overlay there.
+- **Media dropped on the picture** goes to the top overlay track that is free for its whole
+  length from the playhead. If there is none, a new top track is made (`overlayTrackFor`).
+  "Free at the playhead" means the whole item fits, so a drop never has to move it elsewhere.
+- **Multi-select.**
+  - Shift-click adds an item to the selection or takes it out.
+  - Dragging from an empty spot on the tracks draws a selection box. Shift keeps what was
+    already selected.
+  - Dragging one selected item moves them all by the same time. Each stays on its own track, and
+    anything that would overlap goes on a new track above.
+  - Delete removes them all in one undo step.
+- **Copy, cut and paste** (Ctrl/Cmd+C, X, V; text fields keep their own):
+  - The clipboard lives in the page only.
+  - Paste puts the earliest item at the playhead, and the others keep their spacing.
+  - Each pasted item goes on the *selected track* if that track takes it. The selected track is
+    the track of the last selected item, or a lane whose empty spot was clicked
+    (`activeTrackId`). Otherwise an item goes back on its own track, or the first track of its
+    kind.
+  - Overlaps go on a new track above. Pasted videos still respect the four-at-once limit (a
+    friendly message says when one was left out).
+  - The pasted items end up selected.
+- **Layout.**
+  - "+ Overlay track" moved into the ruler's empty corner, saving a row.
+  - The Add column's content now scrolls when the window is short, so the Add buttons and "Your
+    media" stay reachable however many tracks there are. The Cards/Words/Sound panel beside it
+    isn't clipped.
+- **Shortcuts dialog:** Shift-click, ⌘/Ctrl+C/X and ⌘/Ctrl+V were added.
+- **Tests** (`tracks-moving.test.ts`):
+  - moving between tracks, and not onto the wrong kind;
+  - gap and top drops making tracks;
+  - dropping onto another item;
+  - picture drops choosing the top free track or making a new one;
+  - Shift-click, the selection box, group move and group delete with undo;
+  - copy/paste to the selected track, keeping spacing; cut and paste; undo.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

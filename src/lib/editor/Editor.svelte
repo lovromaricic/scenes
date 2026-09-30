@@ -175,6 +175,14 @@
 			else editor.undo();
 			return;
 		}
+		// Copy, cut and paste items on tracks (text fields keep their own).
+		if (mod && !event.altKey && !event.shiftKey && (key === 'c' || key === 'x' || key === 'v')) {
+			if (isTyping(event.target) || editor.recording) return;
+			const done =
+				key === 'c' ? editor.copySelection() : key === 'x' ? editor.cutSelection() : editor.paste();
+			if (done) event.preventDefault();
+			return;
+		}
 		if (mod || event.altKey || isTyping(event.target) || event.defaultPrevented) return;
 
 		// While recording a voiceover, Space or Esc stops it; nothing else happens.

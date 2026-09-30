@@ -49,13 +49,15 @@ import {
 	getItem,
 	itemKind,
 	moveItems,
+	removeItems,
 	moveTrack,
 	renameTrack,
 	setTrackFlags,
 	settle,
-	updateItem
+	updateItem,
+	type AnyItem
 } from '$lib/model/items';
-import { TEXT_TRACK_NAME, fits, freeTrack, type Track } from '$lib/model/tracks';
+import { TEXT_TRACK_NAME, accepts, fits, freeTrack, type ItemKind, type Track } from '$lib/model/tracks';
 import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
 import { computePeaks, PEAKS_PER_SECOND } from '$lib/media/waveform';
 import { mixdown } from '$lib/audio/mixdown';
@@ -115,6 +117,12 @@ import { nameFromFile } from '$lib/media/kinds';
 import { defaultCard } from '$lib/model/card';
 import { toasts } from './toasts.svelte';
 
+/** A copied item and which list it belongs to. */
+interface Clipped {
+	type: ItemKind;
+	item: AnyItem;
+}
+
 interface EditOptions {
 	/** Merge with the previous edit if it had the same key (e.g. holding the Length stepper). */
 	key?: string;
@@ -144,6 +152,13 @@ export class EditorStore {
 			? [this.selectedId, ...this.extraSelected]
 			: this.extraSelected
 	);
+	/**
+	 * The track pasted items go to: the track of the last selected item, or of an empty spot
+	 * clicked on a lane.
+	 */
+	activeTrackId = $state<string | null>(null);
+	/** Items copied or cut (Ctrl/Cmd+C / X), kept in the page only. */
+	private clipboard: { items: Clipped[] } | null = null;
 	time = $state(0);
 	playing = $state(false);
 	/** Files still being read after a drop or pick. */
@@ -548,6 +563,8 @@ export class EditorStore {
 		this.stopEditingText();
 		this.selectedId = ok.at(-1) ?? null;
 		this.extraSelected = ok.slice(0, -1);
+		const onTrack = this.selectedId ? getItem(this.project, this.selectedId)?.trackId : undefined;
+		if (onTrack) this.activeTrackId = onTrack;
 	}
 
 	/** Whether an item ends exactly at the end of the video (it then stays there, see ripple). */
@@ -561,6 +578,8 @@ export class EditorStore {
 		if (id && this.trackOfItem(id)?.locked) return;
 		if (id !== this.editingTextId) this.stopEditingText();
 		this.selectedId = id;
+		const onTrack = id ? getItem(this.project, id)?.trackId : undefined;
+		if (onTrack) this.activeTrackId = onTrack;
 		// Selecting something shows it: jump there unless the playhead is already inside it.
 		const placed = this.placed.find((p) => p.scene.id === id);
 		if (placed && !(this.time >= placed.start && this.time < placed.end)) this.seek(placed.start);
@@ -870,10 +889,114 @@ export class EditorStore {
 	deleteSelected(): void {
 		const id = this.selectedId;
 		if (!id) return;
+		// Several items on tracks: removed together, as one step.
+		if (this.selectedIds.length > 1) {
+			const ids = new Set(this.selectedIds.filter((x) => itemKind(this.project, x) && !this.trackOfItem(x)?.locked));
+			if (this.editingTextId && ids.has(this.editingTextId)) this.stopEditingText();
+			this.edit(`Remove ${ids.size} items`, (p) => removeItems(p, ids), { select: null });
+			this.extraSelected = [];
+			return;
+		}
 		if (this.project.scenes.some((s) => s.id === id)) this.deleteScene(id);
 		else if (this.project.texts.some((t) => t.id === id)) this.deleteText(id);
 		else if (this.project.sounds.some((s) => s.id === id)) this.deleteSound(id);
 		else if (this.project.overlays.some((o) => o.id === id)) this.deleteOverlay(id);
+	}
+
+	// ─── Copy, cut and paste ───────────────────────────────────────────────────────────────
+
+	/** The selected items on tracks (not scenes), in time order. */
+	private selectedTrackItems(): Clipped[] {
+		return this.selectedIds
+			.map((id) => {
+				const item = getItem(this.project, id);
+				const type = itemKind(this.project, id);
+				return item && type ? { type, item: structuredClone($state.snapshot(item) as AnyItem) } : null;
+			})
+			.filter((x): x is Clipped => !!x)
+			.sort((a, b) => a.item.start - b.item.start);
+	}
+
+	/** Copy the selected items on tracks. Returns whether there was anything to copy. */
+	copySelection(): boolean {
+		const items = this.selectedTrackItems();
+		if (!items.length) return false;
+		this.clipboard = { items };
+		return true;
+	}
+
+	/** Copy the selected items on tracks, then remove them. */
+	cutSelection(): boolean {
+		const items = this.selectedTrackItems().filter((c) => !this.track(c.item.trackId)?.locked);
+		if (!items.length) return false;
+		this.clipboard = { items };
+		const ids = new Set(items.map((c) => c.item.id));
+		if (this.editingTextId && ids.has(this.editingTextId)) this.stopEditingText();
+		this.edit(items.length > 1 ? `Cut ${items.length} items` : 'Cut', (p) => removeItems(p, ids), { select: null });
+		this.extraSelected = [];
+		return true;
+	}
+
+	get canPaste(): boolean {
+		return !!this.clipboard?.items.length;
+	}
+
+	/**
+	 * Paste copied items at the playhead (the earliest one there, the others keeping their spacing),
+	 * on the active track when it takes them, otherwise on the track they came from (or the first
+	 * one of their kind). Anything that would overlap goes on a new track just above. The pasted
+	 * items are selected.
+	 */
+	paste(): boolean {
+		const items = this.clipboard?.items;
+		if (!items?.length || !this.project.scenes.length) return false;
+		const shift = this.time - items[0].item.start;
+		const active = this.activeTrackId ? this.track(this.activeTrackId) : undefined;
+		const copies = items.map((c) => ({
+			type: c.type,
+			item: { ...structuredClone(c.item), id: newId(), start: Math.max(0, c.item.start + shift) }
+		}));
+		const ids: string[] = [];
+		let skippedVideo = false;
+		this.edit(
+			copies.length > 1 ? `Paste ${copies.length} items` : 'Paste',
+			(p) => {
+				let next = p;
+				for (const { type, item } of copies) {
+					const usable = (t: Track | undefined) => !!t && accepts(t, type) && !t.locked;
+					let trackId = usable(active) ? active!.id : usable(this.track(item.trackId)) ? item.trackId : undefined;
+					if (!trackId) {
+						const kind = type === 'sound' ? 'audio' : 'overlay';
+						const found = next.tracks.find((t) => t.kind === kind && !t.locked);
+						if (found) trackId = found.id;
+						else {
+							trackId = newId();
+							next = addTrack(next, kind, kind === 'overlay' ? 0 : next.tracks.length, trackId);
+						}
+					}
+					if (type === 'overlay') {
+						const o = item as Overlay;
+						if (o.kind === 'video' && tooManyVideos(placeOverlays(next.overlays), o.start, o.duration)) {
+							skippedVideo = true;
+							continue;
+						}
+						next = { ...next, overlays: [...next.overlays, { ...o, trackId }] };
+					} else if (type === 'text') next = { ...next, texts: [...next.texts, { ...(item as TextItem), trackId }] };
+					else next = { ...next, sounds: [...next.sounds, { ...(item as SoundItem), trackId }] };
+					next = settle(next, item.id, newId);
+					ids.push(item.id);
+				}
+				return next;
+			},
+			{ select: null }
+		);
+		if (skippedVideo)
+			toasts.show(
+				`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment, so a video wasn’t pasted.`,
+				'error'
+			);
+		this.selectItems(ids);
+		return ids.length > 0;
 	}
 
 	// ─── Tracks ─────────────────────────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@
 	import TrackHeader from './TrackHeader.svelte';
 	import type { DropTarget, LaneServices } from './lanes';
 	import { accepts, type ItemKind } from '$lib/model/tracks';
-	import { allItems } from '$lib/model/items';
+	import { allItems, itemKind } from '$lib/model/items';
 	import { formatRatio } from '$lib/model/format';
 	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
@@ -283,6 +283,9 @@
 	let deletingTrack = $state<Track | null>(null);
 	/** A track being dragged by its header, and the gap (index in the list) it would go to. */
 	let reorder = $state<{ id: string; index: number } | null>(null);
+	/** A selection box being drawn (in the track list's content coordinates). */
+	let band = $state<{ left: number; top: number; width: number; height: number } | null>(null);
+	let grid: HTMLDivElement;
 
 	/** The menu's items, for the track it was opened on (it closes before an item runs). */
 	function trackMenuItems(t: Track): MenuItem[] {
@@ -600,7 +603,47 @@
 		const onItem = target.closest(
 			'button, input, .zoom, [role="button"], .card-slot, .item-slot, .track-header, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
 		);
-		if (!onItem) editor.deselect();
+		if (onItem) return;
+		const lane = target.closest<HTMLElement>('[data-track-lane]');
+		if (lane) editor.activeTrackId = lane.dataset.trackLane ?? null;
+		// Shift adds to what's selected; otherwise start afresh.
+		const kept = event.shiftKey ? editor.selectedIds.filter((id) => itemKind(editor.project, id)) : [];
+		if (!event.shiftKey) editor.deselect();
+		if (!target.closest('.tracks')) return;
+		// Dragging from an empty spot draws a selection box.
+		const g0 = grid.getBoundingClientRect();
+		const from = { x: event.clientX - g0.left, y: event.clientY - g0.top };
+		drags.start(
+			event,
+			{
+				move: (e) => {
+					const g = grid.getBoundingClientRect();
+					const to = { x: e.clientX - g.left, y: e.clientY - g.top };
+					if (!band && Math.hypot(to.x - from.x, to.y - from.y) < 4) return;
+					band = {
+						left: Math.min(from.x, to.x),
+						top: Math.min(from.y, to.y),
+						width: Math.abs(to.x - from.x),
+						height: Math.abs(to.y - from.y)
+					};
+					const box = {
+						left: g.left + band.left,
+						top: g.top + band.top,
+						right: g.left + band.left + band.width,
+						bottom: g.top + band.top + band.height
+					};
+					const hit = [...tracks.querySelectorAll<HTMLElement>('.item-slot[data-item-id]')]
+						.filter((el) => {
+							const r = el.getBoundingClientRect();
+							return r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+						})
+						.map((el) => el.dataset.itemId!);
+					editor.selectItems([...kept, ...hit.filter((id) => !kept.includes(id))]);
+				},
+				end: () => (band = null)
+			},
+			null
+		);
 	}
 </script>
 
@@ -661,22 +704,18 @@
 		bind:this={tracks}
 		bind:clientWidth={trackWidth}
 	>
-		<div class="grid" style:width="{HEADER_W + contentWidth + TRACK_PAD}px" style:--header-w="{HEADER_W}px">
+		<div class="grid" bind:this={grid} style:width="{HEADER_W + contentWidth + TRACK_PAD}px" style:--header-w="{HEADER_W}px">
 			<!-- Ruler: click or drag to move the playhead -->
 			<div class="row ruler-row">
-				<div class="header corner"></div>
+				<div class="header corner">
+					<button type="button" class="add-track" onclick={() => editor.addTrack('overlay', 0)}>
+						<Plus size={12} strokeWidth={2.2} aria-hidden="true" />Overlay track
+					</button>
+				</div>
 				<div class="ruler" role="presentation" bind:this={rulerLane} onpointerdown={onRulerDown}>
 					{#each rulerTicks as t (t)}
 						<span class="tick mono" style:left="{map.x(t)}px">{formatClock(t)}</span>
 					{/each}
-				</div>
-			</div>
-
-			<div class="row add-row">
-				<div class="header">
-					<button type="button" class="add-track" onclick={() => editor.addTrack('overlay', 0)}>
-						<Plus size={12} strokeWidth={2.2} aria-hidden="true" />Overlay track
-					</button>
 				</div>
 			</div>
 
@@ -842,6 +881,17 @@
 				</div>
 			</div>
 
+			{#if band}
+				<span
+					class="band"
+					aria-hidden="true"
+					style:left="{band.left}px"
+					style:top="{band.top}px"
+					style:width="{band.width}px"
+					style:height="{band.height}px"
+				></span>
+			{/if}
+
 			{#if snapX !== null}
 				<!-- A dragged item has snapped here. -->
 				<span class="snap-line" style:left="{HEADER_W + snapX}px" aria-hidden="true"></span>
@@ -986,6 +1036,11 @@
 		background: var(--color-bg);
 		padding: 2px 0;
 	}
+	.corner {
+		display: flex;
+		align-items: center;
+		padding-left: var(--space-5);
+	}
 	.add-row .header {
 		height: 22px;
 		display: flex;
@@ -1009,6 +1064,14 @@
 	.add-track:hover {
 		background: var(--color-surface);
 		color: var(--color-ink);
+	}
+	.band {
+		position: absolute;
+		z-index: 16;
+		border: 1px solid var(--color-ink);
+		border-radius: 2px;
+		background: color-mix(in srgb, var(--color-ink) 8%, transparent);
+		pointer-events: none;
 	}
 	.track-row.moving {
 		opacity: 0.5;
