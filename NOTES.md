@@ -1,7 +1,7 @@
 # Scenes — build notes
 
 A beginner-friendly, fully in-browser video editor. This file records decisions, simplifications,
-known issues and ideas, phase by phase.
+known issues and ideas, phase by phase. A summary is at the end.
 
 ## How to run
 
@@ -238,6 +238,36 @@ npm run check        # svelte-check (TypeScript strict)
 - Measured: the 30-second, 3-scene 1080p test project (text, music, crossfade, look) exports in
   about 8 seconds on this Mac.
 
+### Phase 8
+
+- **Empty state:** a friendly drop zone in the preview with one big button and three numbered
+  steps (add clips → put in order, add words & music → save). After the first import a tip toast
+  points at drag-to-reorder and the `?` shortcuts. "Save video" and "Watch" are disabled until
+  there's something to save or watch.
+- **Loading states:** "Opening your project…" while the last project restores, "Adding…" cards
+  while files are read, a saving progress bar with time left, and waveforms appear when ready.
+- **Shortcuts overlay:** `?` (or the keyboard button in the top bar) opens a dialog listing every
+  shortcut.
+- **Watch:** full-screen playback from the start (Fullscreen API; falls back to a full-window
+  overlay), controls fade out after 2.5s of stillness, click/Space to pause, ←/→ jump 5s, a
+  clickable progress bar, Esc or "Back to editing" to return. The player draws into Watch's own
+  canvas via a small canvas stack, then goes back to the editor's canvas.
+- **Tablet landscape (1024–1279px):** slimmer side columns, compact Add buttons, a shorter scene
+  row, and bigger touch targets for trim handles, transition buttons and word-pill edges on coarse
+  pointers. Tested at 1024×768 and 1180×820: no horizontal scroll, every main control on screen.
+  Transition buttons sit above trim handles so both stay usable.
+- **Toasts moved to the top** (under the top bar). At the bottom they covered the Sound lane and
+  swallowed drags there — found by the voiceover e2e test once the longer first-import tip appeared.
+- **Accessibility:** axe-core (WCAG 2 A/AA) runs on the empty editor, a full editor with words,
+  the save dialog and `/design` with no violations. (The checker has to wait for fade-in animations
+  to finish, or it measures half-faded text.)
+- **Performance with a 5-minute project** (10 × 30s 1080p scenes, a 5-minute song, 20 texts,
+  M-series Mac, Chrome): playback across a cut, rapid jumps all over the timeline and drag-scrubbing
+  all ran at 60fps with no frame over 33ms and no long tasks; JS heap ≈107MB. Exporting all
+  5 minutes at 1080p ("For social", with transitions and captions) took 47s (≈6× real time) and
+  the 214MB file decodes cleanly in ffmpeg; the JS heap stayed between 54 and 127MB during export.
+  Nothing needed fixing.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
@@ -246,3 +276,33 @@ npm run check        # svelte-check (TypeScript strict)
 - Mood swatches are stored per scene but only change the picture from Phase 6.
 - Only one project exists at a time (no project list). Ideas: a small "Your videos" page.
 - Undo history isn't persisted across reloads.
+
+## Summary
+
+**Scenes** is a complete, static, client-side video editor built with SvelteKit (Svelte 5 runes,
+TypeScript strict), Mediabunny/WebCodecs, WebGL2, Web Audio and IndexedDB. Everything happens on
+the user's device.
+
+What you can do:
+
+- Drop in photos and videos; each becomes a scene card (thumbnail, name, length) in a storyboard.
+- Play, scrub (frame-cached, exact frames), and watch full screen.
+- Reorder by dragging cards, trim by dragging card edges (with a live frame peek) or with the
+  Length stepper, split at the playhead (S), delete, change speed (0.5×/1×/2×).
+- Add titles and captions: six ready-made styles, typed directly on the video, dragged into
+  place, with fade / slide-up / pop entrances, timed in the Words lane.
+- Add background music with waveform, volumes per scene and for music, automatic fades, and
+  record voiceovers at the playhead.
+- Pick transitions between scenes (cut, crossfade, fade to black, slide, zoom) and colour moods for
+  the whole video or per scene — all WebGL shaders.
+- Save an MP4 (H.264/AAC; WebM fallback) in three presets, rendered through the same compositor
+  as the preview, streamed to disk with progress, time left and cancel.
+- Undo/redo everything; the project autosaves continuously and comes back on reload.
+
+How to run: see "How to run" at the top (`npm install`, `npm run dev`; `npm test` and
+`npm run test:e2e` for the tests — the e2e suite uses installed Google Chrome, and the save-video
+tests use ffmpeg/ffprobe to inspect the output if they're installed).
+
+Tests: ~120 unit/component tests (editing model, history, timing, text animation, moods,
+transition composition, audio clips, export presets, autosave) and 28 Playwright tests in real
+Chrome covering every phase's "done when" scenario, plus automated accessibility checks.

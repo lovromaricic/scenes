@@ -76,6 +76,11 @@
 		flex-direction: column;
 		gap: var(--space-2);
 	}
+	@media (max-width: 1279px) {
+		.add-column {
+			padding: var(--space-5) var(--space-3) var(--space-5) var(--space-5);
+		}
+	}
 	.popover {
 		position: absolute;
 		top: var(--space-6);

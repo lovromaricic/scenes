@@ -5,6 +5,7 @@
 	import Play from '@lucide/svelte/icons/play';
 	import Download from '@lucide/svelte/icons/download';
 	import Check from '@lucide/svelte/icons/check';
+	import Keyboard from '@lucide/svelte/icons/keyboard';
 	import { Button, Divider, IconButton } from '$lib/ui';
 	import { formatLength, pluralize } from '$lib/model/time';
 	import { useEditor } from '$lib/state/context';
@@ -12,9 +13,10 @@
 	interface Props {
 		onwatch?: () => void;
 		onsave?: () => void;
+		onshortcuts?: () => void;
 	}
 
-	let { onwatch, onsave }: Props = $props();
+	let { onwatch, onsave, onshortcuts }: Props = $props();
 
 	const editor = useEditor();
 
@@ -99,6 +101,8 @@
 	</div>
 
 	<div class="actions">
+		<IconButton label="Keyboard shortcuts" shortcut="?" icon={Keyboard} onclick={onshortcuts} />
+		<Divider />
 		<IconButton
 			label="Undo"
 			shortcut="{mod}Z"

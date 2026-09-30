@@ -190,6 +190,11 @@
 		z-index: 1;
 		touch-action: none;
 	}
+	@media (pointer: coarse) {
+		.edge {
+			width: 16px;
+		}
+	}
 	.edge.start {
 		left: -2px;
 	}

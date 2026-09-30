@@ -73,5 +73,24 @@
 	.hint {
 		font-size: var(--text-sm);
 		color: var(--color-muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	@media (max-width: 1279px) {
+		.add {
+			gap: var(--space-2);
+			padding: var(--space-2);
+		}
+		.glyph {
+			width: 40px;
+			height: 40px;
+		}
+		.label {
+			font-size: var(--text-md);
+		}
+		.hint {
+			font-size: var(--text-xs);
+		}
 	}
 </style>

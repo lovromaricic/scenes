@@ -11,11 +11,15 @@
 	import Storyboard from './Storyboard.svelte';
 	import Toasts from './Toasts.svelte';
 	import SaveDialog from './SaveDialog.svelte';
+	import ShortcutsDialog from './ShortcutsDialog.svelte';
+	import WatchMode from './WatchMode.svelte';
 	import TopBar from './TopBar.svelte';
 
 	const editor = provideEditor(new EditorStore());
 
 	let saving = $state(false);
+	let watching = $state(false);
+	let showShortcuts = $state(false);
 
 	onMount(() => {
 		// Handy for tests and debugging in the console.
@@ -67,6 +71,8 @@
 	}
 
 	function onkeydown(event: KeyboardEvent) {
+		// Full-screen watching and dialogs handle their own keys.
+		if (watching || saving || showShortcuts) return;
 		const mod = event.metaKey || event.ctrlKey;
 		const key = event.key.toLowerCase();
 
@@ -90,6 +96,10 @@
 		}
 
 		switch (event.key) {
+			case '?':
+				event.preventDefault();
+				showShortcuts = true;
+				break;
 			case ' ':
 				// Space always plays/pauses, even when a button has focus (Enter still presses buttons).
 				event.preventDefault();
@@ -132,7 +142,14 @@
 <svelte:window {ondragenter} {ondragover} {ondragleave} {ondrop} {onkeydown} />
 
 <div class="editor">
-	<TopBar onsave={() => (saving = true)} />
+	<TopBar
+		onsave={() => (saving = true)}
+		onwatch={() => {
+			editor.player.unlockAudio();
+			watching = true;
+		}}
+		onshortcuts={() => (showShortcuts = true)}
+	/>
 
 	<main class="workspace">
 		<AddColumn onpick={pick} />
@@ -145,6 +162,14 @@
 
 {#if dragDepth > 0}
 	<DropOverlay />
+{/if}
+
+{#if watching}
+	<WatchMode onclose={() => (watching = false)} />
+{/if}
+
+{#if showShortcuts}
+	<ShortcutsDialog onclose={() => (showShortcuts = false)} />
 {/if}
 
 {#if saving}

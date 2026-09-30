@@ -21,10 +21,11 @@
 </div>
 
 <style>
+	/* Near the top, under the top bar, so messages never cover the storyboard you're working in. */
 	.toasts {
 		position: fixed;
 		left: 50%;
-		bottom: var(--space-6);
+		top: calc(var(--topbar-h) + var(--space-3));
 		translate: -50% 0;
 		z-index: 100;
 		display: flex;
@@ -71,7 +72,7 @@
 	@keyframes toast-in {
 		from {
 			opacity: 0;
-			transform: translateY(8px);
+			transform: translateY(-8px);
 		}
 	}
 </style>

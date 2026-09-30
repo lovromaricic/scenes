@@ -47,6 +47,12 @@
 			background-color var(--dur-fast) var(--ease-out),
 			color var(--dur-fast) var(--ease-out);
 	}
+	@media (pointer: coarse) {
+		.transition {
+			width: 32px;
+			height: 32px;
+		}
+	}
 	.transition:hover {
 		transform: scale(1.12);
 		color: var(--color-ink);

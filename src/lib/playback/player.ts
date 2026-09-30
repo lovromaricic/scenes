@@ -78,10 +78,16 @@ export class Player {
 		this.events = events;
 	}
 
+	/**
+	 * Canvases the player can draw into. The last one attached is drawn to; e.g. full-screen
+	 * "Watch" attaches its own canvas on top of the editor's and detaches it when closed.
+	 */
+	private surfaces: { canvas: HTMLCanvasElement; width: number; height: number }[] = [];
+
 	attach(canvas: HTMLCanvasElement): void {
-		this.canvas = canvas;
-		this.compositor = new Compositor(canvas);
-		this.dirty = true;
+		if (this.surfaces.some((s) => s.canvas === canvas)) return;
+		this.surfaces.push({ canvas, width: canvas.width, height: canvas.height });
+		this.activate();
 		void loadTextFonts().then(() => {
 			// Anything drawn before the fonts arrived used a fallback font: draw it again.
 			this.sprites.clear();
@@ -90,17 +96,36 @@ export class Player {
 		if (!this.raf) this.raf = requestAnimationFrame(this.tick);
 	}
 
-	detach(): void {
-		cancelAnimationFrame(this.raf);
-		this.raf = 0;
-		this.compositor?.dispose();
-		this.compositor = null;
-		this.canvas = null;
+	detach(canvas: HTMLCanvasElement): void {
+		const wasActive = this.canvas === canvas;
+		this.surfaces = this.surfaces.filter((s) => s.canvas !== canvas);
+		if (wasActive) this.activate();
+		if (!this.surfaces.length) {
+			cancelAnimationFrame(this.raf);
+			this.raf = 0;
+		}
 	}
 
-	/** Size of the drawing buffer in device pixels. */
-	resize(width: number, height: number): void {
-		this.compositor?.resize(Math.max(2, Math.round(width)), Math.max(2, Math.round(height)));
+	private activate() {
+		this.compositor?.dispose();
+		this.compositor = null;
+		const top = this.surfaces.at(-1);
+		this.canvas = top?.canvas ?? null;
+		if (top) {
+			this.compositor = new Compositor(top.canvas);
+			if (top.width > 0) this.compositor.resize(top.width, top.height);
+		}
+		this.dirty = true;
+		this.lastDrawnKey = '';
+	}
+
+	/** Size of a canvas's drawing buffer in device pixels. */
+	resize(canvas: HTMLCanvasElement, width: number, height: number): void {
+		const surface = this.surfaces.find((s) => s.canvas === canvas);
+		if (!surface) return;
+		surface.width = Math.max(2, Math.round(width));
+		surface.height = Math.max(2, Math.round(height));
+		if (canvas === this.canvas) this.compositor?.resize(surface.width, surface.height);
 		this.dirty = true;
 	}
 
@@ -395,7 +420,12 @@ export class Player {
 
 	dispose(): void {
 		this.pause();
-		this.detach();
+		cancelAnimationFrame(this.raf);
+		this.raf = 0;
+		this.compositor?.dispose();
+		this.compositor = null;
+		this.surfaces = [];
+		this.canvas = null;
 		for (const entry of this.sources.values()) entry.source?.dispose();
 		this.sources.clear();
 	}

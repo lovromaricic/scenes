@@ -41,12 +41,12 @@
 				h = (h * MAX_PREVIEW_WIDTH) / w;
 				w = MAX_PREVIEW_WIDTH;
 			}
-			editor.player.resize(w, h);
+			editor.player.resize(canvas, w, h);
 		});
 		observer.observe(canvas);
 		return () => {
 			observer.disconnect();
-			editor.player.detach();
+			editor.player.detach(canvas);
 		};
 	});
 
@@ -67,7 +67,11 @@
 			<div class="clip">
 				<canvas bind:this={canvas} class="frame" aria-label="Video preview" data-testid="preview"
 				></canvas>
-				{#if empty}
+				{#if !editor.ready}
+					<div class="empty-state loading" role="status">
+						<p class="muted">Opening your project…</p>
+					</div>
+				{:else if empty}
 					<div class="empty-state">
 						<span class="glyph"><ImagePlus size={28} strokeWidth={1.5} aria-hidden="true" /></span>
 						{#if editor.importing > 0}
@@ -80,6 +84,11 @@
 								scene.
 							</p>
 							<Button variant="ink" onclick={onpick}>Choose photos & videos</Button>
+							<ol class="steps" aria-label="How it works">
+								<li><span class="num mono">1</span>Add your clips</li>
+								<li><span class="num mono">2</span>Put them in order, add words & music</li>
+								<li><span class="num mono">3</span>Save your video</li>
+							</ol>
 						{/if}
 					</div>
 				{/if}
@@ -130,6 +139,12 @@
 		min-width: 0;
 		min-height: 0;
 		padding: var(--space-6) var(--space-4) var(--space-4);
+	}
+	@media (max-width: 1279px) {
+		.stage {
+			padding: var(--space-5) var(--space-2) var(--space-3);
+			gap: var(--space-3);
+		}
 	}
 	.viewport {
 		flex: 1;
@@ -188,6 +203,35 @@
 		margin-bottom: var(--space-1);
 		border-radius: 50%;
 		background: var(--color-bg);
+	}
+	.loading {
+		background: var(--color-surface);
+	}
+	.steps {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: var(--space-2) var(--space-5);
+		margin: var(--space-5) 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: var(--text-sm);
+		color: var(--color-muted);
+	}
+	.steps li {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+	.num {
+		display: grid;
+		place-items: center;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: var(--color-bg);
+		color: var(--color-ink);
+		font-size: var(--text-xs);
 	}
 	.big {
 		font-size: clamp(24px, 4.2cqw, 38px);

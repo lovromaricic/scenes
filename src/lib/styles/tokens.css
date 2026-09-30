@@ -94,8 +94,9 @@
 /* Tablet landscape and small laptops: slimmer side columns. */
 @media (max-width: 1279px) {
 	:root {
-		--add-col-w: 208px;
-		--inspector-w: 264px;
+		--add-col-w: 196px;
+		--inspector-w: 260px;
+		--lane-label-w: 68px;
 	}
 }
 

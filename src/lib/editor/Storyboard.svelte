@@ -478,6 +478,18 @@
 		background: var(--color-bg);
 	}
 
+	@media (max-width: 1279px) {
+		.storyboard {
+			--scenes-h: 88px;
+			--ruler-h: 24px;
+			--row-gap: 8px;
+			padding-bottom: var(--space-3);
+		}
+		.labels {
+			padding-left: var(--space-4);
+		}
+	}
+
 	.labels {
 		display: flex;
 		flex-direction: column;
@@ -595,6 +607,18 @@
 	.trim-handle.end {
 		right: calc(10px - 3px);
 	}
+	/* Bigger handles for fingers on tablets. */
+	@media (pointer: coarse) {
+		.trim-handle {
+			width: 18px;
+		}
+		.trim-handle.end {
+			right: calc(10px - 7px);
+		}
+		.trim-handle.start {
+			left: -7px;
+		}
+	}
 	.card-slot:hover .trim-handle,
 	.trim-handle.visible {
 		opacity: 1;
@@ -620,7 +644,8 @@
 		position: absolute;
 		top: 50%;
 		translate: -50% -70%;
-		z-index: 2;
+		/* Above the trim handles, which stay grabbable above and below the button. */
+		z-index: 5;
 		animation: fade-in var(--dur) var(--ease-out);
 	}
 	.add-scene {

@@ -844,6 +844,14 @@ export class EditorStore {
 			this.project.updatedAt = after.updatedAt;
 			this.afterChange();
 		}
-		if (added > 1) toasts.show(`Added ${added} scenes`);
+		if (added > 0 && before.scenes.length === 0) {
+			toasts.show(
+				'Nice! Drag the cards to change the order. Press ? to see all shortcuts.',
+				'info',
+				6000
+			);
+		} else if (added > 1) {
+			toasts.show(`Added ${added} scenes`);
+		}
 	}
 }
