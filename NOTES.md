@@ -588,6 +588,21 @@ npm run check        # svelte-check (TypeScript strict)
     dialog).
   - Every existing test now starts from the home screen (`openNewVideo`).
 
+### 3. In the editor
+
+- The title was already editable by clicking it (Enter saves, Esc cancels); the page title now
+  follows it.
+- A small chevron after the title opens the **video menu**, built on the shared `ui/Menu`:
+  New video, then the project-file items, then Back to projects. New video from the editor
+  opens a fresh `/edit/<id>?new=1`. The current project is saved on the way out, and an
+  untouched new video is never stored.
+- The file items and their shortcuts (Open project file…, Save to file ⌘S, Save as… ⇧⌘S,
+  ⌘O) ship with section 4. Adding them here would have meant menu items that did nothing.
+- Keys pressed inside the menu stay in it, so Space or S in the menu never plays or splits.
+- Test: rename via the title and the page title; open the menu from the keyboard, arrow keys,
+  Esc (focus returns to the button, playback untouched); New video from the menu; Back to
+  projects shows only the kept project.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

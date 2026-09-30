@@ -6,7 +6,12 @@
 	import Download from '@lucide/svelte/icons/download';
 	import Check from '@lucide/svelte/icons/check';
 	import Keyboard from '@lucide/svelte/icons/keyboard';
-	import { Button, Divider, IconButton, Logo } from '$lib/ui';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import FilePlus from '@lucide/svelte/icons/file-plus';
+	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+	import { goto } from '$app/navigation';
+	import { Button, Divider, IconButton, Logo, Menu, type MenuItem } from '$lib/ui';
+	import { newId } from '$lib/state/project';
 	import { formatLength, pluralize } from '$lib/model/time';
 	import { useEditor } from '$lib/state/context';
 	import { formatLabel } from '$lib/model/format';
@@ -16,9 +21,28 @@
 		onwatch?: () => void;
 		onsave?: () => void;
 		onshortcuts?: () => void;
+		/** Extra items for the video menu (project files), placed after New video. */
+		fileItems?: MenuItem[];
 	}
 
-	let { onwatch, onsave, onshortcuts }: Props = $props();
+	let { onwatch, onsave, onshortcuts, fileItems = [] }: Props = $props();
+
+	let menuButton = $state<HTMLButtonElement>();
+	let menuOpen = $state(false);
+	const menuItems: MenuItem[] = $derived([
+		{
+			label: 'New video',
+			icon: FilePlus,
+			onselect: () => void goto(`${resolve('/edit/[id]', { id: newId() })}?new=1`)
+		},
+		...fileItems,
+		{
+			label: 'Back to projects',
+			icon: LayoutGrid,
+			separator: true,
+			onselect: () => void goto(resolve('/'))
+		}
+	]);
 
 	const editor = useEditor();
 
@@ -95,6 +119,18 @@
 				</button>
 			</h1>
 		{/if}
+		<button
+			bind:this={menuButton}
+			type="button"
+			class="menu-button"
+			aria-label="Video menu"
+			title="Video menu"
+			aria-haspopup="menu"
+			aria-expanded={menuOpen}
+			onclick={() => (menuOpen = !menuOpen)}
+		>
+			<ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" />
+		</button>
 		<p class="meta">
 			{pluralize(editor.project.scenes.length, 'scene')} · {formatLength(editor.duration)}
 		</p>
@@ -150,6 +186,10 @@
 		>
 	</div>
 </header>
+
+{#if menuOpen && menuButton}
+	<Menu label="Video" items={menuItems} anchor={menuButton} onclose={() => (menuOpen = false)} />
+{/if}
 
 {#if formatPanel}
 	<FormatPanel x={formatPanel.x} y={formatPanel.y} onclose={() => (formatPanel = null)} />
@@ -217,6 +257,23 @@
 		border: 1px solid var(--color-ink);
 		background: var(--color-bg);
 		outline: none;
+	}
+	.menu-button {
+		display: grid;
+		place-items: center;
+		flex: none;
+		width: 26px;
+		height: 26px;
+		margin-left: -8px;
+		border: none;
+		border-radius: var(--radius-pill);
+		background: none;
+		color: var(--color-muted);
+	}
+	.menu-button:hover,
+	.menu-button[aria-expanded='true'] {
+		background: var(--color-surface);
+		color: var(--color-ink);
 	}
 	.meta {
 		color: var(--color-muted);

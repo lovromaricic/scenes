@@ -264,4 +264,46 @@ test.describe('Projects', () => {
 		await expect(cards).toHaveCount(1);
 		await expect.poll(async () => (await readStore(page, 'media')).length).toBe(1);
 	});
+
+	test('in the editor: rename by clicking the title; the video menu starts a new one or goes back', async ({
+		page
+	}) => {
+		await openNewVideo(page);
+		await importViaPicker(page, ['red.mp4'], 'Choose photos & videos');
+		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
+		await expect(page).toHaveTitle('Untitled video · Scenes');
+		await page.getByRole('button', { name: 'Untitled video, rename' }).click();
+		await page.getByRole('textbox', { name: 'Video title' }).fill('Summer trip');
+		await page.keyboard.press('Enter');
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Summer trip');
+		await expect(page).toHaveTitle('Summer trip · Scenes');
+
+		// The menu opens from the keyboard too, and Esc closes it back to its button.
+		const menuButton = page.getByRole('button', { name: 'Video menu' });
+		await menuButton.focus();
+		await page.keyboard.press('Enter');
+		const menu = page.getByRole('menu', { name: 'Video' });
+		await expect(menu.getByRole('menuitem')).toHaveText(['New video', 'Back to projects']);
+		await expect(menu.getByRole('menuitem', { name: 'New video' })).toBeFocused();
+		await page.keyboard.press('ArrowDown');
+		await expect(menu.getByRole('menuitem', { name: 'Back to projects' })).toBeFocused();
+		await page.keyboard.press('Escape');
+		await expect(menu).toHaveCount(0);
+		await expect(menuButton).toBeFocused();
+		// Space in the menu didn't start playback.
+		expect(await scenes(page, (s) => s.playing)).toBe(false);
+
+		// New video: an empty editor; the trip is kept.
+		await menuButton.click();
+		await page.getByRole('menuitem', { name: 'New video' }).click();
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Untitled video');
+		await expect(page.getByText('Start with your photos & videos')).toBeVisible();
+
+		// Back to projects: only the trip (the new one is still empty, so it isn't kept).
+		await page.getByRole('button', { name: 'Video menu' }).click();
+		await page.getByRole('menuitem', { name: 'Back to projects' }).click();
+		await expect(page.getByRole('heading', { name: 'Your videos' })).toBeVisible();
+		await expect(page.getByRole('article')).toHaveCount(1);
+		await expect(page.getByRole('article')).toHaveAccessibleName('Summer trip');
+	});
 });
