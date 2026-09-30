@@ -294,6 +294,22 @@ npm run check        # svelte-check (TypeScript strict)
   format control in the top bar replaces it, section 4). The row under the preview holds only the
   play button and the time, centred under the preview (checked by the layout test).
 
+### 3. Using the empty space
+
+- **Preview size:** width _and_ height are both computed from container-query units
+  (`min(100cqw, 100cqh × ratio)` / `min(100cqh, 100cqw ÷ ratio)`) inside a padded viewport, so the
+  preview fills whichever dimension runs out first, with a margin all round. A 9:16 project uses the
+  full height. It animates (200ms) only when the project's shape changes; plain window resizing is
+  immediate, because an animated size lags behind the pointer. Stage padding was tightened.
+- **"Your media"** under the Add buttons lists every photo and video imported into the project
+  (new `project.library`, migrated from the scenes for older projects), with thumbnails, durations
+  and a "Not used" badge. Click adds it as a new scene at the end; drag it onto the storyboard to
+  insert it where the (ink) drop marker shows. Media in the library is kept even when no scene uses
+  it (the start-up cleanup now respects the library). Add buttons were made a little more compact
+  to leave room for it.
+- Playwright note: HTML5 drag-and-drop is tested with raw mouse moves; `locator.dragTo` waits for
+  the target to be "stable" using animation frames, which Chromium pauses during a native drag.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

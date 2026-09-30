@@ -147,6 +147,7 @@ export async function deleteUnusedMedia(): Promise<number> {
 	for (const project of await d.getAll('projects')) {
 		for (const scene of project.scenes) used.add(scene.mediaId);
 		for (const sound of project.sounds) used.add(sound.mediaId);
+		for (const id of project.library ?? []) used.add(id);
 	}
 	const ids = await d.getAllKeys('media');
 	const unused = ids.filter((id) => !used.has(id));

@@ -5,6 +5,7 @@
 	import Palette from '@lucide/svelte/icons/palette';
 	import AddButton from './AddButton.svelte';
 	import AddPanel from './AddPanel.svelte';
+	import MediaLibrary from './MediaLibrary.svelte';
 	import type { AddKind } from './types';
 
 	let { onpick }: { onpick: () => void } = $props();
@@ -45,6 +46,8 @@
 		{/each}
 	</div>
 
+	<MediaLibrary />
+
 	{#if open}
 		<div class="popover">
 			<AddPanel
@@ -65,7 +68,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-4);
-		padding: var(--space-6) var(--space-4) var(--space-6) var(--space-6);
+		min-height: 0;
+		padding: var(--space-5) var(--space-4) var(--space-4) var(--space-6);
 	}
 	.heading {
 		font-size: var(--text-heading);

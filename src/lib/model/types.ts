@@ -75,6 +75,8 @@ export interface Project {
 	scenes: Scene[];
 	texts: TextItem[];
 	sounds: SoundItem[];
+	/** Every photo and video imported into this project, in import order ("Your media"). */
+	library: string[];
 	createdAt: number;
 	updatedAt: number;
 }

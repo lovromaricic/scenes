@@ -13,6 +13,7 @@
 	import WordsLane from './WordsLane.svelte';
 	import { stackRows } from '$lib/model/edits';
 	import { aspectRatioValue } from '$lib/model/catalog';
+	import { dragHasMedia, MEDIA_DRAG_TYPE } from '$lib/media/dragTypes';
 	import { fitPxPerSec, ticks } from './scale';
 
 	interface Props {
@@ -218,6 +219,41 @@
 		}
 	}
 
+	// Dropping something from "Your media" onto the scenes row.
+	let dropIndex = $state<number | null>(null);
+
+	function insertIndexAt(x: number): number {
+		let offset = 0;
+		let index = 0;
+		for (const s of scenes) {
+			const w = sceneDuration(s) * pps;
+			if (offset + w / 2 < x) index++;
+			offset += w;
+		}
+		return index;
+	}
+
+	/** Pixel position of the gap before scene `index`. */
+	function gapX(index: number): number {
+		return scenes.slice(0, index).reduce((x, s) => x + sceneDuration(s) * pps, 0);
+	}
+
+	function onMediaDragOver(event: DragEvent) {
+		if (!dragHasMedia(event)) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+		dropIndex = insertIndexAt(contentX(event.clientX));
+	}
+
+	function onMediaDrop(event: DragEvent) {
+		if (!dragHasMedia(event)) return;
+		event.preventDefault();
+		const id = event.dataTransfer?.getData(MEDIA_DRAG_TYPE);
+		const index = insertIndexAt(contentX(event.clientX));
+		dropIndex = null;
+		if (id) editor.addSceneFromMedia(id, index);
+	}
+
 	let suppressClick = false;
 	function onCardClick(id: string) {
 		if (suppressClick) {
@@ -351,7 +387,18 @@
 			</div>
 
 			<!-- Scenes -->
-			<div class="row scenes-row" class:dragging={drag?.active}>
+			<div
+				class="row scenes-row"
+				class:dragging={drag?.active}
+				role="group"
+				aria-label="Scenes"
+				ondragover={onMediaDragOver}
+				ondragleave={() => (dropIndex = null)}
+				ondrop={onMediaDrop}
+			>
+				{#if dropIndex !== null}
+					<span class="drop-marker" style:left="{gapX(dropIndex) - 1}px" aria-hidden="true"></span>
+				{/if}
 				{#each layout.items as item (item.scene.id)}
 					{@const isDragged = drag?.active && drag.id === item.scene.id}
 					{@const isTrimmed = trim?.id === item.scene.id}
@@ -674,6 +721,17 @@
 		color: var(--color-ink);
 	}
 
+	.drop-marker {
+		position: absolute;
+		top: -4px;
+		bottom: -4px;
+		width: 3px;
+		margin-left: -6px;
+		border-radius: 2px;
+		background: var(--color-ink);
+		z-index: 8;
+		pointer-events: none;
+	}
 	.loading-card {
 		position: absolute;
 		top: 0;

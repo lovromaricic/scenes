@@ -26,7 +26,7 @@
 		align-items: center;
 		gap: var(--space-3);
 		width: 100%;
-		padding: var(--space-3);
+		padding: 10px var(--space-3);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-card);
 		background: var(--color-bg);
@@ -50,8 +50,8 @@
 		display: grid;
 		place-items: center;
 		flex: none;
-		width: 48px;
-		height: 48px;
+		width: 42px;
+		height: 42px;
 		border-radius: var(--radius-md);
 		background: var(--color-surface);
 		transition: background-color var(--dur-fast) var(--ease-out);

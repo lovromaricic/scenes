@@ -136,9 +136,15 @@ export class EditorStore {
 			// Never replace work the user has already started in this session.
 			if (record && !this.history.canUndo) {
 				const { view, savedAt: _savedAt, ...project } = record;
-				const ids = [...project.scenes, ...project.sounds]
+				// Projects saved before "Your media" existed: rebuild the list from their scenes.
+				project.library ??= project.scenes
 					.map((s) => s.mediaId)
 					.filter((id, i, all) => all.indexOf(id) === i);
+				const ids = [
+					...project.scenes.map((s) => s.mediaId),
+					...project.sounds.map((s) => s.mediaId),
+					...project.library
+				].filter((id, i, all) => all.indexOf(id) === i);
 				const infos = await getMediaInfos(ids);
 				for (const info of infos) this.media[info.id] = info;
 				// Scenes whose file has gone missing (e.g. storage was cleared) can't play; drop them.
@@ -150,6 +156,7 @@ export class EditorStore {
 						'error'
 					);
 				}
+				project.library = project.library.filter((id) => this.media[id]);
 				this.project = project;
 				this.selectedId = view?.selectedId ?? null;
 				this.syncPlayer();
@@ -430,6 +437,24 @@ export class EditorStore {
 			return;
 		}
 		this.edit('Split', (p) => ({ ...p, scenes: result.scenes }), { select: result.secondId });
+	}
+
+	/** Add something from "Your media" as a new scene, at `index` (default: the end). */
+	addSceneFromMedia(mediaId: string, index = this.project.scenes.length): void {
+		const info = this.media[mediaId];
+		if (!info || info.kind === 'audio') return;
+		const scene = sceneFromMedia(info);
+		this.edit(
+			'Add scene',
+			(p) => {
+				const scenes = p.scenes.slice();
+				scenes.splice(Math.max(0, Math.min(index, scenes.length)), 0, scene);
+				return { ...p, scenes };
+			},
+			{ select: scene.id }
+		);
+		const placed = this.placed.find((p) => p.scene.id === scene.id);
+		if (placed) this.seek(placed.start);
 	}
 
 	deleteScene(id: string): void {
@@ -820,6 +845,7 @@ export class EditorStore {
 				this.media[info.id] = info;
 				const scene = sceneFromMedia(info);
 				this.project.scenes.push(scene);
+				this.project.library.push(info.id);
 				this.selectedId = scene.id;
 				this.syncPlayer();
 				added++;

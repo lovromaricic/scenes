@@ -18,6 +18,7 @@ export function newProject(): Project {
 		scenes: [],
 		texts: [],
 		sounds: [],
+		library: [],
 		createdAt: now,
 		updatedAt: now
 	};

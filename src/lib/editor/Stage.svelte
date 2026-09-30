@@ -20,6 +20,19 @@
 
 	let canvas: HTMLCanvasElement;
 	let previewW = $state(0);
+	let reshaping = $state(false);
+	let lastRatio = 0;
+	let reshapeTimer: ReturnType<typeof setTimeout> | undefined;
+
+	$effect(() => {
+		const r = ratio;
+		if (lastRatio && r !== lastRatio) {
+			reshaping = true;
+			clearTimeout(reshapeTimer);
+			reshapeTimer = setTimeout(() => (reshaping = false), 300);
+		}
+		lastRatio = r;
+	});
 	let previewH = $state(0);
 
 	const ratio = $derived(aspectRatioValue(editor.project.aspect));
@@ -54,6 +67,7 @@
 		<div
 			class="preview"
 			class:empty
+			class:reshaping
 			bind:clientWidth={previewW}
 			bind:clientHeight={previewH}
 			style:--ar={ratio}
@@ -119,7 +133,7 @@
 		gap: var(--space-4);
 		min-width: 0;
 		min-height: 0;
-		padding: var(--space-6) var(--space-4) var(--space-4);
+		padding: var(--space-4) var(--space-3) var(--space-3);
 	}
 	@media (max-width: 1279px) {
 		.stage {
@@ -127,21 +141,29 @@
 			gap: var(--space-3);
 		}
 	}
+	/* The preview grows to fill this area in the project's shape, with a margin all round. */
 	.viewport {
 		flex: 1;
 		min-height: 0;
 		display: grid;
 		place-items: center;
+		padding: var(--space-2) var(--space-4);
 		container-type: size;
 	}
 	.preview {
 		position: relative;
 		width: min(100cqw, 100cqh * var(--ar));
-		aspect-ratio: var(--ar);
+		height: min(100cqh, 100cqw / var(--ar));
 		border-radius: var(--radius-preview);
 		box-shadow: var(--shadow-preview);
 		background: var(--color-ink);
 		container-type: inline-size;
+	}
+	/* Animate only when the project's shape changes, so window resizing stays immediate. */
+	.preview.reshaping {
+		transition:
+			width var(--dur) var(--ease-out),
+			height var(--dur) var(--ease-out);
 	}
 	.clip {
 		position: absolute;
