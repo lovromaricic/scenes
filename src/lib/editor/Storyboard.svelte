@@ -19,6 +19,7 @@
 	import { formatRatio } from '$lib/model/format';
 	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
+	import MoveHorizontal from '@lucide/svelte/icons/move-horizontal';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -913,6 +914,18 @@
 	<div class="zoom">
 		<button
 			type="button"
+			class="fit ripple"
+			aria-pressed={editor.ripple}
+			title={editor.ripple
+				? 'Ripple is on: when scenes change, what’s on the other tracks moves along with them'
+				: 'Ripple is off: when scenes change, what’s on the other tracks keeps its time'}
+			onclick={() => editor.setRipple(!editor.ripple)}
+		>
+			<MoveHorizontal size={12} strokeWidth={2} aria-hidden="true" />
+			Ripple
+		</button>
+		<button
+			type="button"
 			class="fit"
 			title="Show the whole video"
 			aria-pressed={zoom === 0}
@@ -967,6 +980,11 @@
 	}
 	.fit[aria-pressed='true'] {
 		color: var(--color-ink);
+	}
+	.ripple[aria-pressed='true'] {
+		border-color: var(--color-ink);
+		background: var(--color-ink);
+		color: var(--color-on-ink);
 	}
 	.zoom input {
 		width: 110px;
@@ -1131,7 +1149,8 @@
 		background: var(--color-ink);
 		opacity: 0.5;
 		pointer-events: none;
-		z-index: 9;
+		/* Across every track, the Scenes track included (under the headers). */
+		z-index: 13;
 	}
 	.ruler {
 		position: relative;

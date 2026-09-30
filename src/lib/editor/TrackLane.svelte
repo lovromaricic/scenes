@@ -506,8 +506,9 @@
 	}
 	.end-marker {
 		position: absolute;
-		right: 12px;
-		bottom: 3px;
+		/* Top right, clear of the length below. */
+		top: 3px;
+		right: 10px;
 		padding: 0 4px;
 		border-radius: 3px;
 		background: var(--color-ink);

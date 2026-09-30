@@ -57,6 +57,7 @@ import {
 	updateItem,
 	type AnyItem
 } from '$lib/model/items';
+import { reconcileTimeline } from '$lib/model/ripple';
 import { TEXT_TRACK_NAME, accepts, fits, freeTrack, type ItemKind, type Track } from '$lib/model/tracks';
 import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
 import { computePeaks, PEAKS_PER_SECOND } from '$lib/media/waveform';
@@ -117,6 +118,15 @@ import { nameFromFile } from '$lib/media/kinds';
 import { defaultCard } from '$lib/model/card';
 import { toasts } from './toasts.svelte';
 
+const RIPPLE_KEY = 'scenes.ripple';
+function readRipple(): boolean {
+	try {
+		return localStorage.getItem(RIPPLE_KEY) === '1';
+	} catch {
+		return false;
+	}
+}
+
 /** A copied item and which list it belongs to. */
 interface Clipped {
 	type: ItemKind;
@@ -152,6 +162,19 @@ export class EditorStore {
 			? [this.selectedId, ...this.extraSelected]
 			: this.extraSelected
 	);
+	/**
+	 * Ripple: when scenes change, items on the other tracks move with them (off by default).
+	 * Remembered on this device.
+	 */
+	ripple = $state(readRipple());
+	setRipple(on: boolean): void {
+		this.ripple = on;
+		try {
+			localStorage.setItem(RIPPLE_KEY, on ? '1' : '0');
+		} catch {
+			// Storage blocked: it just isn't remembered.
+		}
+	}
 	/**
 	 * The track pasted items go to: the track of the last selected item, or of an empty spot
 	 * clicked on a lane.
@@ -450,11 +473,33 @@ export class EditorStore {
 	/** Apply one undoable change. `change` gets a copy of the project and returns the new one. */
 	edit(label: string, change: (project: Project) => Project, options: EditOptions = {}): void {
 		const before = this.snapshot();
-		const after = { ...change(structuredClone(before)), updatedAt: Date.now() };
+		const after = { ...this.reconcile(before, change(structuredClone(before))), updatedAt: Date.now() };
 		this.history.record(label, before, after, options.key);
 		this.project = after;
 		if (options.select !== undefined) this.selectedId = options.select;
 		this.afterChange();
+	}
+
+	/**
+	 * After a change to the scenes, adjust the items on the other tracks: with ripple on they move
+	 * with the scenes; either way, items ending at the video's end stay there (see ripple.ts).
+	 * Anything that then overlaps goes on a new track just above.
+	 */
+	private reconcile(before: Project, after: Project): Project {
+		let next = reconcileTimeline(before, after, this.ripple, (item, list) => {
+			if (list === 'overlays') return this.overlayMaxDuration(item as Overlay);
+			if (list === 'sounds') {
+				const s = item as SoundItem;
+				return this.soundBounds(s).end - s.sourceStart;
+			}
+			return Infinity;
+		});
+		if (next === after) return after;
+		for (const i of allItems(next)) {
+			const was = getItem(after, i.id);
+			if (was && (was.start !== i.start || was.duration !== i.duration)) next = settle(next, i.id, newId);
+		}
+		return next;
 	}
 
 	/** Start a drag: changes until `endGesture` become one undo step. */
@@ -471,7 +516,7 @@ export class EditorStore {
 	endGesture(label: string, change: (project: Project) => Project = (p) => p): void {
 		const before = this.gestureBefore ?? this.snapshot();
 		this.gestureBefore = null;
-		const after = change(structuredClone(this.snapshot()));
+		const after = this.reconcile(before, change(structuredClone(this.snapshot())));
 		const unchanged =
 			JSON.stringify({ ...after, updatedAt: 0 }) === JSON.stringify({ ...before, updatedAt: 0 });
 		if (unchanged) return;
@@ -1980,9 +2025,10 @@ export class EditorStore {
 			}
 		}
 		if (added > 0) {
-			const after = { ...this.snapshot(), updatedAt: Date.now() };
+			// Items on the other tracks follow (ripple, the end of the video) once it's all in.
+			const after = { ...this.reconcile(before, this.snapshot()), updatedAt: Date.now() };
 			this.history.record(added > 1 ? 'Add scenes' : 'Add scene', before, after);
-			this.project.updatedAt = after.updatedAt;
+			this.project = after;
 			this.afterChange();
 		}
 		if (added > 0 && before.scenes.length === 0) {

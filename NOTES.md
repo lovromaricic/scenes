@@ -1288,6 +1288,52 @@ Overlays aren't linked to scenes any more.
   - Shift-click, the selection box, group move and group delete with undo;
   - copy/paste to the selected track, keeping spacing; cut and paste; undo.
 
+### 4. Trimming, snapping and ripple
+
+- **Trimming.** Every item (picture, card, text, sound) has the same edge handles in
+  `TrackLane`, driven by the shared drag helper (`DragScope`). Their limits depend on the kind:
+  a video can't outlast its clip, and a sound can't go beyond its file.
+- **Snapping.**
+  - Moving or trimming snaps to the playhead, the video's start and end, scene boundaries, and
+    item edges on every track. The only exceptions are the item being dragged and the selection
+    moving with it.
+  - A line shows across all tracks, the Scenes track included (the line was under the sticky
+    Scenes row before). Hold Alt to place freely.
+- **Ripple** (`model/ripple.ts`, pure and unit-tested):
+  - A "Ripple" toggle sits next to Fit. It's off by default and remembered on this device
+    (localStorage, a per-viewer preference, not part of the project).
+  - `reconcileTimeline(before, after, ripple)` runs after every edit that changes the scenes:
+    `edit()`, `endGesture()`, and the end of an import (one undo step with the import).
+  - It only touches items the edit itself didn't place, so a dropped or trimmed item stays
+    where it was put.
+  - **Off:** items keep their times.
+  - **On:** `mapTime` moves each item's start with the part of the video it was over. It finds
+    the same moment of the same clip (the scene itself, or a piece split off it), so trimming a
+    scene's start, changing its speed, reordering, or adding scenes before it keeps items lined
+    up with their scenes.
+  - If that part was cut, the item keeps its distance to the next scene that's still there, but
+    never goes back past the cut.
+  - Ripple shifts items and never resizes them. Anything that then overlaps goes on a new track
+    just above.
+- **The video's end.**
+  - An item whose end is exactly at the end of the video (with ripple on or off) stretches or
+    shrinks to keep ending there when the video's length changes.
+  - It stays within what it can show: a video overlay's clip, or a sound file's length.
+  - It shows a small "end" marker (top right of the item).
+  - This is how a logo can last the whole video, however many scenes are added.
+- **Tests.**
+  - Unit (`ripple.test.ts`): off, delete, trim end, trim start, add before and reorder, speed,
+    split (no change), the end anchor with and without a limit, items placed by the edit left
+    alone.
+  - E2E (`tracks-ripple.test.ts`), the Logo scenario:
+    - a new track renamed "Logo" and a PNG dragged onto it;
+    - its end dragged to the end of the video, where it snaps, with the snap line spanning
+      every track and the end marker shown;
+    - two scenes added: it still ends at the end, and the picture at the very end shows it;
+    - a scene deleted: it ends with the shorter video.
+  - E2E: ripple off keeps times; on, deleting and shortening scenes move items. One undo step
+    each, and the setting survives a reload.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
