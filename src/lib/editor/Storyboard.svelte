@@ -13,6 +13,7 @@
 	import WordsLane from './WordsLane.svelte';
 	import LayersTrack from './LayersTrack.svelte';
 	import { stackRows } from '$lib/model/edits';
+	import { rowCount } from '$lib/model/overlay';
 	import { formatRatio } from '$lib/model/format';
 	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
@@ -61,6 +62,10 @@
 		/** Card's left edge in content pixels while dragging. */
 		x: number;
 		active: boolean;
+		startY: number;
+		/** Dragged up into the Layers track: where it would become a layer (else null). */
+		toLayers: { start: number; duration: number; row: number } | null;
+		dy: number;
 	}
 	interface Trim {
 		id: string;
@@ -203,6 +208,8 @@
 
 	const LAYER_ROW_H = 58;
 	let layersH = $state(LAYER_ROW_H);
+	let layersLane: HTMLDivElement;
+	let scenesRow: HTMLDivElement;
 
 	const WORD_ROW_H = 28;
 	/** Stack by where items sit on screen (with minimum widths), so short ones never overlap. */
@@ -253,7 +260,10 @@
 			startX: event.clientX,
 			grab: contentX(event.clientX) - item.left,
 			x: item.left,
-			active: false
+			active: false,
+			startY: event.clientY,
+			toLayers: null,
+			dy: 0
 		};
 	}
 
@@ -261,7 +271,7 @@
 		const d = drag;
 		if (!d || event.pointerId !== d.pointerId) return;
 		if (!d.active) {
-			if (Math.abs(event.clientX - d.startX) < DRAG_THRESHOLD) return;
+			if (Math.hypot(event.clientX - d.startX, event.clientY - d.startY) < DRAG_THRESHOLD) return;
 			d.active = true;
 			frozenPps = pps;
 			(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -269,6 +279,21 @@
 		autoScroll(event.clientX);
 		const x = contentX(event.clientX);
 		d.x = x - d.grab;
+		d.dy = event.clientY - d.startY;
+		// Up into the Layers track: it would become a layer (the scenes don't reorder meanwhile).
+		const lane = layersLane.getBoundingClientRect();
+		if (event.clientY < scenesRow.getBoundingClientRect().top - 6) {
+			const scene = scenes.find((s) => s.id === d.id)!;
+			const rows = rowCount(editor.project.overlays);
+			d.toLayers = {
+				start: Math.max(0, map.t(Math.max(0, d.x))),
+				duration: scene.kind === 'video' ? scene.sourceEnd - scene.sourceStart : sceneDuration(scene),
+				row: Math.max(0, Math.min(rows, Math.floor((lane.bottom - event.clientY) / LAYER_ROW_H)))
+			};
+			d.to = d.from;
+			return;
+		}
+		d.toLayers = null;
 		// Insert before the first other card whose middle is right of the pointer.
 		let offset = 0;
 		let to = 0;
@@ -290,7 +315,8 @@
 			// The click that ends a drag must not also select; later clicks must still work.
 			suppressClick = true;
 			setTimeout(() => (suppressClick = false));
-			editor.moveScene(d.from, d.to);
+			if (d.toLayers) editor.sceneToOverlay(d.id, d.toLayers.start, d.toLayers.row);
+			else editor.moveScene(d.from, d.to);
 		}
 	}
 
@@ -480,12 +506,23 @@
 			</div>
 
 			<!-- Layers: overlays drawn on top of the scenes -->
-			<div class="row lane layers-lane" role="group" aria-label="Layers">
-				<LayersTrack {map} rowHeight={LAYER_ROW_H} gap={10} bind:height={layersH} />
+			<div class="row lane layers-lane" role="group" aria-label="Layers" bind:this={layersLane}>
+				<LayersTrack
+					{map}
+					rowHeight={LAYER_ROW_H}
+					gap={10}
+					bind:height={layersH}
+					ghost={drag?.active ? drag.toLayers : null}
+					toScenes={{
+						index: (clientX) => insertIndexAt(contentX(clientX)),
+						hover: (index) => (dropIndex = index)
+					}}
+				/>
 			</div>
 
 			<!-- Scenes -->
 			<div
+				bind:this={scenesRow}
 				class="row scenes-row"
 				class:dragging={drag?.active}
 				role="group"
@@ -507,6 +544,8 @@
 						class:trimming={isTrimmed}
 						data-scene-id={item.scene.id}
 						style:left="{isDragged ? drag!.x : item.left}px"
+						style:translate={isDragged && drag?.toLayers ? `0 ${drag.dy}px` : undefined}
+						class:to-layers={isDragged && !!drag?.toLayers}
 						style:width="{item.width}px"
 						role="presentation"
 						onpointerdown={(e) => onCardPointerDown(e, item)}
@@ -786,6 +825,9 @@
 		z-index: 6;
 		transition: none;
 		cursor: grabbing;
+	}
+	.card-slot.to-layers {
+		opacity: 0.85;
 	}
 	.card-slot.lifted :global(.card) {
 		box-shadow: var(--shadow-float);

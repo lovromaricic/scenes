@@ -845,6 +845,29 @@ npm run check        # svelte-check (TypeScript strict)
   - No scenes → the first scene.
   - Stress-tested with 4 workers.
 
+### 4. Moving between tracks
+
+- **Scene → layer.** A scene card dragged up past the top of the Scenes row stops reordering and
+  shows a "Make it a layer" ghost in the Layers track (at its time and the row under the
+  pointer). The lifted card follows the pointer up. On release, `sceneToOverlay` runs:
+  - The scene gets the default layer box: 40% wide, centred, with its own (cropped)
+    proportions. Its crop and card content carry over.
+  - It keeps its whole used part of the clip, at normal speed.
+  - The remaining scenes close the gap. The drop time is converted to the closed-up timeline
+    (times after the removed scene move back by its length).
+  - Layers that started over that scene stay where they are in time.
+  - The only scene can't become a layer (nothing to sit on); a message says so. The 4-videos
+    limit is checked.
+- **Layer → scene.** A layer dragged below the Layers track shows the Scenes insertion marker.
+  On release, `overlayToScene` inserts a full-frame scene at that position: the same part of the
+  clip (or the same length for photos and cards), with its crop and card content. Layers
+  linked to later scenes move along with them.
+- Each is one `edit()`, so one undo step.
+- Tests (e2e): a scene dragged up with the ghost showing becomes a 40%-wide layer at the drop
+  time, the gap closes, the Layer panel shows, and one undo restores everything. A layer
+  dragged down with the marker showing becomes a scene at that position with the whole
+  clip, and one undo restores it. Stress-tested with 4 workers.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

@@ -21,6 +21,7 @@ import { saveProjectToFile } from '$lib/files/save';
 import {
 	MAX_VIDEO_OVERLAYS,
 	MIN_OVERLAY_SECONDS,
+	linkAt,
 	OVERLAY_SECONDS,
 	DEFAULT_OVERLAY_STYLE,
 	defaultBox,
@@ -53,7 +54,7 @@ import {
 	type SourceBounds
 } from '$lib/model/edits';
 import { History } from '$lib/model/history';
-import { placeScenes, totalDuration } from '$lib/model/timeline';
+import { placeScenes, sceneDuration, totalDuration } from '$lib/model/timeline';
 import { TEXT_ENTER } from '$lib/model/textAnimation';
 import { TRANSITION_SECONDS } from '$lib/model/composition';
 import { formatFromClip, type ProjectFormat } from '$lib/model/format';
@@ -958,6 +959,110 @@ export class EditorStore {
 			start,
 			row
 		);
+	}
+
+	// ─── Moving between tracks ─────────────────────────────────────────────────────────────
+
+	/**
+	 * Turn a scene into a layer at `start` (in the timeline as it is now) in `row`: it gets the
+	 * default layer size, and the remaining scenes close the gap. One undo step.
+	 */
+	sceneToOverlay(sceneId: string, start: number, row: number): string | null {
+		const scene = this.project.scenes.find((s) => s.id === sceneId);
+		const removed = this.placed.find((p) => p.scene.id === sceneId);
+		if (!scene || !removed) return null;
+		if (this.project.scenes.length === 1) {
+			toasts.show('A layer needs a scene underneath it, so the only scene stays a scene.');
+			return null;
+		}
+		const info = scene.kind === 'card' ? null : this.media[scene.mediaId];
+		const picture =
+			scene.kind === 'card' || !info
+				? this.project.format
+				: scene.crop
+					? { width: scene.crop.w, height: scene.crop.h }
+					: info;
+		const length =
+			scene.kind === 'video' ? scene.sourceEnd - scene.sourceStart : sceneDuration(scene);
+		// Where it lands once the gap has closed: times after the scene move back by its length.
+		const at = start >= removed.end ? start - removed.duration : start;
+		const overlay: Overlay = {
+			id: newId(),
+			kind: scene.kind,
+			mediaId: scene.mediaId,
+			name: scene.name,
+			sceneId: null,
+			offset: 0,
+			duration: Math.max(MIN_OVERLAY_SECONDS, length),
+			sourceStart: scene.kind === 'video' ? scene.sourceStart : 0,
+			row,
+			box: defaultBox(picture, this.project.format),
+			crop: scene.crop ? { ...scene.crop } : undefined,
+			card: scene.card ? structuredClone($state.snapshot(scene.card) as CardContent) : undefined,
+			style: { ...DEFAULT_OVERLAY_STYLE },
+			enter: 'none',
+			exit: 'none',
+			sound: { on: false, volume: 1 }
+		};
+		const others = this.placedOverlays.filter(
+			(p) => p.overlay.kind === 'video' && p.overlay.sceneId !== sceneId
+		);
+		if (overlay.kind === 'video' && tooManyVideos(others, at, overlay.duration)) {
+			toasts.show(
+				`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment. Try another time.`,
+				'error'
+			);
+			return null;
+		}
+		this.edit(
+			'Scene to layer',
+			(p) => {
+				const before = placeScenes(p.scenes);
+				const scenes = p.scenes.filter((s) => s.id !== sceneId);
+				const after = placeScenes(scenes);
+				// Layers that started over this scene stay where they are in time.
+				const linked = new Set(overlaysOf(p.overlays, sceneId).map((o) => o.id));
+				const kept = relinkByTime(p.overlays, before, after, linked);
+				const latest = Math.max(0, totalDuration(scenes) - MIN_OVERLAY_SECONDS);
+				const placed = { ...overlay, ...linkAt(Math.min(Math.max(0, at), latest), after) };
+				return { ...p, scenes, overlays: assignRow([...kept, placed], placed.id, row, after) };
+			},
+			{ select: overlay.id }
+		);
+		return overlay.id;
+	}
+
+	/** Turn a layer into a full-frame scene at `index`. One undo step. */
+	overlayToScene(overlayId: string, index: number): string | null {
+		const o = this.project.overlays.find((x) => x.id === overlayId);
+		if (!o) return null;
+		const scene: Scene = {
+			id: newId(),
+			mediaId: o.mediaId,
+			kind: o.kind,
+			name: o.name,
+			sourceStart: o.kind === 'video' ? o.sourceStart : 0,
+			sourceEnd: o.kind === 'video' ? o.sourceStart + o.duration : o.duration,
+			speed: 1,
+			volume: 1,
+			mood: null,
+			transition: { kind: 'cut', duration: 0 },
+			frame: { ...DEFAULT_FRAME },
+			...(o.crop ? { crop: { ...o.crop } } : {}),
+			...(o.card ? { card: structuredClone($state.snapshot(o.card) as CardContent) } : {})
+		};
+		this.edit(
+			'Layer to scene',
+			(p) => {
+				const scenes = p.scenes.slice();
+				scenes.splice(Math.max(0, Math.min(index, scenes.length)), 0, scene);
+				return { ...p, scenes, overlays: compactRows(p.overlays.filter((x) => x.id !== overlayId)) };
+			},
+			{ select: scene.id }
+		);
+		const placed = this.placed.find((p) => p.scene.id === scene.id);
+		if (placed) this.seek(placed.start);
+		return scene.id;
 	}
 
 	deleteOverlay(id: string): void {

@@ -22,9 +22,13 @@
 		gap: number;
 		/** The track's height, for the label beside it. */
 		height?: number;
+		/** A scene being dragged up into the track: where it would land as a layer. */
+		ghost?: { start: number; duration: number; row: number } | null;
+		/** Dragging a layer down into the Scenes track: where it would go, and showing that. */
+		toScenes?: { index(clientX: number): number; hover(index: number | null): void };
 	}
 
-	let { map, rowHeight, gap, height = $bindable(0) }: Props = $props();
+	let { map, rowHeight, gap, height = $bindable(0), ghost = null, toScenes }: Props = $props();
 
 	const editor = useEditor();
 
@@ -45,6 +49,9 @@
 		row: number;
 		duration: number;
 		sourceStart: number;
+		/** Dragged down below the track: the scene position it would become (else null). */
+		toScene: number | null;
+		dy: number;
 	} | null>(null);
 
 	/**
@@ -72,7 +79,9 @@
 			start: placed.start,
 			row: o.row,
 			duration: o.duration,
-			sourceStart: o.sourceStart
+			sourceStart: o.sourceStart,
+			toScene: null,
+			dy: 0
 		};
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 	}
@@ -87,6 +96,18 @@
 		}
 		const o = g.original.overlay;
 		if (g.mode === 'move') {
+			// Below the track: it would become a scene.
+			const bottom = layersEl.getBoundingClientRect().bottom;
+			g.dy = event.clientY - g.startY;
+			if (toScenes && event.clientY > bottom + 8) {
+				g.toScene = toScenes.index(event.clientX);
+				toScenes.hover(g.toScene);
+				return;
+			}
+			if (g.toScene !== null) {
+				g.toScene = null;
+				toScenes?.hover(null);
+			}
 			const latest = Math.max(0, editor.duration - 0.5);
 			g.start = Math.min(latest, Math.max(0, map.t(map.x(g.original.start) + dx)));
 			g.row = rowAt(event.clientY, g.startY, o.row);
@@ -108,6 +129,11 @@
 		gesture = null;
 		if (!g.active) {
 			editor.select(g.id);
+			return;
+		}
+		if (g.toScene !== null) {
+			toScenes?.hover(null);
+			editor.overlayToScene(g.id, g.toScene);
 			return;
 		}
 		if (g.mode === 'move') editor.placeOverlay(g.id, g.start, g.row);
@@ -218,6 +244,18 @@
 	{ondragleave}
 	{ondrop}
 >
+	{#if ghost}
+		<span
+			class="drop-ghost"
+			aria-hidden="true"
+			style:left="{map.x(ghost.start)}px"
+			style:width="{map.width(ghost.start, ghost.duration) - 3}px"
+			style:top="{Math.max(0, rows - 1 - ghost.row) * rowHeight + 2}px"
+			style:height="{rowHeight - 4}px"
+		>
+			<span>Make it a layer</span>
+		</span>
+	{/if}
 	{#if drop}
 		<span
 			class="drop-ghost"
@@ -233,7 +271,7 @@
 	{#if newTopRow}
 		<span class="new-row" style:height="{rowHeight - 4}px" aria-hidden="true"></span>
 	{/if}
-	{#if empty && !drop}
+	{#if empty && !drop && !ghost}
 		<p class="hint">
 			<Layers size={13} strokeWidth={1.8} aria-hidden="true" />
 			Drop videos, images or cards here to place them on top
@@ -254,6 +292,8 @@
 			style:width="{g.width}px"
 			style:top="{g.top + 2}px"
 			style:height="{rowHeight - 4}px"
+			style:translate={active && gesture?.toScene !== null ? `0 ${gesture?.dy ?? 0}px` : undefined}
+			class:to-scene={active && gesture?.toScene !== null}
 		>
 			<button
 				type="button"
@@ -372,6 +412,10 @@
 	.layer-slot.active {
 		z-index: 6;
 		transition: none;
+	}
+	.layer-slot.to-scene {
+		z-index: 20;
+		opacity: 0.85;
 	}
 	.layer {
 		position: absolute;
