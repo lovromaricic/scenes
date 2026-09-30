@@ -33,6 +33,7 @@ import {
 import { History } from '$lib/model/history';
 import { placeScenes, totalDuration } from '$lib/model/timeline';
 import { TEXT_ENTER } from '$lib/model/textAnimation';
+import { TRANSITION_SECONDS } from '$lib/model/composition';
 import type {
 	AspectRatio,
 	MoodId,
@@ -42,7 +43,8 @@ import type {
 	Speed,
 	TextAnimation,
 	TextItem,
-	TextStyleId
+	TextStyleId,
+	TransitionKind
 } from '$lib/model/types';
 import { Player } from '$lib/playback/player';
 import { Autosaver, emergencyCopy, type SaveStatus } from './autosave';
@@ -293,7 +295,10 @@ export class EditorStore {
 	/** Push the current project to the player. */
 	syncPlayer(): void {
 		const media = this.media;
-		this.player.setProject(this.snapshot(), (id) => !!media[id]?.hasAudio);
+		this.player.setProject(this.snapshot(), {
+			hasAudio: (id) => !!media[id]?.hasAudio,
+			bounds: (scene) => this.bounds(scene)
+		});
 	}
 
 	togglePlay(): void {
@@ -358,8 +363,31 @@ export class EditorStore {
 		this.updateScene('Speed', id, (s) => setSpeed(s, speed));
 	}
 
+	/** A scene's own look, or `null` to follow the whole video's look. */
 	setSceneMood(id: string, mood: MoodId | null): void {
-		this.updateScene('Mood', id, (s) => ({ ...s, mood }));
+		this.updateScene('Look', id, (s) => ({ ...s, mood }));
+	}
+
+	/** The look for the whole video (scenes with their own look keep it). */
+	setProjectMood(mood: MoodId): void {
+		if (mood !== this.project.mood) this.edit('Look', (p) => ({ ...p, mood }));
+	}
+
+	/** Make every scene follow the whole video's look. */
+	clearSceneMoods(): void {
+		if (!this.project.scenes.some((s) => s.mood !== null)) return;
+		this.edit('Look for every scene', (p) => ({
+			...p,
+			scenes: p.scenes.map((s) => ({ ...s, mood: null }))
+		}));
+	}
+
+	/** The transition from a scene into the next one. */
+	setTransition(id: string, kind: TransitionKind): void {
+		this.updateScene('Transition', id, (s) => ({
+			...s,
+			transition: { kind, duration: TRANSITION_SECONDS[kind] }
+		}));
 	}
 
 	setSceneVolume(id: string, volume: number): void {

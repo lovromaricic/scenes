@@ -8,6 +8,7 @@
 	import { useEditor } from '$lib/state/context';
 	import SceneCard from './SceneCard.svelte';
 	import TransitionButton from './TransitionButton.svelte';
+	import TransitionPicker from './TransitionPicker.svelte';
 	import SoundLane from './SoundLane.svelte';
 	import WordsLane from './WordsLane.svelte';
 	import { stackRows } from '$lib/model/edits';
@@ -58,6 +59,24 @@
 	}
 
 	let drag = $state<Drag | null>(null);
+	/** The transition picker that is open: which scene it follows, and where to show it. */
+	let picker = $state<{ sceneId: string; after: number; x: number; y: number } | null>(null);
+
+	function openPicker(event: MouseEvent, item: Item) {
+		if (picker?.sceneId === item.scene.id) {
+			picker = null;
+			return;
+		}
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		picker = {
+			sceneId: item.scene.id,
+			after: item.index + 1,
+			x: rect.left + rect.width / 2,
+			y: rect.top
+		};
+	}
+
+	const pickerScene = $derived(picker ? scenes.find((s) => s.id === picker!.sceneId) : null);
 	let trim = $state<Trim | null>(null);
 	/** The scale is frozen during a gesture so the storyboard doesn't rescale under the pointer. */
 	let frozenPps = $state<number | null>(null);
@@ -291,6 +310,23 @@
 	}
 </script>
 
+{#if picker && pickerScene}
+	<TransitionPicker
+		x={picker.x}
+		y={picker.y}
+		after={picker.after}
+		value={pickerScene.transition.kind}
+		onchange={(kind) => {
+			editor.setTransition(pickerScene.id, kind);
+			const placed = editor.placed.find((p) => p.scene.id === pickerScene.id);
+			// Show the new transition: jump to just before the cut.
+			if (placed && kind !== 'cut') editor.seek(Math.max(0, placed.end - 0.6));
+			picker = null;
+		}}
+		onclose={() => (picker = null)}
+	/>
+{/if}
+
 <section class="storyboard" aria-label="Storyboard">
 	<div class="labels" aria-hidden="true">
 		<span class="label ruler-label"></span>
@@ -364,7 +400,12 @@
 				{#if !drag?.active && !trim}
 					{#each layout.items.slice(0, -1) as item (item.scene.id)}
 						<div class="transition-slot" style:left="{item.left + item.width - CARD_GAP / 2}px">
-							<TransitionButton kind={item.scene.transition.kind} after={item.index + 1} />
+							<TransitionButton
+								kind={item.scene.transition.kind}
+								after={item.index + 1}
+								active={picker?.sceneId === item.scene.id}
+								onclick={(e) => openPicker(e, item)}
+							/>
 						</div>
 					{/each}
 				{/if}

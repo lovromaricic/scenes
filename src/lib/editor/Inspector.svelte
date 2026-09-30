@@ -74,13 +74,21 @@
 					</Field>
 				{/if}
 
-				<Field label="Mood">
+				<Field
+					label="Mood"
+					hint={scene.mood === null ? 'Same as the whole video' : 'This scene only'}
+				>
 					<SwatchPicker
 						label="Mood"
 						options={moodOptions}
 						value={scene.mood ?? editor.project.mood}
 						onchange={(v: MoodId) => editor.setSceneMood(scene.id, v)}
 					/>
+					{#if scene.mood !== null}
+						<button type="button" class="link" onclick={() => editor.setSceneMood(scene.id, null)}>
+							Match the whole video
+						</button>
+					{/if}
 				</Field>
 
 				{#if scene.kind === 'video' && editor.media[scene.mediaId]?.hasAudio}
@@ -150,6 +158,20 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-5);
+	}
+	.link {
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--color-ink);
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+		text-decoration: underline;
+		text-underline-offset: 3px;
+		border-radius: 4px;
+	}
+	.link:hover {
+		color: var(--color-muted);
 	}
 	.actions {
 		display: flex;

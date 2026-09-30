@@ -39,7 +39,7 @@
 		editor.addText(which);
 	}
 
-	let mood = $state<MoodId>('natural');
+	const ownLooks = $derived(editor.project.scenes.filter((s) => s.mood !== null).length);
 	const moodOptions = MOODS.map((m) => ({
 		value: m.id,
 		label: m.label,
@@ -92,7 +92,22 @@
 			</button>
 		</div>
 	{:else}
-		<SwatchPicker label="Mood for the whole video" options={moodOptions} bind:value={mood} />
+		<SwatchPicker
+			label="Mood for the whole video"
+			options={moodOptions}
+			value={editor.project.mood}
+			onchange={(m: MoodId) => editor.setProjectMood(m)}
+		/>
+		{#if ownLooks > 0}
+			<div class="own-looks">
+				<p class="muted">
+					{ownLooks === 1 ? '1 scene has' : `${ownLooks} scenes have`} its own look and won’t change.
+				</p>
+				<Button variant="soft" size="sm" onclick={() => editor.clearSceneMoods()}>
+					Use this look for every scene
+				</Button>
+			</div>
+		{/if}
 	{/if}
 </Panel>
 
@@ -114,6 +129,12 @@
 	.muted {
 		color: var(--color-muted);
 		font-size: var(--text-sm);
+	}
+	.own-looks {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-2);
 	}
 	.options {
 		display: flex;

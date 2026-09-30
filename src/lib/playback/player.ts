@@ -3,11 +3,26 @@ import { projectAudioClips, type AudioClip } from '$lib/audio/clips';
 import { getHandle } from '$lib/media/handles';
 import { PhotoFrameSource, VideoFrameSource, type FrameSource } from '$lib/media/frames';
 import { placeScenes, type PlacedScene } from '$lib/model/timeline';
+import { compose, type Composition, type LayerRef } from '$lib/model/composition';
+import type { SourceBounds } from '$lib/model/edits';
+import { MOOD_GRADES } from '$lib/model/moods';
 import { textFrameState } from '$lib/model/textAnimation';
-import type { Project, Scene, TextItem } from '$lib/model/types';
-import { Compositor, type CompositeFrame, type TextDraw } from '$lib/render/compositor';
+import type { MoodId, Project, Scene, TextItem } from '$lib/model/types';
+import {
+	Compositor,
+	type CompositeFrame,
+	type LayerInput,
+	type TextDraw
+} from '$lib/render/compositor';
 import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
 import { sourceTimeAt } from './time';
+
+/** What the player needs to know about imported files. */
+export interface MediaLookup {
+	hasAudio(mediaId: string): boolean;
+	/** The usable source range of a scene's file. */
+	bounds(scene: Scene): SourceBounds;
+}
 
 /**
  * The playback engine. Runs its own requestAnimationFrame loop in plain TypeScript, outside
@@ -41,7 +56,12 @@ export class Player {
 	private hiddenTextId: string | null = null;
 	private placed: PlacedScene[] = [];
 	private duration = 0;
-	private hasAudio: (mediaId: string) => boolean = () => false;
+	private mood: MoodId = 'natural';
+	private lookup: MediaLookup = {
+		hasAudio: () => false,
+		bounds: (s) => ({ start: s.sourceStart, end: s.sourceEnd })
+	};
+	private hasAudio = (mediaId: string) => this.lookup.hasAudio(mediaId);
 
 	private compositor: Compositor | null = null;
 	private canvas: HTMLCanvasElement | null = null;
@@ -85,7 +105,7 @@ export class Player {
 		this.dirty = true;
 	}
 
-	setProject(project: Project, hasAudio: (mediaId: string) => boolean): void {
+	setProject(project: Project, lookup: MediaLookup): void {
 		const wasPlaying = this.playing;
 		const oldAudioKey = this.audioKey();
 		this.scenes = project.scenes;
@@ -93,7 +113,8 @@ export class Player {
 		this.sounds = project.sounds;
 		this.placed = placeScenes(project.scenes);
 		this.duration = this.placed.at(-1)?.end ?? 0;
-		this.hasAudio = hasAudio;
+		this.lookup = lookup;
+		this.mood = project.mood;
 
 		// Drop decoders for scenes that no longer exist or now point at a different file.
 		for (const [sceneId, entry] of this.sources) {
@@ -205,9 +226,8 @@ export class Player {
 		const start = performance.now();
 		return new Promise((resolve) => {
 			const check = () => {
-				const frame = this.frameForTime(t, true);
 				if (
-					(frame && frame.exact) ||
+					this.framesReady(t, true) ||
 					performance.now() - start > timeoutMs ||
 					!this.placed.length
 				) {
@@ -245,14 +265,42 @@ export class Player {
 		return entry.source;
 	}
 
-	private frameForTime(t: number, playing: boolean) {
-		const current = this.placedAt(t);
-		if (!current) return null;
-		const source = this.sourceFor(current.scene);
+	private composition(t: number): Composition {
+		return compose(this.placed, t, (p) => this.lookup.bounds(p.scene));
+	}
+
+	/** The decoded frame for one layer of a composition (asking the decoder for it if needed). */
+	private layerFrame(ref: LayerRef, playing: boolean) {
+		const source = this.sourceFor(ref.placed.scene);
 		if (!source) return null;
-		const srcT = sourceTimeAt(current, t);
-		source.want(srcT, playing);
-		return source.frameAt(srcT);
+		source.want(ref.sourceTime, playing);
+		return source.frameAt(ref.sourceTime);
+	}
+
+	private layerInput(
+		ref: LayerRef,
+		playing: boolean
+	): { input: LayerInput; exact: boolean } | null {
+		const frame = this.layerFrame(ref, playing);
+		if (!frame) return null;
+		const mood = ref.placed.scene.mood ?? this.mood;
+		return {
+			input: {
+				image: frame.image,
+				width: frame.width,
+				height: frame.height,
+				grade: MOOD_GRADES[mood]
+			},
+			exact: frame.exact
+		};
+	}
+
+	/** Whether every frame needed at time `t` is decoded exactly. */
+	private framesReady(t: number, playing: boolean): boolean {
+		const c = this.composition(t);
+		const a = c.a && this.layerFrame(c.a, playing);
+		const b = c.b && this.layerFrame(c.b, playing);
+		return !!a && a.exact && (!c.b || (!!b && b.exact));
 	}
 
 	/** The text sprites showing at time `t`, with their animation applied. */
@@ -325,21 +373,48 @@ export class Player {
 		if (!this.compositor || !this.canvas) return;
 
 		this.manageSources(t);
-		const frame = this.peekTarget
-			? this.peekFrame(this.peekTarget)
-			: this.frameForTime(t, this.playing);
+		let composite: CompositeFrame;
+		if (this.peekTarget) {
+			const frame = this.peekFrame(this.peekTarget);
+			const scene = this.scenes.find((s) => s.id === this.peekTarget!.sceneId);
+			composite = {
+				a:
+					frame && scene
+						? {
+								image: frame.image,
+								width: frame.width,
+								height: frame.height,
+								grade: MOOD_GRADES[scene.mood ?? this.mood]
+							}
+						: null
+			};
+		} else {
+			const c = this.composition(t);
+			composite = {
+				a: c.a ? (this.layerInput(c.a, this.playing)?.input ?? null) : null,
+				b: c.b ? (this.layerInput(c.b, this.playing)?.input ?? null) : null,
+				transition: c.transition
+			};
+		}
 		const texts = this.textDraws(t, this.canvas.width, this.canvas.height);
-		const key = `${this.canvas.width}x${this.canvas.height}|${frame ? objectId(frame.image) : 'none'}|${texts
-			.map((d) => `${d.key}:${d.opacity.toFixed(3)}:${d.scale.toFixed(3)}:${d.cy.toFixed(1)}`)
-			.join(',')}`;
+		composite.texts = texts;
+		const layerKey = (l: LayerInput | null | undefined) =>
+			l ? `${objectId(l.image)}:${JSON.stringify(l.grade)}` : 'none';
+		const key = [
+			`${this.canvas.width}x${this.canvas.height}`,
+			layerKey(composite.a),
+			layerKey(composite.b),
+			composite.transition
+				? `${composite.transition.kind}:${composite.transition.progress.toFixed(4)}`
+				: '',
+			texts
+				.map((d) => `${d.key}:${d.opacity.toFixed(3)}:${d.scale.toFixed(3)}:${d.cy.toFixed(1)}`)
+				.join(',')
+		].join('|');
 		if (!this.dirty && key === this.lastDrawnKey) return;
 		this.dirty = false;
 		this.lastDrawnKey = key;
 
-		const composite: CompositeFrame = {
-			layer: frame ? { image: frame.image, width: frame.width, height: frame.height } : null,
-			texts
-		};
 		this.compositor.render(composite);
 		this.sprites.endFrame();
 	};
@@ -354,9 +429,9 @@ export class Player {
 		return this.audio.stats();
 	}
 
-	/** For tests: whether the frame at the current time is decoded exactly. */
+	/** For tests: whether the frames at the current time are decoded exactly. */
 	isFrameReady(): boolean {
-		return !!this.frameForTime(this.time, this.playing)?.exact;
+		return this.framesReady(this.time, this.playing);
 	}
 
 	dispose(): void {

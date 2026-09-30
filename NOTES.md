@@ -185,6 +185,32 @@ npm run check        # svelte-check (TypeScript strict)
 - Fixed: `.webm` recordings (audio/webm) were detected as video because the extension was checked
   before the MIME type. MIME type now wins.
 
+### Phase 6
+
+- **Transitions straddle the cut** (`src/lib/model/composition.ts`): they run from half their
+  length before the cut to half after, so the video's length doesn't change. The outgoing scene
+  keeps playing into its trimmed-off footage when the clip has some ("handles"), otherwise it holds
+  its last frame; the incoming scene likewise starts early or holds its first frame. Lengths:
+  crossfade 0.8s, fade to black 1.0s, slide 0.6s, zoom 0.7s, shortened to fit short scenes.
+  There is no length control (kept simple on purpose).
+- **Sound doesn't crossfade** — audio still cuts at the scene boundary (the 10ms edge ramps avoid
+  clicks). Idea for later: short audio crossfades matching the picture.
+- **Compositor pipeline:** each scene frame is cover-fitted and graded into an offscreen
+  framebuffer, a transition shader blends the two (crossfade, dip to black, push slide, zoom
+  through, all smoothstep-eased), then text sprites go on top. Without a transition the scene is
+  drawn straight to the screen.
+- **Looks** are six grade presets (gain, contrast, saturation, lift) in `src/lib/model/moods.ts`,
+  applied by the same shader for every frame. `applyGrade()` is an exact CPU mirror; the e2e test
+  checks the GPU output against it (within 4/255).
+- **Whole video vs. one scene:** the Looks panel sets the whole-video look; a scene's Mood swatches
+  give it its own look ("This scene only"), with "Match the whole video" to go back. The Looks
+  panel says how many scenes have their own look, with "Use this look for every scene".
+- **Transition picker** opens from the round button between cards (fixed-positioned so the
+  storyboard's scroll area can't clip it), lists the five options with a short description, works
+  with arrow keys and Esc, and jumps the playhead to just before the cut so you see the result.
+- The favicon is now a static file linked from `app.html` (Chrome was requesting `/favicon.ico`
+  before JavaScript added the icon link, causing a 404).
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
