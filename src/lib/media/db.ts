@@ -44,20 +44,26 @@ interface ScenesDB extends DBSchema {
 	media: { key: string; value: MediaRecord };
 	thumbnails: { key: string; value: { id: string; blob: Blob } };
 	projects: { key: string; value: ProjectRecord; indexes: { updatedAt: number } };
+	waveforms: { key: string; value: { id: string; peaks: Float32Array; perSecond: number } };
 }
 
 const DB_NAME = 'scenes';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<ScenesDB>> | null = null;
 
 export function db(): Promise<IDBPDatabase<ScenesDB>> {
 	dbPromise ??= openDB<ScenesDB>(DB_NAME, DB_VERSION, {
-		upgrade(database) {
-			database.createObjectStore('media', { keyPath: 'id' });
-			database.createObjectStore('thumbnails', { keyPath: 'id' });
-			const projects = database.createObjectStore('projects', { keyPath: 'id' });
-			projects.createIndex('updatedAt', 'updatedAt');
+		upgrade(database, oldVersion) {
+			if (oldVersion < 1) {
+				database.createObjectStore('media', { keyPath: 'id' });
+				database.createObjectStore('thumbnails', { keyPath: 'id' });
+				const projects = database.createObjectStore('projects', { keyPath: 'id' });
+				projects.createIndex('updatedAt', 'updatedAt');
+			}
+			if (oldVersion < 2) {
+				database.createObjectStore('waveforms', { keyPath: 'id' });
+			}
 		}
 	});
 	return dbPromise;
@@ -73,12 +79,27 @@ export async function getMedia(id: string): Promise<MediaRecord | undefined> {
 
 export async function deleteMedia(id: string): Promise<void> {
 	const d = await db();
-	const tx = d.transaction(['media', 'thumbnails'], 'readwrite');
+	const tx = d.transaction(['media', 'thumbnails', 'waveforms'], 'readwrite');
 	await Promise.all([
 		tx.objectStore('media').delete(id),
 		tx.objectStore('thumbnails').delete(id),
+		tx.objectStore('waveforms').delete(id),
 		tx.done
 	]);
+}
+
+export async function putWaveform(
+	id: string,
+	peaks: Float32Array,
+	perSecond: number
+): Promise<void> {
+	await (await db()).put('waveforms', { id, peaks, perSecond });
+}
+
+export async function getWaveform(
+	id: string
+): Promise<{ peaks: Float32Array; perSecond: number } | undefined> {
+	return (await db()).get('waveforms', id);
 }
 
 export async function putThumbnail(id: string, blob: Blob): Promise<void> {

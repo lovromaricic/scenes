@@ -8,4 +8,5 @@ export { default as Field } from './Field.svelte';
 export { default as FloatingToolbar } from './FloatingToolbar.svelte';
 export { default as Divider } from './Divider.svelte';
 export { default as Slider } from './Slider.svelte';
+export { default as Switch } from './Switch.svelte';
 export type * from './types';

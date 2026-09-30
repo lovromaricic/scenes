@@ -77,6 +77,15 @@
 		}
 		if (mod || event.altKey || isTyping(event.target) || event.defaultPrevented) return;
 
+		// While recording a voiceover, Space or Esc stops it; nothing else happens.
+		if (editor.recording) {
+			if (event.key === ' ' || event.key === 'Escape') {
+				event.preventDefault();
+				void editor.stopVoiceover();
+			}
+			return;
+		}
+
 		switch (event.key) {
 			case ' ':
 				// Space always plays/pauses, even when a button has focus (Enter still presses buttons).

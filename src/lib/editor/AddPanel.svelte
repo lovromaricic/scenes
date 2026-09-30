@@ -9,6 +9,8 @@
 	import type { MoodId } from '$lib/model/types';
 	import type { AddKind } from './types';
 	import { useEditor } from '$lib/state/context';
+	import { pickFiles } from '$lib/media/picker';
+	import { ACCEPT_AUDIO } from '$lib/media/kinds';
 
 	interface Props {
 		kind: AddKind;
@@ -19,6 +21,18 @@
 	let { kind, onclose, onpick }: Props = $props();
 
 	const editor = useEditor();
+
+	async function addMusic() {
+		onclose();
+		editor.player.unlockAudio();
+		const [file] = await pickFiles(ACCEPT_AUDIO, false);
+		if (file) await editor.addMusic(file);
+	}
+
+	function recordVoice() {
+		onclose();
+		void editor.startVoiceover();
+	}
 
 	function addText(which: 'title' | 'caption') {
 		onclose();
@@ -68,13 +82,13 @@
 		</div>
 	{:else if kind === 'sound'}
 		<div class="options">
-			<button type="button" class="option">
+			<button type="button" class="option" onclick={addMusic}>
 				<Music size={20} strokeWidth={1.7} aria-hidden="true" />
-				<span><strong>Music</strong><small>Choose a song file</small></span>
+				<span><strong>Music</strong><small>Choose a song for the whole video</small></span>
 			</button>
-			<button type="button" class="option">
+			<button type="button" class="option" onclick={recordVoice}>
 				<Mic size={20} strokeWidth={1.7} aria-hidden="true" />
-				<span><strong>Voiceover</strong><small>Record at the playhead</small></span>
+				<span><strong>Voiceover</strong><small>Record your voice from the playhead</small></span>
 			</button>
 		</div>
 	{:else}

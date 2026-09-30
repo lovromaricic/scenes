@@ -12,6 +12,9 @@ describe('guessKind', () => {
 		expect(guessKind({ name: 'photo.jpeg', type: '' })).toBe('photo');
 		expect(guessKind({ name: 'song.m4a', type: '' })).toBe('audio');
 	});
+	it('prefers the MIME type over the extension', () => {
+		expect(guessKind({ name: 'Voiceover 1.webm', type: 'audio/webm;codecs=opus' })).toBe('audio');
+	});
 	it('rejects unknown and HEIC files', () => {
 		expect(guessKind({ name: 'notes.txt', type: 'text/plain' })).toBe('unknown');
 		expect(guessKind({ name: 'IMG_1.HEIC', type: 'image/heic' })).toBe('unknown');

@@ -12,6 +12,7 @@ test.describe('Phase 1: design system and layout', () => {
 		await expect(page.getByRole('radiogroup', { name: 'Mood' })).toBeVisible();
 		await expect(page.getByRole('radiogroup', { name: 'Video shape' })).toBeVisible();
 		await expect(page.getByRole('toolbar', { name: 'Text options' })).toBeVisible();
+		await expect(page.getByRole('switch', { name: /Fade in and out/ })).toBeVisible();
 		await expect(page.getByRole('region', { name: 'Scene 1' })).toBeVisible();
 
 		// Stepper, chips and toolbar respond.

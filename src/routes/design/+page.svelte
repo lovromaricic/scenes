@@ -24,7 +24,8 @@
 		Panel,
 		PillStepper,
 		Slider,
-		SwatchPicker
+		SwatchPicker,
+		Switch
 	} from '$lib/ui';
 	import AddButton from '$lib/editor/AddButton.svelte';
 	import SceneCard from '$lib/editor/SceneCard.svelte';
@@ -47,6 +48,7 @@
 	let aspect = $state<AspectRatio>('16:9');
 	let mood = $state<MoodId>('golden');
 	let volume = $state(0.7);
+	let fade = $state(true);
 	let playing = $state(false);
 	let panelOpen = $state(true);
 	let lastAction = $state('—');
@@ -174,6 +176,9 @@
 			</Field>
 			<Field label="Slider">
 				<Slider label="Volume" bind:value={volume} />
+			</Field>
+			<Field label="Switch">
+				<Switch label="Fade in and out" hint="Eases the music in and out" bind:checked={fade} />
 			</Field>
 			<Field label="Swatch picker" hint={mood}>
 				<SwatchPicker label="Mood" options={moodOptions} bind:value={mood} />

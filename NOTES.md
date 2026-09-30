@@ -161,6 +161,30 @@ npm run check        # svelte-check (TypeScript strict)
   actually started. Also: imports wait for the saved project to finish restoring, and restoring
   never replaces work already started in the session.
 
+### Phase 5
+
+- **One mixing model for everything.** Scene sound, music and voiceovers all become `AudioClip`s
+  (`src/lib/audio/clips.ts`) with volume and fades. Live playback (`AudioEngine`) and the offline
+  mix (`mixdown()`, used by export and by tests) schedule gain with the same function
+  (`scheduleClipGain`), so what you hear is what gets saved.
+- **Music** is one song for the whole video (adding another replaces it, with an undo hint). It
+  starts at 0:00, stops when the video ends, and fades in 1.5s / out 3s when "Fade in and out" is on
+  (default). "Start the song at" skips an intro. Default volume 60%. It doesn't loop if shorter
+  than the video (the inspector says so). Idea: loop option, auto-lower music under voiceovers.
+- **Volume changes while playing** retune the running gain nodes instead of restarting playback,
+  so dragging a slider is smooth; timing changes restart the sound from the playhead.
+- **Voiceover:** Sound → Voiceover asks for the mic, counts down 3-2-1, then records while the video
+  plays _muted_ from the playhead (so speakers don't echo into the mic). Stop with the button, Space
+  or Esc, or it stops when the video ends. Recordings are WebM/Opus from MediaRecorder, stored like
+  any other file. Drag a voiceover in the Sound lane to move it.
+- **Waveforms** are computed once per file (streamed decode, 25 peaks/s, square-root scaled so quiet
+  audio is visible) and stored in IndexedDB (`waveforms` store, schema v2), recomputed if missing.
+- **Tests measure the actual mix**: the e2e tests render the soundtrack with the app's offline mixer
+  and use a Goertzel filter to check the balance of the 220 Hz "music" against the 440 Hz clip,
+  the fades, and that the (fake) microphone recording sits exactly where it was recorded.
+- Fixed: `.webm` recordings (audio/webm) were detected as video because the extension was checked
+  before the MIME type. MIME type now wins.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

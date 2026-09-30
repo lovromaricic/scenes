@@ -1,5 +1,5 @@
 import { AudioEngine } from '$lib/audio/engine';
-import { sceneAudioClips } from '$lib/audio/clips';
+import { projectAudioClips, type AudioClip } from '$lib/audio/clips';
 import { getHandle } from '$lib/media/handles';
 import { PhotoFrameSource, VideoFrameSource, type FrameSource } from '$lib/media/frames';
 import { placeScenes, type PlacedScene } from '$lib/model/timeline';
@@ -35,6 +35,7 @@ export class Player {
 
 	private scenes: Scene[] = [];
 	private texts: TextItem[] = [];
+	private sounds: Project['sounds'] = [];
 	private readonly sprites = new TextSpriteCache();
 	/** A text being edited on the preview is drawn by the HTML editor instead. */
 	private hiddenTextId: string | null = null;
@@ -89,6 +90,7 @@ export class Player {
 		const oldAudioKey = this.audioKey();
 		this.scenes = project.scenes;
 		this.texts = project.texts;
+		this.sounds = project.sounds;
 		this.placed = placeScenes(project.scenes);
 		this.duration = this.placed.at(-1)?.end ?? 0;
 		this.hasAudio = hasAudio;
@@ -103,12 +105,27 @@ export class Player {
 		}
 		if (this.time > this.duration) this.setTime(this.duration);
 		this.dirty = true;
-		// Timing changed under a playing video: restart the sound from here so it stays in sync.
-		if (wasPlaying && oldAudioKey !== this.audioKey()) void this.startAudio();
+		if (wasPlaying) {
+			// Timing changed under a playing video: restart the sound from here so it stays in sync.
+			// Only volume or fades changed: adjust the sound that's already playing.
+			if (oldAudioKey !== this.audioKey()) void this.startAudio();
+			else this.audio.retune(this.audioClips());
+		}
 	}
 
+	private audioClips(): AudioClip[] {
+		return projectAudioClips({ scenes: this.scenes, sounds: this.sounds }, this.hasAudio);
+	}
+
+	/** What the sound depends on, apart from volume and fades (those can change live). */
 	private audioKey(): string {
-		return JSON.stringify(sceneAudioClips(this.scenes, this.hasAudio));
+		return JSON.stringify(
+			this.audioClips().map((c) => [c.id, c.mediaId, c.start, c.end, c.sourceStart, c.speed])
+		);
+	}
+
+	setMuted(muted: boolean): void {
+		this.audio.setMuted(muted);
 	}
 
 	get length(): number {
@@ -128,7 +145,7 @@ export class Player {
 		// Give the decoder a moment to have the first frame ready, so playback starts cleanly.
 		await this.waitForFrame(this.time, 400);
 		if (token !== this.startToken || !this.playing) return;
-		await this.audio.play(sceneAudioClips(this.scenes, this.hasAudio), this.time);
+		await this.audio.play(this.audioClips(), this.time);
 	}
 
 	pause(): void {

@@ -2,6 +2,8 @@ import {
 	deleteUnusedMedia,
 	getMediaInfos,
 	getThumbnail,
+	getWaveform,
+	putWaveform,
 	loadLatestProject,
 	saveProject,
 	putMedia,
@@ -10,7 +12,11 @@ import {
 	type MediaInfo,
 	type ProjectRecord
 } from '$lib/media/db';
-import { registerBlob } from '$lib/media/handles';
+import { getHandle, registerBlob } from '$lib/media/handles';
+import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
+import { computePeaks, PEAKS_PER_SECOND } from '$lib/media/waveform';
+import { mixdown } from '$lib/audio/mixdown';
+import { projectAudioClips } from '$lib/audio/clips';
 import { MediaImportError, probeFile } from '$lib/media/probe';
 import {
 	clampTextTiming,
@@ -32,6 +38,7 @@ import type {
 	MoodId,
 	Project,
 	Scene,
+	SoundItem,
 	Speed,
 	TextAnimation,
 	TextItem,
@@ -73,6 +80,15 @@ export class EditorStore {
 	saveStatus = $state<SaveStatus>('idle');
 	/** The text currently being typed into on the preview. */
 	editingTextId = $state<string | null>(null);
+	/** Waveform peaks by media id (not deeply reactive: arrays are replaced, never mutated). */
+	waveforms = $state.raw<Record<string, { peaks: Float32Array; perSecond: number }>>({});
+	/** Voiceover recording in progress: counting down, then recording from `start`. */
+	recording = $state<{
+		phase: 'countdown' | 'recording';
+		count: number;
+		start: number;
+		elapsed: number;
+	} | null>(null);
 
 	readonly player = new Player();
 	private readonly history = new History<Project>();
@@ -86,6 +102,7 @@ export class EditorStore {
 	placed = $derived(placeScenes(this.project.scenes));
 	selectedScene = $derived(this.placed.find((p) => p.scene.id === this.selectedId) ?? null);
 	selectedText = $derived(this.project.texts.find((t) => t.id === this.selectedId) ?? null);
+	selectedSound = $derived(this.project.sounds.find((s) => s.id === this.selectedId) ?? null);
 
 	constructor() {
 		this.player.on({
@@ -134,6 +151,7 @@ export class EditorStore {
 				this.syncPlayer();
 				this.player.seek(view?.time ?? 0);
 				void this.loadThumbnails(ids);
+				void this.loadWaveforms(project.sounds.map((s) => s.mediaId));
 			}
 			void deleteUnusedMedia().catch(() => {});
 		} catch (error) {
@@ -171,6 +189,30 @@ export class EditorStore {
 			if (this.thumbnails[id]) continue;
 			const blob = await getThumbnail(id);
 			if (blob) this.thumbnails[id] = URL.createObjectURL(blob);
+		}
+	}
+
+	private async loadWaveforms(ids: string[]): Promise<void> {
+		for (const id of ids) {
+			if (this.waveforms[id]) continue;
+			let wave = await getWaveform(id);
+			if (!wave) {
+				// Not stored yet (or storage was cleared): compute it again from the file.
+				try {
+					const handle = await getHandle(id);
+					if (!handle.audio) continue;
+					const peaks = await computePeaks(
+						handle.audio,
+						handle.info.startTime,
+						handle.info.duration
+					);
+					wave = { peaks, perSecond: PEAKS_PER_SECOND };
+					await putWaveform(id, peaks, PEAKS_PER_SECOND);
+				} catch {
+					continue;
+				}
+			}
+			this.waveforms = { ...this.waveforms, [id]: wave };
 		}
 	}
 
@@ -275,6 +317,10 @@ export class EditorStore {
 		// Selecting something shows it: jump there unless the playhead is already inside it.
 		const placed = this.placed.find((p) => p.scene.id === id);
 		if (placed && !(this.time >= placed.start && this.time < placed.end)) this.seek(placed.start);
+		const voice = this.project.sounds.find((s) => s.id === id && s.kind === 'voice');
+		if (voice && !(this.time >= voice.start && this.time < voice.start + voice.duration)) {
+			this.seek(voice.start);
+		}
 		const text = this.project.texts.find((t) => t.id === id);
 		if (text && !(this.time >= text.start && this.time < text.start + text.duration)) {
 			// Land just after the entrance animation so the words are fully visible.
@@ -372,6 +418,218 @@ export class EditorStore {
 		if (!id) return;
 		if (this.project.scenes.some((s) => s.id === id)) this.deleteScene(id);
 		else if (this.project.texts.some((t) => t.id === id)) this.deleteText(id);
+		else if (this.project.sounds.some((s) => s.id === id)) this.deleteSound(id);
+	}
+
+	// ─── Sound ──────────────────────────────────────────────────────────────────────────────
+
+	/** Store an audio file, its waveform, and return its info. */
+	private async storeAudio(file: File): Promise<MediaInfo> {
+		const { info: probed } = await probeFile(file);
+		if (probed.kind !== 'audio') {
+			throw new MediaImportError(`“${file.name}” isn’t a sound file. Try an MP3, M4A or WAV.`);
+		}
+		const info: MediaInfo = { ...probed, id: newId(), createdAt: Date.now() };
+		await putMedia({ ...info, blob: file });
+		registerBlob(info, file);
+		this.media[info.id] = info;
+		void this.loadWaveforms([info.id]);
+		return info;
+	}
+
+	/** Use a sound file as background music for the whole video (replacing any previous music). */
+	async addMusic(file: File): Promise<void> {
+		void requestPersistentStorage();
+		await this.load();
+		this.importing++;
+		try {
+			const info = await this.storeAudio(file);
+			const sound: SoundItem = {
+				id: newId(),
+				mediaId: info.id,
+				name: file.name.replace(/\.[^.]+$/, '') || 'Music',
+				start: 0,
+				sourceStart: info.startTime,
+				duration: info.duration - info.startTime,
+				volume: 0.6,
+				kind: 'music',
+				fade: true
+			};
+			const replaced = this.project.sounds.some((s) => s.kind === 'music');
+			this.edit(
+				'Add music',
+				(p) => ({ ...p, sounds: [...p.sounds.filter((s) => s.kind !== 'music'), sound] }),
+				{ select: sound.id }
+			);
+			if (replaced) toasts.show('Replaced the music. Undo to get the old song back.');
+		} catch (error) {
+			toasts.show(
+				error instanceof MediaImportError
+					? error.message
+					: `“${file.name}” couldn’t be used as music.`,
+				'error'
+			);
+			if (!(error instanceof MediaImportError)) console.error(error);
+		} finally {
+			this.importing--;
+		}
+	}
+
+	private updateSound(
+		label: string,
+		id: string,
+		fn: (s: SoundItem) => SoundItem,
+		key?: string
+	): void {
+		if (!this.project.sounds.some((s) => s.id === id)) return;
+		this.edit(label, (p) => ({ ...p, sounds: p.sounds.map((s) => (s.id === id ? fn(s) : s)) }), {
+			key
+		});
+	}
+
+	setSoundVolume(id: string, volume: number): void {
+		this.updateSound('Volume', id, (s) => ({ ...s, volume }), `sound-volume:${id}`);
+	}
+
+	setSoundFade(id: string, fade: boolean): void {
+		this.updateSound(fade ? 'Fade on' : 'Fade off', id, (s) => ({ ...s, fade }));
+	}
+
+	/** Start the song further in (skip an intro). `offset` is seconds into the file. */
+	setMusicOffset(id: string, offset: number): void {
+		const sound = this.project.sounds.find((s) => s.id === id);
+		const info = sound && this.media[sound.mediaId];
+		if (!sound || !info) return;
+		const sourceStart = Math.min(
+			Math.max(info.startTime, info.startTime + offset),
+			info.duration - 1
+		);
+		this.updateSound(
+			'Song start',
+			id,
+			(s) => ({ ...s, sourceStart, duration: info.duration - sourceStart }),
+			`song-start:${id}`
+		);
+	}
+
+	deleteSound(id: string): void {
+		this.edit('Remove sound', (p) => ({ ...p, sounds: p.sounds.filter((s) => s.id !== id) }), {
+			select: this.selectedId === id ? null : this.selectedId
+		});
+	}
+
+	/** Render the mixed soundtrack for a stretch of time (used by export and tests). */
+	mixdown(from: number, to: number, sampleRate = 48000): Promise<AudioBuffer> {
+		const media = this.media;
+		return mixdown(
+			projectAudioClips(this.snapshot(), (id) => !!media[id]?.hasAudio),
+			from,
+			to,
+			sampleRate
+		);
+	}
+
+	// ─── Voiceover ──────────────────────────────────────────────────────────────────────────
+
+	private recorder: VoiceRecorder | null = null;
+	private recordTimer: ReturnType<typeof setInterval> | undefined;
+	private voiceCount = 0;
+
+	/** Count down, then record the microphone while the video plays (muted) from the playhead. */
+	async startVoiceover(): Promise<void> {
+		if (this.recording) return;
+		if (!this.project.scenes.length) {
+			toasts.show('Add a photo or video first, then record your voice over it.');
+			return;
+		}
+		this.player.unlockAudio();
+		this.player.pause();
+		const recorder = new VoiceRecorder();
+		try {
+			await recorder.open();
+		} catch (error) {
+			toasts.show(
+				error instanceof MicrophoneError ? error.message : 'The microphone couldn’t be started.',
+				'error'
+			);
+			return;
+		}
+		this.recorder = recorder;
+		if (this.player.time >= this.duration - 0.5) this.seek(0);
+		const start = this.player.time;
+		this.recording = { phase: 'countdown', count: 3, start, elapsed: 0 };
+		for (let n = 3; n > 0; n--) {
+			if (this.recorder !== recorder) return;
+			this.recording = { phase: 'countdown', count: n, start, elapsed: 0 };
+			await new Promise((r) => setTimeout(r, 700));
+		}
+		if (this.recorder !== recorder) return;
+		recorder.start();
+		// Play the video so you can talk over it, but silently so the mic doesn't pick it up.
+		this.player.setMuted(true);
+		void this.player.play();
+		this.recording = { phase: 'recording', count: 0, start, elapsed: 0 };
+		this.recordTimer = setInterval(() => {
+			if (!this.recording) return;
+			this.recording = { ...this.recording, elapsed: recorder.elapsed };
+			// The video ended: stop recording too.
+			if (!this.player.playing) void this.stopVoiceover();
+		}, 100);
+	}
+
+	/** Stop recording and add the voiceover where it started. */
+	async stopVoiceover(): Promise<void> {
+		const recorder = this.recorder;
+		const state = this.recording;
+		if (!recorder || !state) return;
+		this.recorder = null;
+		clearInterval(this.recordTimer);
+		this.recording = null;
+		this.player.pause();
+		this.player.setMuted(false);
+		if (state.phase === 'countdown') {
+			recorder.close();
+			return;
+		}
+		const result = await recorder.stop();
+		if (!result || result.seconds < 0.3) {
+			toasts.show('That recording was too short to keep.');
+			return;
+		}
+		const name = `Voiceover ${++this.voiceCount}`;
+		try {
+			const file = new File([result.blob], `${name}.webm`, { type: result.blob.type });
+			const info = await this.storeAudio(file);
+			const sound: SoundItem = {
+				id: newId(),
+				mediaId: info.id,
+				name,
+				start: state.start,
+				sourceStart: info.startTime,
+				duration: Math.max(0.3, info.duration - info.startTime),
+				volume: 1,
+				kind: 'voice',
+				fade: false
+			};
+			this.edit('Record voiceover', (p) => ({ ...p, sounds: [...p.sounds, sound] }), {
+				select: sound.id
+			});
+			this.seek(state.start);
+		} catch (error) {
+			console.error(error);
+			toasts.show('The recording couldn’t be saved. Please try again.', 'error');
+		}
+	}
+
+	cancelVoiceover(): void {
+		const recorder = this.recorder;
+		if (!recorder) return;
+		this.recorder = null;
+		clearInterval(this.recordTimer);
+		this.recording = null;
+		this.player.pause();
+		this.player.setMuted(false);
+		recorder.close();
 	}
 
 	// ─── Words ──────────────────────────────────────────────────────────────────────────────

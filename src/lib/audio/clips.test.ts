@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { bufferPlacement, sceneAudioClips, type AudioClip } from './clips';
-import type { Scene } from '$lib/model/types';
+import {
+	bufferPlacement,
+	clipGainAt,
+	projectAudioClips,
+	sceneAudioClips,
+	soundAudioClips,
+	soundEnd,
+	type AudioClip
+} from './clips';
+import type { Scene, SoundItem } from '$lib/model/types';
 
 const base: Scene = {
 	id: 'a',
@@ -57,5 +65,68 @@ describe('bufferPlacement', () => {
 	it('skips into a buffer that starts before the playhead', () => {
 		// Buffer at source 2.0 → timeline 10; playhead at 10.5 → 0.5s timeline = 1.0s of source.
 		expect(bufferPlacement(clip, 2, 10.5)).toEqual({ timelineStart: 10.5, offset: 1 });
+	});
+});
+
+const music: SoundItem = {
+	id: 'music',
+	mediaId: 'song',
+	name: 'Song',
+	start: 0,
+	sourceStart: 0,
+	duration: 60,
+	volume: 0.5,
+	kind: 'music',
+	fade: true
+};
+
+describe('soundAudioClips', () => {
+	it('stops music at the end of the video', () => {
+		expect(soundEnd(music, 20)).toBe(20);
+		const [clip] = soundAudioClips([music], 20);
+		expect(clip).toMatchObject({ start: 0, end: 20, volume: 0.5, fadeIn: 1.5, fadeOut: 3 });
+	});
+	it('has no fades when fade is off, and shortens fades for short sounds', () => {
+		expect(soundAudioClips([{ ...music, fade: false }], 20)[0]).toMatchObject({
+			fadeIn: 0,
+			fadeOut: 0
+		});
+		expect(soundAudioClips([music], 3)[0]).toMatchObject({ fadeIn: 0.75, fadeOut: 1 });
+	});
+	it('skips silent sounds and sounds after the end of the video', () => {
+		expect(soundAudioClips([{ ...music, volume: 0 }], 20)).toEqual([]);
+		expect(soundAudioClips([{ ...music, start: 25 }], 20)).toEqual([]);
+	});
+	it('places voiceovers where they were recorded', () => {
+		const voice: SoundItem = {
+			...music,
+			id: 'v',
+			kind: 'voice',
+			start: 4,
+			duration: 3,
+			volume: 1,
+			fade: false
+		};
+		expect(soundAudioClips([voice], 20)[0]).toMatchObject({ start: 4, end: 7 });
+	});
+});
+
+describe('projectAudioClips', () => {
+	it('combines scene sound, music and voice', () => {
+		const clips = projectAudioClips({ scenes: [base], sounds: [music] }, () => true);
+		expect(clips.map((c) => c.id)).toEqual(['a', 'music']);
+		expect(clips[1].end).toBe(10);
+	});
+});
+
+describe('clipGainAt', () => {
+	const clip = soundAudioClips([music], 20)[0];
+	it('fades in, holds, and fades out', () => {
+		expect(clipGainAt(clip, 0)).toBe(0);
+		expect(clipGainAt(clip, 0.75)).toBeCloseTo(0.25);
+		expect(clipGainAt(clip, 10)).toBe(0.5);
+		expect(clipGainAt(clip, 18.5)).toBeCloseTo(0.25);
+		expect(clipGainAt(clip, 20)).toBe(0);
+		expect(clipGainAt(clip, 21)).toBe(0);
 	});
 });

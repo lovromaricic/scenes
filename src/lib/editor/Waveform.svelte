@@ -1,15 +1,17 @@
 <!--
 	@component
-	Draws audio peaks (0–1) as mirrored bars on a canvas. Canvas keeps long sounds cheap to draw.
+	Draws a stretch of audio peaks as mirrored bars on a canvas (canvas keeps long songs cheap).
+	`from` and `length` pick the part of the sound (in source seconds) the box shows.
 -->
 <script lang="ts">
 	interface Props {
-		peaks: number[];
-		/** CSS colour token name used for the bars. */
-		color?: string;
+		peaks: ArrayLike<number>;
+		perSecond: number;
+		from?: number;
+		length?: number;
 	}
 
-	let { peaks, color = 'var(--color-muted)' }: Props = $props();
+	let { peaks, perSecond, from = 0, length }: Props = $props();
 
 	let canvas: HTMLCanvasElement;
 	let width = $state(0);
@@ -25,19 +27,24 @@
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.clearRect(0, 0, width, height);
 		ctx.fillStyle = getComputedStyle(canvas).color;
+		const seconds = length ?? peaks.length / perSecond - from;
 		const bar = 2;
 		const gap = 1;
 		const count = Math.floor(width / (bar + gap));
 		const mid = height / 2;
 		for (let i = 0; i < count; i++) {
-			const peak = peaks[Math.floor((i / count) * peaks.length)] ?? 0;
+			// Loudest peak within this bar's slice of time.
+			const a = Math.floor((from + (i / count) * seconds) * perSecond);
+			const b = Math.max(a + 1, Math.floor((from + ((i + 1) / count) * seconds) * perSecond));
+			let peak = 0;
+			for (let j = a; j < b && j < peaks.length; j++) peak = Math.max(peak, peaks[j]);
 			const h = Math.max(1, peak * (height - 2));
 			ctx.fillRect(i * (bar + gap), mid - h / 2, bar, h);
 		}
 	});
 </script>
 
-<div class="wave" bind:clientWidth={width} bind:clientHeight={height} style:color>
+<div class="wave" bind:clientWidth={width} bind:clientHeight={height}>
 	<canvas bind:this={canvas} style:width="{width}px" style:height="{height}px" aria-hidden="true"
 	></canvas>
 </div>
@@ -46,6 +53,7 @@
 	.wave {
 		position: absolute;
 		inset: 0;
+		color: color-mix(in srgb, var(--color-muted) 70%, var(--color-bg));
 	}
 	canvas {
 		display: block;

@@ -9,6 +9,7 @@
 	import type { AspectRatio } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
 	import TextOverlay from './TextOverlay.svelte';
+	import RecordingOverlay from './RecordingOverlay.svelte';
 
 	interface Props {
 		onpick: () => void;
@@ -86,6 +87,7 @@
 			{#if !empty}
 				<TextOverlay width={previewW} height={previewH} />
 			{/if}
+			<RecordingOverlay />
 		</div>
 	</div>
 

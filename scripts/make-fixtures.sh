@@ -31,5 +31,8 @@ ffmpeg -y -loglevel error \
 	-map "[v]" -c:v libx264 -preset veryfast -g 150 -crf 28 steps.mp4
 
 ffmpeg -y -loglevel error -f lavfi -i "color=c=yellow:s=800x600:d=1" -frames:v 1 yellow.jpg
+
+# "Music": a 12s 220 Hz tone (the clips use 440/660/880 Hz, so the mix can be told apart).
+ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=220:sample_rate=48000:duration=12" -c:a aac -b:a 64k music.m4a
 printf 'Not a video.\n' > notes.txt
 ls -la

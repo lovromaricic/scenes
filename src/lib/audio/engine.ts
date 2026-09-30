@@ -1,6 +1,7 @@
 import { AudioBufferSink } from 'mediabunny';
 import { getHandle } from '$lib/media/handles';
 import { bufferPlacement, type AudioClip } from './clips';
+import { scheduleClipGain } from './gain';
 
 /**
  * Mixes and plays all sound through the Web Audio API, and is the master clock during playback:
@@ -12,14 +13,14 @@ import { bufferPlacement, type AudioClip } from './clips';
 
 const LOOKAHEAD = 2.0;
 const START_DELAY = 0.08;
-const EDGE_RAMP = 0.01;
 
 export class AudioEngine {
 	private ctx: AudioContext | null = null;
 	private master: GainNode | null = null;
 	private generation = 0;
 	private nodes = new Set<AudioScheduledSourceNode>();
-	private gains = new Set<GainNode>();
+	private gains = new Map<string, { gain: GainNode; clip: AudioClip }>();
+	private muted = false;
 	private sinks = new Map<string, AudioBufferSink>();
 	private ctxStart = 0;
 	private t0 = 0;
@@ -30,6 +31,7 @@ export class AudioEngine {
 		if (!this.ctx) {
 			this.ctx = new AudioContext({ latencyHint: 'interactive' });
 			this.master = this.ctx.createGain();
+			this.master.gain.value = this.muted ? 0 : 1;
 			this.master.connect(this.ctx.destination);
 		}
 		if (this.ctx.state !== 'running') await this.ctx.resume();
@@ -73,8 +75,31 @@ export class AudioEngine {
 			node.disconnect();
 		}
 		this.nodes.clear();
-		for (const gain of this.gains) gain.disconnect();
+		for (const { gain } of this.gains.values()) gain.disconnect();
 		this.gains.clear();
+	}
+
+	/** Silence everything (e.g. while recording a voiceover, to avoid echo). */
+	setMuted(muted: boolean): void {
+		this.muted = muted;
+		if (this.master && this.ctx)
+			this.master.gain.setValueAtTime(muted ? 0 : 1, this.ctx.currentTime);
+	}
+
+	/**
+	 * Apply new volumes/fades to sound that is already playing, without restarting it
+	 * (so dragging a volume slider during playback is smooth).
+	 */
+	retune(clips: AudioClip[]): void {
+		if (!this.ctx || !this.running) return;
+		const now = this.now();
+		for (const clip of clips) {
+			const entry = this.gains.get(clip.id);
+			if (!entry) continue;
+			entry.clip = clip;
+			entry.gain.gain.cancelScheduledValues(this.ctx.currentTime);
+			this.shapeGain(entry.gain, clip, Math.max(now, clip.start));
+		}
 	}
 
 	/** For tests and debugging. */
@@ -125,7 +150,7 @@ export class AudioEngine {
 
 		const gain = ctx.createGain();
 		gain.connect(this.master!);
-		this.gains.add(gain);
+		this.gains.set(clip.id, { gain, clip });
 		this.shapeGain(gain, clip, from);
 
 		const srcFrom = clip.sourceStart + (from - clip.start) * clip.speed;
@@ -163,23 +188,9 @@ export class AudioEngine {
 		}
 	}
 
-	/** Volume with short ramps at the clip edges (no clicks) and optional fades. */
 	private shapeGain(gain: GainNode, clip: AudioClip, from: number) {
-		const g = gain.gain;
-		const startAt = this.ctxTime(from);
-		const endAt = this.ctxTime(clip.end);
-		const fadeIn = Math.max(EDGE_RAMP, clip.fadeIn);
-		const fadeOut = Math.max(EDGE_RAMP, clip.fadeOut);
-		const level = (t: number) => {
-			const inF = Math.min(1, (t - clip.start) / fadeIn);
-			const outF = Math.min(1, (clip.end - t) / fadeOut);
-			return clip.volume * Math.max(0, Math.min(inF, outF));
-		};
-		g.setValueAtTime(from > clip.start + fadeIn ? level(from) : 0, startAt);
-		const fadeInEnd = clip.start + fadeIn;
-		if (fadeInEnd > from) g.linearRampToValueAtTime(clip.volume, this.ctxTime(fadeInEnd));
-		const fadeOutStart = Math.max(from, clip.end - fadeOut);
-		g.setValueAtTime(level(fadeOutStart), this.ctxTime(fadeOutStart));
-		g.linearRampToValueAtTime(0, endAt);
+		scheduleClipGain(gain.gain, clip, from, (t) =>
+			Math.max(this.ctx!.currentTime, this.ctxTime(t))
+		);
 	}
 }

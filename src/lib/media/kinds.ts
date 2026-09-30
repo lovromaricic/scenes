@@ -19,9 +19,13 @@ export function extensionOf(name: string): string {
 export function guessKind(file: { name: string; type: string }): MediaKind | 'unknown' {
 	const ext = extensionOf(file.name);
 	if (UNSUPPORTED_IMAGE_EXT.includes(ext)) return 'unknown';
-	if (file.type.startsWith('video/') || VIDEO_EXT.includes(ext)) return 'video';
-	if (file.type.startsWith('image/') || IMAGE_EXT.includes(ext)) return 'photo';
-	if (file.type.startsWith('audio/') || AUDIO_EXT.includes(ext)) return 'audio';
+	// The MIME type wins when there is one: e.g. an audio-only .webm recording is audio/webm.
+	if (file.type.startsWith('video/')) return 'video';
+	if (file.type.startsWith('image/')) return 'photo';
+	if (file.type.startsWith('audio/')) return 'audio';
+	if (VIDEO_EXT.includes(ext)) return 'video';
+	if (IMAGE_EXT.includes(ext)) return 'photo';
+	if (AUDIO_EXT.includes(ext)) return 'audio';
 	return 'unknown';
 }
 

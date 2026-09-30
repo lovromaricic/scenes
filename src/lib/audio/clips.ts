@@ -1,5 +1,9 @@
-import type { Scene } from '$lib/model/types';
-import { placeScenes } from '$lib/model/timeline';
+import type { Project, Scene, SoundItem } from '$lib/model/types';
+import { placeScenes, totalDuration } from '$lib/model/timeline';
+
+/** Automatic music fades, in seconds (shortened for short songs). */
+export const MUSIC_FADE_IN = 1.5;
+export const MUSIC_FADE_OUT = 3;
 
 /** A piece of sound placed on the timeline: which part of which file, when, and how loud. */
 export interface AudioClip {
@@ -51,4 +55,56 @@ export function bufferPlacement(
 	const from = Math.max(playFrom, clip.start);
 	if (natural >= from) return { timelineStart: natural, offset: 0 };
 	return { timelineStart: from, offset: (from - natural) * clip.speed };
+}
+
+/** When a sound stops: at its own end, or at the end of the video, whichever is first. */
+export function soundEnd(sound: SoundItem, videoLength: number): number {
+	return Math.min(sound.start + sound.duration, videoLength);
+}
+
+/** Music and voiceovers as timeline audio clips. Music fades in and out when `fade` is on. */
+export function soundAudioClips(sounds: SoundItem[], videoLength: number): AudioClip[] {
+	const clips: AudioClip[] = [];
+	for (const sound of sounds) {
+		const end = soundEnd(sound, videoLength);
+		const length = end - sound.start;
+		if (length <= 0.05 || sound.volume <= 0) continue;
+		const fade = sound.fade;
+		clips.push({
+			id: sound.id,
+			mediaId: sound.mediaId,
+			start: sound.start,
+			end,
+			sourceStart: sound.sourceStart,
+			speed: 1,
+			volume: sound.volume,
+			fadeIn: fade ? Math.min(MUSIC_FADE_IN, length / 4) : 0,
+			fadeOut: fade ? Math.min(MUSIC_FADE_OUT, length / 3) : 0
+		});
+	}
+	return clips;
+}
+
+/** Every piece of sound in the project: each scene's own sound, music and voiceovers. */
+export function projectAudioClips(
+	project: Pick<Project, 'scenes' | 'sounds'>,
+	hasAudio: (mediaId: string) => boolean
+): AudioClip[] {
+	return [
+		...sceneAudioClips(project.scenes, hasAudio),
+		...soundAudioClips(project.sounds, totalDuration(project.scenes))
+	];
+}
+
+/**
+ * Loudness (0–1 multiplier) of a clip at timeline time `t`, including its fades and the short
+ * ramps at its edges. Shared by live playback and the offline mix so they sound the same.
+ */
+export function clipGainAt(clip: AudioClip, t: number, edgeRamp = 0.01): number {
+	if (t < clip.start || t > clip.end) return 0;
+	const fadeIn = Math.max(edgeRamp, clip.fadeIn);
+	const fadeOut = Math.max(edgeRamp, clip.fadeOut);
+	const inF = Math.min(1, (t - clip.start) / fadeIn);
+	const outF = Math.min(1, (clip.end - t) / fadeOut);
+	return clip.volume * Math.max(0, Math.min(inF, outF));
 }

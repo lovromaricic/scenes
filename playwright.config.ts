@@ -18,7 +18,15 @@ export default defineConfig({
 				// Real Chrome: Scenes targets it, and it has the H.264/AAC encoders export needs.
 				channel: 'chrome',
 				viewport: { width: 1440, height: 900 },
-				launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] }
+				permissions: ['microphone'],
+				launchOptions: {
+					args: [
+						'--autoplay-policy=no-user-gesture-required',
+						// A fake microphone (it beeps) for voiceover tests.
+						'--use-fake-ui-for-media-stream',
+						'--use-fake-device-for-media-stream'
+					]
+				}
 			}
 		}
 	],

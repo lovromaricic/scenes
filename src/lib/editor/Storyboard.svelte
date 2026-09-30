@@ -8,18 +8,16 @@
 	import { useEditor } from '$lib/state/context';
 	import SceneCard from './SceneCard.svelte';
 	import TransitionButton from './TransitionButton.svelte';
-	import Waveform from './Waveform.svelte';
+	import SoundLane from './SoundLane.svelte';
 	import WordsLane from './WordsLane.svelte';
 	import { stackRows } from '$lib/model/edits';
 	import { fitPxPerSec, ticks } from './scale';
 
 	interface Props {
-		/** Waveform peaks per sound id. */
-		peaks?: Record<string, number[]>;
 		onaddscene?: () => void;
 	}
 
-	let { peaks = {}, onaddscene }: Props = $props();
+	let { onaddscene }: Props = $props();
 
 	const editor = useEditor();
 
@@ -116,6 +114,21 @@
 	const WORD_ROW_H = 28;
 	const wordRows = $derived(stackRows(editor.project.texts));
 	const wordsH = $derived(Math.max(1, Math.max(0, ...wordRows) + 1) * WORD_ROW_H + 4);
+
+	const SOUND_ROW_H = 40;
+	/** Music on the first row, voiceovers stacked below it. */
+	const soundRows = $derived.by(() => {
+		const sounds = editor.project.sounds;
+		const rows: Record<string, number> = {};
+		const hasMusic = sounds.some((s) => s.kind === 'music');
+		for (const s of sounds) if (s.kind === 'music') rows[s.id] = 0;
+		const voices = sounds.filter((s) => s.kind === 'voice');
+		stackRows(voices).forEach((row, i) => (rows[voices[i].id] = row + (hasMusic ? 1 : 0)));
+		return rows;
+	});
+	const soundH = $derived(
+		Math.max(1, Math.max(0, ...Object.values(soundRows)) + 1) * SOUND_ROW_H + 4
+	);
 
 	const loadingWidth = $derived(importing * (LOADING_CARD_W + CARD_GAP));
 	const contentWidth = $derived(
@@ -283,7 +296,7 @@
 		<span class="label ruler-label"></span>
 		<span class="label scenes-label">Scenes</span>
 		<span class="label words-label" style:height="{wordsH}px">Words</span>
-		<span class="label sound-label">Sound</span>
+		<span class="label sound-label" style:height="{soundH}px">Sound</span>
 	</div>
 
 	<div class="tracks" bind:this={tracks} bind:clientWidth={trackWidth}>
@@ -390,20 +403,8 @@
 			</div>
 
 			<!-- Sound lane -->
-			<div class="row lane sound-lane" role="group" aria-label="Sound">
-				{#each editor.project.sounds as sound (sound.id)}
-					<button
-						type="button"
-						class="sound"
-						class:selected={editor.selectedId === sound.id}
-						style:left="{sound.start * pps}px"
-						style:width="{Math.max(20, sound.duration * pps - 4)}px"
-						onclick={() => editor.select(sound.id)}
-					>
-						<Waveform peaks={peaks[sound.id] ?? []} />
-						<span class="sound-name">{sound.name}</span>
-					</button>
-				{/each}
+			<div class="row lane sound-lane" role="group" aria-label="Sound" style:height="{soundH}px">
+				<SoundLane {pps} rows={soundRows} rowHeight={SOUND_ROW_H} />
 			</div>
 
 			<!-- Playhead -->
@@ -653,37 +654,7 @@
 		transition: height var(--dur) var(--ease-out);
 	}
 	.sound-lane {
-		height: var(--sound-h);
-	}
-
-	.sound {
-		position: absolute;
-		top: 4px;
-		bottom: 4px;
-		padding: 0;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		background: var(--color-bg);
-		overflow: hidden;
-		text-align: left;
-	}
-	.sound:hover {
-		border-color: var(--color-muted);
-	}
-	.sound-name {
-		position: absolute;
-		top: 3px;
-		left: 8px;
-		padding: 0 4px;
-		border-radius: 4px;
-		background: var(--color-bg);
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-	}
-
-	.sound.selected {
-		border-color: var(--color-accent);
-		box-shadow: 0 0 0 1px var(--color-accent);
+		transition: height var(--dur) var(--ease-out);
 	}
 
 	.playhead {
