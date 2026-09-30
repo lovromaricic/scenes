@@ -448,6 +448,54 @@ npm run check        # svelte-check (TypeScript strict)
   snap. Snapping now compares distances. And restoring a project would have dropped cards, because
   scenes whose file is missing are left out and a card has no file.
 
+## Text colour, size and fonts
+
+- **Styles are starting points.** The six styles are data in `src/lib/model/textStyle.ts`
+  (base font, fill, box/band and outline as colour + opacity). A text item can override colours
+  (`colors.fill`, `colors.box` — the box for Bold box or the band for Highlighter — and
+  `colors.outline` colour + thickness), `size` and `font`. `resolveTextStyle()` merges them; the
+  canvas renderer, the CSS used while typing, and the style tiles all read the resolved style.
+  Picking a style resets the colour overrides to that style's own (font and size are kept);
+  "Reset colors" does the same without changing the style.
+- **Opacity:** translucent text is drawn opaque into its own layer (letters + outline) and then
+  placed with the fill's opacity, so the outline doesn't show through half-transparent letters.
+- **Size:** a slider and a number field in project pixels (12–400). Stored as a fraction of the
+  frame's short side, so it keeps its look when the format changes.
+- **Built-in fonts:** ten SIL Open Font License families bundled as Latin-subset woff2 files in
+  `static/fonts` (716 KB total, fetched from their Fontsource npm packages by
+  `scripts/fetch-fonts.sh`, licences alongside): Geist, Instrument Serif, Oswald (bold condensed),
+  Nunito (rounded), Lora (classic serif), Playfair Display, Space Grotesk, JetBrains Mono, Caveat
+  (handwritten), Anton (poster). Nothing is loaded from the internet at runtime for video text.
+  (The interface's own fonts still come from Google Fonts, as in the original brief.)
+- **Fonts are loaded with the FontFace API** under private names (`sv-<id>`, `sv-face-<id>`), so
+  they can't clash with the interface's fonts. `src/lib/render/fonts.ts` loads each face once and
+  tracks its status. Drawing never waits: until a font is ready the words use Geist, and the
+  sprite cache key includes the font actually in use, so they redraw when it arrives. The player
+  starts loading every font a project uses whenever the project changes; export awaits all of them
+  before the first frame.
+- **On this computer** (Chrome/Edge): "Show fonts on this computer" calls `queryLocalFonts()`
+  (permission prompt) and lists installed families. Choosing one copies that face's file (via
+  `FontData.blob()`) into IndexedDB (`fonts` store, schema v3), so the project renders the same
+  after a reload without asking again. Elsewhere the section explains the browser can't list
+  fonts. The Local Font Access permission prompt can't be automated, so this path was tested
+  manually; the stored-font path it relies on is the same as for uploads (tested).
+- **Uploaded fonts** (.ttf, .otf, .woff2, any browser): stored in IndexedDB. For TTF/OTF the
+  family, weight and italic are read from the font's `name` and `OS/2` tables
+  (`src/lib/media/fontFile.ts`); WOFF2 is Brotli-compressed, so its style is guessed from the file
+  name ("MyFont-BoldItalic.woff2"). Files that don't load as fonts are rejected with a message.
+- **Weights and styles** of the chosen family show as chips (Regular, Bold, Italic, Bold Italic…).
+  **Recently used** fonts (up to 6, kept in `localStorage`) head the picker. The picker is
+  searchable, shows every name in its own font, and always fits in the window.
+- **Missing fonts** (e.g. storage cleared): Geist is used at the requested weight, the words show
+  a "Font missing" badge on the preview, and the settings say so with "Pick another font".
+- **Fixed on the way:** changing a colour on words (or a card's background) that already had an
+  override silently failed, because `structuredClone` can't copy Svelte's reactive proxies; the
+  store now copies with `$state.snapshot`.
+- Tests (`e2e/text-style.test.ts`): built-in font + weights/italic + search + recent + undo; text,
+  box and outline colours with hex and opacity measured in pixels; reset; size; an uploaded TTF
+  (Pacifico, OFL, fixture) that survives a reload; a deleted font falling back with the warning;
+  and the saved MP4's text pixels matching the preview's with Anton and custom colours.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
@@ -459,6 +507,8 @@ npm run check        # svelte-check (TypeScript strict)
   zoomed far in.
 - Crop ideas: rotate/straighten, crop presets remembered per clip, keyboard resizing of the crop box.
 - Card ideas: gradients, several shapes, images on cards, saving a card as a reusable style.
+- Font ideas: letter spacing and line height controls, text alignment, per-word colours, more
+  subsets (Cyrillic/Greek) for the built-in fonts, cleaning up stored fonts nobody uses.
 - Only one project exists at a time (no project list). Ideas: a small "Your videos" page.
 - Undo history isn't persisted across reloads.
 

@@ -15,6 +15,7 @@
 	import { isTextVisible } from '$lib/model/textAnimation';
 	import type { TextAnimation, TextItem } from '$lib/model/types';
 	import { layoutText } from '$lib/render/text';
+	import { resolveTextStyle } from '$lib/model/textStyle';
 	import { textCss } from '$lib/render/textCss';
 	import { useEditor } from '$lib/state/context';
 	import TextStylePicker from './TextStylePicker.svelte';
@@ -39,6 +40,8 @@
 	);
 
 	function box(item: TextItem) {
+		// Re-measure when a font finishes loading (it changes the words' size).
+		void editor.fonts.version;
 		const l = layoutText(item, width, height);
 		return {
 			left: l.cx - l.width / 2,
@@ -255,7 +258,7 @@
 					aria-label="Type the words on the video"
 					tabindex="0"
 					spellcheck="true"
-					style={textCss(item.style, b.layout.fontSize)}
+					style={textCss(item, b.layout.fontSize)}
 					onkeydown={onEditorKeydown}
 					onblur={() => commit(true)}
 				>
@@ -279,6 +282,16 @@
 				></button>
 			{/if}
 
+			{#if editor.fonts.status(resolveTextStyle(item).font) === 'failed' && !isEditing}
+				<button
+					type="button"
+					class="font-missing"
+					title="This font couldn’t be loaded, so Geist is used. Pick another in the settings."
+					onclick={() => editor.select(item.id)}
+				>
+					Font missing
+				</button>
+			{/if}
 			{#if isSelected && !isEditing && !drag && selected}
 				<div class="toolbar-anchor" class:below={b.top < 64}>
 					<FloatingToolbar label="Text options" actions={actions(selected)} />
@@ -394,6 +407,20 @@
 		margin-bottom: var(--space-2);
 		font-size: var(--text-sm);
 		color: var(--color-muted);
+	}
+	/* Below the words, so it never collides with the floating toolbar above them. */
+	.font-missing {
+		position: absolute;
+		left: 0;
+		top: calc(100% + 6px);
+		z-index: 4;
+		padding: 2px 8px;
+		border: none;
+		border-radius: var(--radius-pill);
+		background: var(--color-ink);
+		color: var(--color-on-ink);
+		font-size: var(--text-xs);
+		white-space: nowrap;
 	}
 	.guide {
 		position: absolute;

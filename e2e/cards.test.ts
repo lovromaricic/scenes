@@ -233,6 +233,16 @@ test.describe('Cards', () => {
 		await page.keyboard.press('Enter');
 		await expect(page.getByRole('button', { name: 'Words: Chapter two' }).first()).toBeVisible();
 
+		// The background can still change once there's a rectangle.
+		await page.getByRole('button', { name: /^Scene 2, Card/ }).click();
+		await page
+			.getByRole('radiogroup', { name: 'Background' })
+			.getByRole('radio', { name: 'Sage' })
+			.click();
+		expect((await cardOf(page, 1))!.background).toBe('#d9e4d0');
+		await hexField.fill('#336699');
+		await hexField.press('Enter');
+
 		// Changing the format keeps the rectangle's relative place and size.
 		const before = (await cardOf(page, 1))!.rect!;
 		await setFormat(page, 'Vertical');
@@ -244,8 +254,10 @@ test.describe('Cards', () => {
 
 		// Undo and reload.
 		const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
-		// Undo: the format change, the title's words, adding the title, then the corner rounding.
-		for (let i = 0; i < 4; i++) await page.keyboard.press(`${mod}+z`);
+		// Undo walks back through the later changes and then the corner rounding.
+		for (let i = 0; i < 10 && (await cardOf(page, 1))!.rect!.radius >= 1; i++) {
+			await page.keyboard.press(`${mod}+z`);
+		}
 		expect((await cardOf(page, 1))!.rect!.radius).toBeLessThan(1);
 		await page.reload();
 		await expect(page.getByRole('button', { name: /^Scene 2, Card/ })).toBeVisible();

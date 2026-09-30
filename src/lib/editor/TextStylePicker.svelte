@@ -58,8 +58,11 @@
 			onclick={() => onchange(style.id)}
 		>
 			<span class="sample">
-				<span style={textCss(style.id, style.id === 'title' ? 26 : style.id === 'serif' ? 20 : 15)}
-					>Aa</span
+				<span
+					style={textCss(
+						{ style: style.id },
+						style.id === 'title' ? 26 : style.id === 'serif' ? 20 : 15
+					)}>Aa</span
 				>
 			</span>
 			<span class="name">{style.label}</span>

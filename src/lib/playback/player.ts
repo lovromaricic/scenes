@@ -20,6 +20,8 @@ import {
 	type TextDraw
 } from '$lib/render/compositor';
 import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
+import { ensureFonts, onFontsChange } from '$lib/render/fonts';
+import { resolveTextStyle } from '$lib/model/textStyle';
 import { layerInput, textDrawsAt } from '$lib/render/frame';
 import { CardCache } from '$lib/render/card';
 import { sourceTimeAt } from './time';
@@ -88,6 +90,8 @@ export class Player {
 	/** While trimming, show this scene's frame at this source time instead of the playhead's. */
 	private peekTarget: { sceneId: string; sourceTime: number } | null = null;
 
+	private readonly stopFontWatch = onFontsChange(() => (this.dirty = true));
+
 	on(events: PlayerEvents): void {
 		this.events = events;
 	}
@@ -153,6 +157,8 @@ export class Player {
 		const oldAudioKey = this.audioKey();
 		this.scenes = project.scenes;
 		this.texts = project.texts;
+		// Start loading the fonts the words use; the text redraws as each one arrives.
+		void ensureFonts(project.texts.map((t) => resolveTextStyle(t).font));
 		this.sounds = project.sounds;
 		this.placed = placeScenes(project.scenes);
 		this.duration = this.placed.at(-1)?.end ?? 0;

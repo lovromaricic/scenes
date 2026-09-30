@@ -8,6 +8,7 @@ import type { ProjectFormat } from './format';
 import type { SceneFrame } from './framing';
 import type { Crop } from './crop';
 import type { CardContent } from './card';
+import type { TextColors, TextFont } from './textStyle';
 
 /** Shapes offered by the design-page demo switch. Projects use `ProjectFormat`. */
 export type AspectRatio = '16:9' | '9:16' | '1:1';
@@ -63,6 +64,11 @@ export interface TextItem {
 	y: number;
 	style: TextStyleId;
 	animation: TextAnimation;
+	/** Overrides on top of the style (missing = the style's own). */
+	font?: TextFont;
+	/** Font size as a fraction of the frame's short side. */
+	size?: number;
+	colors?: TextColors;
 }
 
 export interface SoundItem {

@@ -20,7 +20,9 @@ import type { Project, Scene } from '$lib/model/types';
 import { Compositor, type CompositeFrame } from '$lib/render/compositor';
 import { layerInput, textDrawsAt } from '$lib/render/frame';
 import { CardCache } from '$lib/render/card';
-import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
+import { TextSpriteCache } from '$lib/render/text';
+import { ensureFonts } from '$lib/render/fonts';
+import { resolveTextStyle } from '$lib/model/textStyle';
 import { exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
 import { PhotoExportReader, VideoExportReader, type ExportFrameReader } from './reader';
 
@@ -155,7 +157,8 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	const started = performance.now();
 	const elapsed = () => (performance.now() - started) / 1000;
 
-	await loadTextFonts();
+	// Every font the words use must be ready before the first frame.
+	await ensureFonts(project.texts.map((t) => resolveTextStyle(t).font));
 	const { target, finish, discard } = await openTarget(format.container);
 	const output = new Output({
 		format:

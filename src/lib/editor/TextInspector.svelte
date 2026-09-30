@@ -7,6 +7,9 @@
 	import type { TextAnimation, TextItem } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
 	import TextStylePicker from './TextStylePicker.svelte';
+	import FontPicker from './FontPicker.svelte';
+	import TextSizeField from './TextSizeField.svelte';
+	import TextColorSettings from './TextColorSettings.svelte';
 
 	let { item }: { item: TextItem } = $props();
 
@@ -43,6 +46,14 @@
 	<Field label="Style">
 		<TextStylePicker value={item.style} onchange={(s) => editor.setTextStyle(item.id, s)} />
 	</Field>
+
+	<Field label="Font">
+		<FontPicker {item} />
+	</Field>
+
+	<TextSizeField {item} />
+
+	<TextColorSettings {item} />
 
 	<Field label="Animation">
 		<ChipGroup

@@ -4,15 +4,21 @@
 -->
 <script lang="ts">
 	import { CARD_COLORS, normalizeHex } from '$lib/model/card';
+	import { Slider } from '$lib/ui';
 
 	interface Props {
 		label: string;
 		value: string;
 		/** `key` merges quick repeats (dragging in the colour picker) into one undo step. */
 		onchange: (hex: string, key?: string) => void;
+		/** Swatches to offer (default: the card colours). */
+		palette?: { value: string; label: string }[];
+		/** When given, an opacity slider (0–1) is shown too. */
+		opacity?: number;
+		onopacity?: (opacity: number, key?: string) => void;
 	}
 
-	let { label, value, onchange }: Props = $props();
+	let { label, value, onchange, palette = CARD_COLORS, opacity, onopacity }: Props = $props();
 
 	// Follows the value, but can be typed into until it's committed.
 	let hex = $derived(value);
@@ -31,11 +37,10 @@
 		event.preventDefault();
 		const i = Math.max(
 			0,
-			CARD_COLORS.findIndex((c) => c.value === current)
+			palette.findIndex((c) => c.value === current)
 		);
-		const next =
-			(i + (event.key === 'ArrowRight' ? 1 : -1) + CARD_COLORS.length) % CARD_COLORS.length;
-		onchange(CARD_COLORS[next].value);
+		const next = (i + (event.key === 'ArrowRight' ? 1 : -1) + palette.length) % palette.length;
+		onchange(palette[next].value);
 		group.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
 	}
 </script>
@@ -49,7 +54,7 @@
 		tabindex="-1"
 		{onkeydown}
 	>
-		{#each CARD_COLORS as c, i (c.value)}
+		{#each palette as c, i (c.value)}
 			{@const checked = c.value === current}
 			<button
 				type="button"
@@ -57,7 +62,7 @@
 				aria-checked={checked}
 				aria-label={c.label}
 				title={c.label}
-				tabindex={checked || (i === 0 && !CARD_COLORS.some((x) => x.value === current)) ? 0 : -1}
+				tabindex={checked || (i === 0 && !palette.some((x) => x.value === current)) ? 0 : -1}
 				class="swatch"
 				class:checked
 				style:background={c.value}
@@ -83,6 +88,13 @@
 			onkeydown={(e) => e.key === 'Enter' && commitHex()}
 		/>
 	</div>
+	{#if opacity !== undefined && onopacity}
+		<Slider
+			label="{label}: opacity"
+			value={opacity}
+			oninput={(v) => onopacity(v, `opacity:${label}`)}
+		/>
+	{/if}
 </div>
 
 <style>

@@ -1,4 +1,6 @@
-import type { TextItem, TextStyleId } from '$lib/model/types';
+import type { TextItem } from '$lib/model/types';
+import { paintCss, resolveTextStyle } from '$lib/model/textStyle';
+import { ensureFallback, fontString } from './fonts';
 
 /**
  * Draws text items into canvas "sprites" that the WebGL compositor places on the video.
@@ -9,113 +11,17 @@ import type { TextItem, TextStyleId } from '$lib/model/types';
  * and at every output resolution.
  */
 
-interface StyleSpec {
-	family: 'sans' | 'serif';
-	weight: number;
-	italic: boolean;
-	/** Font size as a fraction of the frame's short side. */
-	size: number;
-	lineHeight: number;
-	uppercase?: boolean;
-	letterSpacing?: number;
-	fill: string;
-	/** Outline around the letters, width as a fraction of the font size. */
-	stroke?: { color: string; width: number };
-	/** A box behind the text. */
-	box?: { color: string; padX: number; padY: number; radius: number };
-	/** A highlighter band behind each line. */
-	band?: { color: string; padX: number };
-	shadow?: { color: string; blur: number; offsetY: number };
+/** The canvas/CSS font for a text item at `px` pixels (falls back to Geist until loaded). */
+export function fontFor(item: TextStyleInput, px: number): string {
+	return fontString(resolveTextStyle(item).font, px);
 }
 
-// These colours are part of the rendered video (content), not the interface palette.
-const WHITE = '#ffffff';
-const INK = '#141417';
-const HIGHLIGHTER = '#ffe14d';
-const SOFT_SHADOW = { color: 'rgba(0,0,0,0.45)', blur: 0.25, offsetY: 0.04 };
-
-export const TEXT_STYLE_SPECS: Record<TextStyleId, StyleSpec> = {
-	clean: {
-		family: 'sans',
-		weight: 600,
-		italic: false,
-		size: 0.062,
-		lineHeight: 1.18,
-		fill: WHITE,
-		shadow: SOFT_SHADOW
-	},
-	boxed: {
-		family: 'sans',
-		weight: 600,
-		italic: false,
-		size: 0.056,
-		lineHeight: 1.22,
-		fill: WHITE,
-		box: { color: 'rgba(20,20,23,0.88)', padX: 0.5, padY: 0.28, radius: 0.22 }
-	},
-	serif: {
-		family: 'serif',
-		weight: 400,
-		italic: true,
-		size: 0.085,
-		lineHeight: 1.08,
-		fill: WHITE,
-		shadow: SOFT_SHADOW
-	},
-	outline: {
-		family: 'sans',
-		weight: 600,
-		italic: false,
-		size: 0.068,
-		lineHeight: 1.12,
-		uppercase: true,
-		letterSpacing: 0.02,
-		fill: WHITE,
-		stroke: { color: INK, width: 0.16 }
-	},
-	highlight: {
-		family: 'sans',
-		weight: 600,
-		italic: false,
-		size: 0.058,
-		lineHeight: 1.3,
-		fill: INK,
-		band: { color: HIGHLIGHTER, padX: 0.28 }
-	},
-	title: {
-		family: 'serif',
-		weight: 400,
-		italic: true,
-		size: 0.15,
-		lineHeight: 1.0,
-		fill: WHITE,
-		shadow: SOFT_SHADOW
-	}
-};
-
-const FAMILIES = {
-	sans: '"Geist", ui-sans-serif, system-ui, sans-serif',
-	serif: '"Instrument Serif", Georgia, serif'
-};
-
-export function fontFor(style: TextStyleId, px: number): string {
-	const s = TEXT_STYLE_SPECS[style];
-	return `${s.italic ? 'italic ' : ''}${s.weight} ${px}px ${FAMILIES[s.family]}`;
-}
-
-/** Wait until the fonts used on video are ready, so canvases don't draw with fallbacks. */
-let fontsReady: Promise<void> | null = null;
+/** Load the default fonts used on video. */
 export function loadTextFonts(): Promise<void> {
-	if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
-	fontsReady ??= Promise.all(
-		(Object.keys(TEXT_STYLE_SPECS) as TextStyleId[]).map((id) =>
-			document.fonts.load(fontFor(id, 40), 'Aa')
-		)
-	)
-		.then(() => undefined)
-		.catch(() => undefined);
-	return fontsReady;
+	return ensureFallback();
 }
+
+type TextStyleInput = Pick<TextItem, 'style' | 'font' | 'size' | 'colors'>;
 
 export interface TextLayout {
 	lines: string[];
@@ -137,9 +43,9 @@ function measurer(): OffscreenCanvasRenderingContext2D {
 	return measureCtx;
 }
 
-function displayText(item: Pick<TextItem, 'text' | 'style'>): string {
+function displayText(item: Pick<TextItem, 'text'>, uppercase: boolean | undefined): string {
 	const text = item.text.trim() ? item.text : ' ';
-	return TEXT_STYLE_SPECS[item.style].uppercase ? text.toUpperCase() : text;
+	return uppercase ? text.toUpperCase() : text;
 }
 
 function wrap(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: number): string[] {
@@ -164,19 +70,17 @@ function wrap(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: nu
 	return lines;
 }
 
+type LayoutInput = Pick<TextItem, 'text' | 'style' | 'x' | 'y' | 'font' | 'size' | 'colors'>;
+
 /** Where and how big a text item is in a frame of the given size. */
-export function layoutText(
-	item: Pick<TextItem, 'text' | 'style' | 'x' | 'y'>,
-	frameW: number,
-	frameH: number
-): TextLayout {
-	const spec = TEXT_STYLE_SPECS[item.style];
+export function layoutText(item: LayoutInput, frameW: number, frameH: number): TextLayout {
+	const spec = resolveTextStyle(item);
 	const short = Math.min(frameW, frameH);
 	const fontSize = spec.size * short;
 	const ctx = measurer();
-	ctx.font = fontFor(item.style, fontSize);
+	ctx.font = fontString(spec.font, fontSize);
 	ctx.letterSpacing = `${(spec.letterSpacing ?? 0) * fontSize}px`;
-	const lines = wrap(ctx, displayText(item), frameW * 0.84);
+	const lines = wrap(ctx, displayText(item, spec.uppercase), frameW * 0.84);
 	const textWidth = Math.max(...lines.map((l) => ctx.measureText(l).width), fontSize * 0.5);
 	const lineHeight = fontSize * spec.lineHeight;
 	const padX = (spec.box?.padX ?? spec.band?.padX ?? 0) * fontSize;
@@ -205,14 +109,14 @@ export interface TextSprite {
 /** Draw a text item into its own transparent canvas (box + bleed), ready to upload to the GPU. */
 export function drawTextSprite(item: TextItem, frameW: number, frameH: number): TextSprite {
 	const layout = layoutText(item, frameW, frameH);
-	const spec = TEXT_STYLE_SPECS[item.style];
+	const spec = resolveTextStyle(item);
 	const { fontSize, lineHeight, bleed } = layout;
 	const canvas = new OffscreenCanvas(
 		Math.max(1, Math.ceil(layout.width + bleed * 2)),
 		Math.max(1, Math.ceil(layout.height + bleed * 2))
 	);
 	const ctx = canvas.getContext('2d')!;
-	ctx.font = fontFor(item.style, fontSize);
+	ctx.font = fontString(spec.font, fontSize);
 	ctx.letterSpacing = `${(spec.letterSpacing ?? 0) * fontSize}px`;
 	ctx.textAlign = 'center';
 	ctx.textBaseline = 'middle';
@@ -222,47 +126,69 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
 	const top = bleed + padY;
 
 	if (spec.box) {
-		ctx.fillStyle = spec.box.color;
+		ctx.fillStyle = paintCss(spec.box);
 		ctx.beginPath();
 		ctx.roundRect(bleed, bleed, layout.width, layout.height, spec.box.radius * fontSize);
 		ctx.fill();
+	}
+
+	// Translucent text: draw the letters (and outline) fully opaque into a layer, then place the
+	// layer with the fill's opacity, so the outline doesn't show through the letters.
+	const fillOpacity = Math.max(0, Math.min(1, spec.fill.opacity));
+	const letters = fillOpacity < 1 ? new OffscreenCanvas(canvas.width, canvas.height) : canvas;
+	const lctx = letters === canvas ? ctx : letters.getContext('2d')!;
+	if (lctx !== ctx) {
+		lctx.font = ctx.font;
+		lctx.letterSpacing = ctx.letterSpacing;
+		lctx.textAlign = 'center';
+		lctx.textBaseline = 'middle';
 	}
 
 	layout.lines.forEach((line, i) => {
 		const y = top + lineHeight * (i + 0.5);
 		if (spec.band && line) {
 			const w = ctx.measureText(line).width + spec.band.padX * 2 * fontSize;
-			ctx.fillStyle = spec.band.color;
+			ctx.fillStyle = paintCss(spec.band);
 			ctx.beginPath();
 			ctx.roundRect(centerX - w / 2, y - lineHeight * 0.44, w, lineHeight * 0.88, fontSize * 0.12);
 			ctx.fill();
 		}
 		if (spec.shadow) {
-			ctx.shadowColor = spec.shadow.color;
-			ctx.shadowBlur = spec.shadow.blur * fontSize;
-			ctx.shadowOffsetY = spec.shadow.offsetY * fontSize;
+			lctx.shadowColor = spec.shadow.color;
+			lctx.shadowBlur = spec.shadow.blur * fontSize;
+			lctx.shadowOffsetY = spec.shadow.offsetY * fontSize;
 		}
-		if (spec.stroke) {
-			ctx.lineJoin = 'round';
-			ctx.lineWidth = spec.stroke.width * fontSize;
-			ctx.strokeStyle = spec.stroke.color;
-			ctx.strokeText(line, centerX, y);
+		if (spec.stroke && spec.stroke.width > 0) {
+			lctx.lineJoin = 'round';
+			lctx.lineWidth = spec.stroke.width * fontSize;
+			lctx.strokeStyle = spec.stroke.color;
+			lctx.strokeText(line, centerX, y);
 		}
-		ctx.fillStyle = spec.fill;
-		ctx.fillText(line, centerX, y);
-		ctx.shadowColor = 'transparent';
+		lctx.fillStyle = paintCss({ ...spec.fill, opacity: letters === canvas ? fillOpacity : 1 });
+		lctx.fillText(line, centerX, y);
+		lctx.shadowColor = 'transparent';
 	});
+
+	if (letters !== canvas) {
+		ctx.globalAlpha = fillOpacity;
+		ctx.drawImage(letters, 0, 0);
+		ctx.globalAlpha = 1;
+	}
 
 	return { canvas, layout };
 }
 
-/** Caches sprites so a text is only redrawn when its words, style or the frame size change. */
+/**
+ * Caches sprites so a text is only redrawn when it changes: its words, style, colours, size, the
+ * frame size, or the font actually in use (so it redraws once a font finishes loading).
+ */
 export class TextSpriteCache {
 	private sprites = new Map<string, { sprite: TextSprite; used: number }>();
 	private frame = 0;
 
 	get(item: TextItem, frameW: number, frameH: number): { key: string; sprite: TextSprite } {
-		const key = `${item.id}|${item.style}|${frameW}x${frameH}|${item.text}`;
+		const spec = resolveTextStyle(item);
+		const key = `${item.id}|${frameW}x${frameH}|${item.text}|${JSON.stringify(spec)}|${fontString(spec.font, 10)}`;
 		let entry = this.sprites.get(key);
 		if (!entry) {
 			entry = { sprite: drawTextSprite(item, frameW, frameH), used: this.frame };

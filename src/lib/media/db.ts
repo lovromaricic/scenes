@@ -47,10 +47,24 @@ interface ScenesDB extends DBSchema {
 	thumbnails: { key: string; value: { id: string; blob: Blob } };
 	projects: { key: string; value: ProjectRecord; indexes: { updatedAt: number } };
 	waveforms: { key: string; value: { id: string; peaks: Float32Array; perSecond: number } };
+	fonts: { key: string; value: FontFaceRecord };
+}
+
+/** A font face from this computer or an uploaded file, kept so projects render after a reload. */
+export interface FontFaceRecord {
+	id: string;
+	family: string;
+	source: 'local' | 'upload';
+	weight: number;
+	italic: boolean;
+	/** For local fonts: the PostScript name, to avoid storing the same face twice. */
+	postscriptName?: string;
+	blob: Blob;
+	createdAt: number;
 }
 
 const DB_NAME = 'scenes';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase<ScenesDB>> | null = null;
 
@@ -65,6 +79,9 @@ export function db(): Promise<IDBPDatabase<ScenesDB>> {
 			}
 			if (oldVersion < 2) {
 				database.createObjectStore('waveforms', { keyPath: 'id' });
+			}
+			if (oldVersion < 3) {
+				database.createObjectStore('fonts', { keyPath: 'id' });
 			}
 		}
 	});
@@ -155,4 +172,21 @@ export async function deleteUnusedMedia(): Promise<number> {
 	const unused = ids.filter((id) => !used.has(id));
 	for (const id of unused) await deleteMedia(id);
 	return unused.length;
+}
+
+export async function putFontFace(record: FontFaceRecord): Promise<void> {
+	await (await db()).put('fonts', record);
+}
+
+export async function getFontFace(id: string): Promise<FontFaceRecord | undefined> {
+	return (await db()).get('fonts', id);
+}
+
+export async function listFontFaces(): Promise<Omit<FontFaceRecord, 'blob'>[]> {
+	const all = await (await db()).getAll('fonts');
+	return all.map(({ blob: _blob, ...rest }) => rest);
+}
+
+export async function deleteFontFace(id: string): Promise<void> {
+	await (await db()).delete('fonts', id);
 }

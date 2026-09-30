@@ -37,6 +37,8 @@ import { TRANSITION_SECONDS } from '$lib/model/composition';
 import { formatFromClip, legacyFormat, type ProjectFormat } from '$lib/model/format';
 import { DEFAULT_FRAME, type SceneFrame } from '$lib/model/framing';
 import type { CardContent } from '$lib/model/card';
+import type { TextColors, TextFont } from '$lib/model/textStyle';
+import { FontLibrary } from './fonts.svelte';
 import {
 	clampCrop,
 	cropRatioValue,
@@ -109,6 +111,8 @@ export class EditorStore {
 	} | null>(null);
 
 	readonly player = new Player();
+	/** Fonts: built in, on this computer, uploaded, recent. */
+	readonly fonts = new FontLibrary();
 	private readonly history = new History<Project>();
 	private readonly autosaver = new Autosaver((s) => (this.saveStatus = s));
 	/** Snapshot taken when a drag gesture starts, recorded as one undo step when it ends. */
@@ -138,6 +142,7 @@ export class EditorStore {
 	}
 
 	private async restoreSaved(): Promise<void> {
+		void this.fonts.init();
 		try {
 			let record = await loadLatestProject();
 			// A copy written while the page was closing may be newer than the last database save.
@@ -570,7 +575,9 @@ export class EditorStore {
 
 	/** Change what a card shows. `key` merges quick repeats (typing, sliders). */
 	setCard(id: string, card: CardContent, key?: string): void {
-		this.updateScene('Card', id, (s) => ({ ...s, card: structuredClone(card) }), key);
+		// $state.snapshot, not structuredClone: the card may contain reactive proxies.
+		const copy = $state.snapshot(card) as CardContent;
+		this.updateScene('Card', id, (s) => ({ ...s, card: copy }), key);
 	}
 
 	/** A copy of a scene right after it. */
@@ -916,8 +923,26 @@ export class EditorStore {
 			this.updateText('Edit words', id, (t) => ({ ...t, text: clean }), key);
 	}
 
+	/** A style is a starting point: picking one applies its own colours (font and size stay). */
 	setTextStyle(id: string, style: TextStyleId): void {
-		this.updateText('Text style', id, (t) => ({ ...t, style }));
+		this.updateText('Text style', id, (t) => ({ ...t, style, colors: undefined }));
+	}
+
+	/** Override some of the style's colours (`undefined` = back to the style's own). */
+	setTextColors(id: string, colors: TextColors | undefined, key?: string): void {
+		// $state.snapshot, not structuredClone: the colours may contain reactive proxies.
+		const copy = colors ? ($state.snapshot(colors) as TextColors) : undefined;
+		this.updateText('Text colour', id, (t) => ({ ...t, colors: copy }), key);
+	}
+
+	/** Font size as a fraction of the frame's short side (`undefined` = the style's own). */
+	setTextSize(id: string, size: number | undefined, key?: string): void {
+		this.updateText('Text size', id, (t) => ({ ...t, size }), key);
+	}
+
+	setTextFont(id: string, font: TextFont | undefined): void {
+		this.updateText('Font', id, (t) => ({ ...t, font: font ? { ...font } : undefined }));
+		if (font) this.fonts.addRecent(font);
 	}
 
 	setTextAnimation(id: string, animation: TextAnimation): void {
