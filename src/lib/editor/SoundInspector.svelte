@@ -1,8 +1,14 @@
+<!--
+	@component
+	Settings for the selected sound clip (music or a voiceover): when it starts, how long it plays,
+	volume, fade in and out, and Split here / Remove.
+-->
 <script lang="ts">
+	import Scissors from '@lucide/svelte/icons/scissors';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { Button, Field, PillStepper, Slider, Switch } from '$lib/ui';
-	import { MUSIC_FADE_IN, MUSIC_FADE_OUT, soundEnd } from '$lib/audio/clips';
-	import { formatClock, formatSeconds } from '$lib/model/time';
+	import { Button, Field, PillStepper, Slider } from '$lib/ui';
+	import { MAX_FADE, MIN_SOUND, soundEnd } from '$lib/model/sound';
+	import { formatClock } from '$lib/model/time';
 	import type { SoundItem } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
 
@@ -10,23 +16,54 @@
 
 	const editor = useEditor();
 
-	const info = $derived(editor.media[sound.mediaId]);
 	const isMusic = $derived(sound.kind === 'music');
-	const offset = $derived(info ? sound.sourceStart - info.startTime : 0);
+	const bounds = $derived(editor.soundBounds(sound));
 	const plays = $derived(Math.max(0, soundEnd(sound, editor.duration) - sound.start));
+	const playheadInside = $derived(
+		editor.time > sound.start + MIN_SOUND && editor.time < sound.start + sound.duration - MIN_SOUND
+	);
+	const fadeLabel = (v: number) => (v === 0 ? 'None' : `${v.toFixed(1)} s`);
 </script>
 
 <div class="head">
 	<h2 class="serif title">{isMusic ? 'Music' : 'Voiceover'}</h2>
 	<p class="subtitle">
 		{sound.name} · plays for <span class="mono">{formatClock(plays)}</span>
-		{#if isMusic && info && sound.duration < editor.duration - sound.start}
-			<br />The song is shorter than your video, so the end is quiet.
+		{#if sound.start + sound.duration > editor.duration + 0.05}
+			<br />It stops when the video ends.
 		{/if}
 	</p>
 </div>
 
 <div class="fields">
+	<Field label="Starts at">
+		<PillStepper
+			label="Sound starts at"
+			decreaseLabel="Earlier"
+			increaseLabel="Later"
+			value={Math.round(sound.start * 10) / 10}
+			min={0}
+			max={Math.max(0, editor.duration - MIN_SOUND)}
+			step={0.5}
+			format={(v) => formatClock(v)}
+			onchange={(v) =>
+				editor.setSoundTiming(sound.id, { start: v, sourceStart: sound.sourceStart, duration: sound.duration }, undefined, 'Move sound')}
+		/>
+	</Field>
+	<Field label="Length">
+		<PillStepper
+			label="Sound length"
+			decreaseLabel="Shorter"
+			increaseLabel="Longer"
+			value={Math.round(sound.duration * 10) / 10}
+			min={MIN_SOUND}
+			max={bounds.end - sound.sourceStart}
+			step={0.5}
+			format={(v) => formatClock(v)}
+			onchange={(v) =>
+				editor.setSoundTiming(sound.id, { start: sound.start, sourceStart: sound.sourceStart, duration: v }, undefined, 'Trim sound')}
+		/>
+	</Field>
 	<Field label="Volume">
 		<Slider
 			label="{isMusic ? 'Music' : 'Voiceover'} volume"
@@ -34,39 +71,40 @@
 			oninput={(v) => editor.setSoundVolume(sound.id, v)}
 		/>
 	</Field>
-
-	{#if isMusic}
-		<Switch
-			label="Fade in and out"
-			hint="Eases the music in at the start and out at the end"
-			checked={sound.fade}
-			onchange={(on) => editor.setSoundFade(sound.id, on)}
+	<Field label="Fade in">
+		<Slider
+			label="Fade in"
+			value={sound.fadeIn}
+			min={0}
+			max={MAX_FADE}
+			step={0.1}
+			format={fadeLabel}
+			oninput={(v) => editor.setSoundFades(sound.id, v, sound.fadeOut, `fade-in:${sound.id}`)}
 		/>
-		{#if info}
-			<Field label="Start the song at">
-				<PillStepper
-					label="Song start"
-					decreaseLabel="Earlier in the song"
-					increaseLabel="Later in the song"
-					value={Math.round(offset * 2) / 2}
-					min={0}
-					max={Math.max(0, Math.floor(info.duration - info.startTime - 1))}
-					step={0.5}
-					format={formatSeconds}
-					onchange={(v) => editor.setMusicOffset(sound.id, v)}
-				/>
-			</Field>
-		{/if}
-		<p class="note">
-			Music fades over {MUSIC_FADE_IN}s at the start and {MUSIC_FADE_OUT}s at the end. It stops when
-			the video ends.
-		</p>
-	{:else}
-		<p class="note">Drag it in the Sound lane to change when it plays.</p>
-	{/if}
+	</Field>
+	<Field label="Fade out">
+		<Slider
+			label="Fade out"
+			value={sound.fadeOut}
+			min={0}
+			max={MAX_FADE}
+			step={0.1}
+			format={fadeLabel}
+			oninput={(v) => editor.setSoundFades(sound.id, sound.fadeIn, v, `fade-out:${sound.id}`)}
+		/>
+	</Field>
+	<p class="note">Drag the ends in the Sound lane to trim it, and the dots at its top corners to set the fades.</p>
 </div>
 
 <div class="actions">
+	<Button
+		variant="soft"
+		size="sm"
+		icon={Scissors}
+		disabled={!playheadInside}
+		title="Split at the playhead (S)"
+		onclick={() => editor.splitSoundAtPlayhead(sound.id)}>Split here</Button
+	>
 	<Button variant="ghost" size="sm" icon={Trash2} onclick={() => editor.deleteSound(sound.id)}>
 		Remove
 	</Button>

@@ -42,7 +42,8 @@ type Sound = {
 	start: number;
 	duration: number;
 	volume: number;
-	fade: boolean;
+	fadeIn: number;
+	fadeOut: number;
 };
 const sounds = (page: Page) =>
 	scenes(page, (s) =>
@@ -62,7 +63,7 @@ test.describe('Phase 5: sound', () => {
 		const chooser = page.waitForEvent('filechooser');
 		await page.getByRole('button', { name: /^Music/ }).click();
 		await (await chooser).setFiles(fixture('music.m4a'));
-		const pill = page.getByRole('button', { name: /^Music: music, 10s/ });
+		const pill = page.getByRole('button', { name: /^Music: music, 0:10/ });
 		await expect(pill).toBeVisible();
 		// It stops at the end of the 10s video even though the song is 12s, and has a waveform.
 		await expect(pill.locator('canvas')).toBeVisible();
@@ -90,13 +91,14 @@ test.describe('Phase 5: sound', () => {
 		expect(start[220]).toBeLessThan(mid[220] * 0.15);
 		expect(end[220]).toBeLessThan(mid[220] * 0.15);
 
-		// Turning the fade off makes the music start at full volume.
+		// No fade in makes the music start at full volume.
 		await pill.click();
-		await page.getByRole('switch', { name: /Fade in and out/ }).click();
+		await page.getByRole('slider', { name: 'Fade in' }).fill('0');
 		const noFade = await tones(page, 0.05, 0.2);
 		expect(noFade[220]).toBeGreaterThan(mid[220] * 0.8);
 
 		// It also plays live, mixed with the clips.
+		await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 		await seekTo(page, 1);
 		await page.keyboard.press('Space');
 		await expect

@@ -73,7 +73,7 @@
 		<div class="options">
 			<button type="button" class="option" onclick={addMusic}>
 				<Music size={20} strokeWidth={1.7} aria-hidden="true" />
-				<span><strong>Music</strong><small>Choose a song for the whole video</small></span>
+				<span><strong>Music</strong><small>Add a song (more songs start at the playhead)</small></span>
 			</button>
 			<button type="button" class="option" onclick={recordVoice}>
 				<Mic size={20} strokeWidth={1.7} aria-hidden="true" />

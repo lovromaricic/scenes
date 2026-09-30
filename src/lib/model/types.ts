@@ -83,8 +83,11 @@ export interface SoundItem {
 	duration: number;
 	volume: number;
 	kind: 'music' | 'voice';
-	/** Fade in and out automatically (music only). */
-	fade: boolean;
+	/** Fade in and out lengths in seconds (0–5), at the clip's (trimmed) edges. */
+	fadeIn: number;
+	fadeOut: number;
+	/** Sound lane row (0 = the first); overlapping clips are in different rows. */
+	row: number;
 }
 
 export interface Project {

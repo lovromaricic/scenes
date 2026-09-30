@@ -224,19 +224,9 @@
 	const wordsH = $derived(Math.max(1, Math.max(0, ...wordRows) + 1) * WORD_ROW_H + 4);
 
 	const SOUND_ROW_H = 40;
-	/** Music on the first row, voiceovers stacked below it. */
-	const soundRows = $derived.by(() => {
-		const sounds = editor.project.sounds;
-		const rows: Record<string, number> = {};
-		const hasMusic = sounds.some((s) => s.kind === 'music');
-		for (const s of sounds) if (s.kind === 'music') rows[s.id] = 0;
-		const voices = sounds.filter((s) => s.kind === 'voice');
-		stackRows(onScreen(voices)).forEach((row, i) => (rows[voices[i].id] = row + (hasMusic ? 1 : 0)));
-		return rows;
-	});
-	const soundH = $derived(
-		Math.max(1, Math.max(0, ...Object.values(soundRows)) + 1) * SOUND_ROW_H + 4
-	);
+	/** The Sound lane's height (its rows are the clips' own), and where a drag snapped to. */
+	let soundH = $state(SOUND_ROW_H + 4);
+	let snapX = $state<number | null>(null);
 
 	const loadingWidth = $derived(importing * (LOADING_CARD_W + CARD_GAP));
 	const contentWidth = $derived(
@@ -464,7 +454,7 @@
 		if (event.button !== 0 || editor.cropping) return;
 		const target = event.target as Element;
 		const onItem = target.closest(
-			'button, input, .zoom, [role="button"], .card-slot, .layer-slot, .pill-slot, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
+			'button, input, .zoom, [role="button"], .card-slot, .layer-slot, .clip-slot, .pill-slot, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
 		);
 		if (!onItem) editor.deselect();
 	}
@@ -633,8 +623,13 @@
 
 			<!-- Sound lane -->
 			<div class="row lane sound-lane" role="group" aria-label="Sound" style:height="{soundH}px">
-				<SoundLane {map} rows={soundRows} rowHeight={SOUND_ROW_H} />
+				<SoundLane {map} rowHeight={SOUND_ROW_H} bind:height={soundH} bind:snapX />
 			</div>
+
+			{#if snapX !== null}
+				<!-- A sound clip being dragged has snapped here. -->
+				<span class="snap-line" style:left="{snapX}px" aria-hidden="true"></span>
+			{/if}
 
 			<!-- Playhead -->
 			<div class="playhead" style:translate="{map.x(editor.time)}px 0">
@@ -779,6 +774,17 @@
 		min-width: 100%;
 	}
 
+	.snap-line {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 1px;
+		margin-left: -0.5px;
+		background: var(--color-ink);
+		opacity: 0.5;
+		pointer-events: none;
+		z-index: 9;
+	}
 	.ruler {
 		position: relative;
 		height: var(--ruler-h);

@@ -77,7 +77,9 @@ const music: SoundItem = {
 	duration: 60,
 	volume: 0.5,
 	kind: 'music',
-	fade: true
+	fadeIn: 1.5,
+	fadeOut: 3,
+	row: 0
 };
 
 describe('soundAudioClips', () => {
@@ -86,12 +88,14 @@ describe('soundAudioClips', () => {
 		const [clip] = soundAudioClips([music], 20);
 		expect(clip).toMatchObject({ start: 0, end: 20, volume: 0.5, fadeIn: 1.5, fadeOut: 3 });
 	});
-	it('has no fades when fade is off, and shortens fades for short sounds', () => {
-		expect(soundAudioClips([{ ...music, fade: false }], 20)[0]).toMatchObject({
+	it('uses the clip’s fade lengths, shortened together for short sounds', () => {
+		expect(soundAudioClips([{ ...music, fadeIn: 0, fadeOut: 0 }], 20)[0]).toMatchObject({
 			fadeIn: 0,
 			fadeOut: 0
 		});
-		expect(soundAudioClips([music], 3)[0]).toMatchObject({ fadeIn: 0.75, fadeOut: 1 });
+		expect(soundAudioClips([{ ...music, fadeIn: 2, fadeOut: 4.5 }], 20)[0]).toMatchObject({ fadeIn: 2, fadeOut: 4.5 });
+		// 1.5 + 3 s of fades in a 3 s clip: both shrink in proportion, to fill it.
+		expect(soundAudioClips([music], 3)[0]).toMatchObject({ fadeIn: 1, fadeOut: 2 });
 	});
 	it('skips silent sounds and sounds after the end of the video', () => {
 		expect(soundAudioClips([{ ...music, volume: 0 }], 20)).toEqual([]);
@@ -105,7 +109,8 @@ describe('soundAudioClips', () => {
 			start: 4,
 			duration: 3,
 			volume: 1,
-			fade: false
+			fadeIn: 0,
+			fadeOut: 0
 		};
 		expect(soundAudioClips([voice], 20)[0]).toMatchObject({ start: 4, end: 7 });
 	});

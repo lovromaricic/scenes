@@ -56,7 +56,7 @@ test.describe('Phase 1: design system and layout', () => {
 		).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Scene', exact: true })).toBeVisible();
 		await expect(page.getByRole('group', { name: 'Words' })).toBeVisible();
-		await expect(page.getByRole('group', { name: 'Sound' })).toBeVisible();
+		await expect(page.getByRole('group', { name: 'Sound', exact: true })).toBeVisible();
 	});
 
 	test('add panels open and close with Escape', async ({ page }) => {

@@ -27,7 +27,7 @@
 		{
 			title: 'Editing',
 			items: [
-				[['S'], 'Split the scene at the playhead'],
+				[['S'], 'Split the scene at the playhead (or the selected sound)'],
 				[['C'], 'Crop the scene (Enter to finish, Esc to cancel)'],
 				[['Delete'], 'Remove what’s selected'],
 				[['Alt', '←'], 'Move the selected scene earlier (Alt + → later)'],

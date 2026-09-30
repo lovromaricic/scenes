@@ -1079,6 +1079,64 @@ Also: `dragstart` is prevented on the preview and the storyboard tracks, the hom
 - Test gotcha: in `Input.dispatchMouseEvent`, `button: 'left'` on a move means the button is
   held. Moves after a release must use `button: 'none'`, or they're still drags.
 
+## Sound clips: trim, move, split, rows, snapping and fades
+
+- **Model.**
+  - `SoundItem` loses `fade: boolean` and gains `fadeIn` and `fadeOut` (seconds, 0–5) and `row`.
+  - `migrateSounds` (run by `migrateProject`, so older projects and `.scenes` files come up to
+    date): `fade: true` becomes the automatic 1.5 s in / 3 s out; music goes in row 0 and
+    voiceovers in the first free row below.
+  - The pure editing logic is in `model/sound.ts` and unit-tested: `trimSound`, `splitSound`,
+    `effectiveFades`, `freeRow`, `assignSoundRow`, `compactSoundRows` and `snapTimes`.
+- **Trimming.**
+  - The start edge moves `start` and `sourceStart` together, so the rest of the audio stays
+    where it was. The end edge changes `duration`.
+  - Neither goes beyond the file (the media's first sample to its end), before 0 on the
+    timeline, or below 0.3 s.
+  - A clip running past the video's end is trimmed from where its end is drawn.
+  - The waveform is drawn from `sourceStart` for the clip's length at the storyboard's scale, so
+    trimming hides audio instead of squeezing it. The new length shows live ("0:10").
+- **Moving and rows.**
+  - Drag a clip to move it in time (gaps are fine) and up or down to change rows. Rows are
+    counted from the pointer's travel, as on the Layers track.
+  - Dropping onto an overlap makes a new row below (rows go downwards here: music on top), and
+    empty rows go away.
+  - New songs are added, no longer replacing the old one: the first at 0 s, later ones at the
+    playhead, in the first row where they fit. Voiceovers also go in the first free row.
+- **Splitting.** S splits the selected sound clip (otherwise the scene, as before), and so does
+  "Split here" in its settings. The two halves play exactly as before; the first keeps the fade
+  in, the second the fade out.
+- **Snapping.** Moves (the clip's start or end) and trims snap to the playhead, scene boundaries
+  and other clips' edges within 8 px. A thin line across the storyboard shows the snap target
+  (`snapX`, bound up to the storyboard). Alt/Option drags freely.
+- **Fades.**
+  - Heard at the clip's (trimmed) edges. `effectiveFades` caps each at 5 s and shrinks both
+    together if they'd be longer than the clip. A clip still playing when the video ends fades
+    out by then.
+  - Dots at the top corners are dragged to set each fade (0–5 s, live label). The fade is drawn
+    as a sloped line with the faded part lightened.
+- **Settings**: name and how long it plays, starts at, length, volume, fade in, fade out, Split
+  here (enabled when the playhead is inside) and Remove. The old "Start the song at" stepper and
+  the Fade switch are replaced by trimming and the fade lengths.
+- **Everywhere else.** Playback, Watch and export all build their sound from
+  `soundAudioClips`, which uses the trimmed part, position and fades. Lane previews commit as
+  one `edit()` when the drag ends, so each gesture is one undo step. Every drag uses the shared
+  drag helper.
+- Tests:
+  - Unit: 11 for the sound model; the existing clip tests are updated to fade lengths.
+  - e2e (`sound-editing.test.ts`):
+    - Trim both sides: live length label, position and width at the same scale, capped at the
+      file's ends, silence where trimmed, one undo per trim.
+    - Move with snapping (the snap line shows, lands on exactly 12 s), Alt moves freely, gaps.
+    - Split with S and with Split here: contiguous, fades split, total length unchanged.
+    - A second song goes in its own row; moving it into free space removes the row; an
+      overlapping drop makes a new one.
+    - Fades follow a trimmed start; dragging the fade-in dot gives a half-loud midpoint; the
+      fade-out dot to 0; the right column matches.
+    - The saved MP4's loudness in seven windows matches the preview mixer within ±15% (and
+      silence where it's silent), after trims, a move, a long fade and a second song.
+  - The phase 5 test now sets "Fade in" to 0 where it used to turn the Fade switch off.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

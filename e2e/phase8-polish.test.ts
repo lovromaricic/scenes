@@ -104,7 +104,7 @@ test.describe('Phase 8: polish', () => {
 				await expect(page.getByRole('button', { name, exact: true })).toBeInViewport();
 			}
 			await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeInViewport();
-			await expect(page.getByRole('group', { name: 'Sound' })).toBeInViewport();
+			await expect(page.getByRole('group', { name: 'Sound', exact: true })).toBeInViewport();
 			await expect(page.getByRole('button', { name: /^Cards/ })).toBeInViewport();
 		}
 	});

@@ -1,6 +1,7 @@
 import { legacyFormat } from './format';
 import { resolveTextStyle, TEXT_STYLE_SPECS } from './textStyle';
 import type { Project } from './types';
+import { migrateSounds } from './sound';
 
 /**
  * Pure helpers for managing many projects: what each one uses, what becomes unused when one is
@@ -58,6 +59,8 @@ export function migrateProject<T extends Partial<Project> & { aspect?: string }>
 	project.scenes ??= [];
 	project.texts ??= [];
 	project.sounds ??= [];
+	// Before trimming, fade lengths and Sound rows.
+	project.sounds = migrateSounds(project.sounds as never);
 	// Before the Layers track.
 	project.overlays ??= [];
 	project.mood ??= 'natural';

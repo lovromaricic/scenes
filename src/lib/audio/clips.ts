@@ -2,9 +2,8 @@ import type { Project, Scene, SoundItem } from '$lib/model/types';
 import { placeScenes, totalDuration } from '$lib/model/timeline';
 import { placeOverlays, type Overlay } from '$lib/model/overlay';
 
-/** Automatic music fades, in seconds (shortened for short songs). */
-export const MUSIC_FADE_IN = 1.5;
-export const MUSIC_FADE_OUT = 3;
+import { effectiveFades, soundEnd } from '$lib/model/sound';
+export { MUSIC_FADE_IN, MUSIC_FADE_OUT, soundEnd } from '$lib/model/sound';
 
 /** A piece of sound placed on the timeline: which part of which file, when, and how loud. */
 export interface AudioClip {
@@ -58,19 +57,18 @@ export function bufferPlacement(
 	return { timelineStart: from, offset: (from - natural) * clip.speed };
 }
 
-/** When a sound stops: at its own end, or at the end of the video, whichever is first. */
-export function soundEnd(sound: SoundItem, videoLength: number): number {
-	return Math.min(sound.start + sound.duration, videoLength);
-}
-
-/** Music and voiceovers as timeline audio clips. Music fades in and out when `fade` is on. */
+/**
+ * Music and voiceovers as timeline audio clips: each clip's trimmed part of its file, where it's
+ * placed, with its fades at its (trimmed) edges. A clip still playing when the video ends fades
+ * out by then.
+ */
 export function soundAudioClips(sounds: SoundItem[], videoLength: number): AudioClip[] {
 	const clips: AudioClip[] = [];
 	for (const sound of sounds) {
 		const end = soundEnd(sound, videoLength);
 		const length = end - sound.start;
 		if (length <= 0.05 || sound.volume <= 0) continue;
-		const fade = sound.fade;
+		const fades = effectiveFades(sound, length);
 		clips.push({
 			id: sound.id,
 			mediaId: sound.mediaId,
@@ -79,8 +77,8 @@ export function soundAudioClips(sounds: SoundItem[], videoLength: number): Audio
 			sourceStart: sound.sourceStart,
 			speed: 1,
 			volume: sound.volume,
-			fadeIn: fade ? Math.min(MUSIC_FADE_IN, length / 4) : 0,
-			fadeOut: fade ? Math.min(MUSIC_FADE_OUT, length / 3) : 0
+			fadeIn: fades.fadeIn,
+			fadeOut: fades.fadeOut
 		});
 	}
 	return clips;

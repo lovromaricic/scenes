@@ -19,6 +19,18 @@ import {
 import { getHandle, registerBlob } from '$lib/media/handles';
 import { saveProjectToFile } from '$lib/files/save';
 import {
+	MAX_FADE,
+	MIN_SOUND,
+	MUSIC_FADE_IN,
+	MUSIC_FADE_OUT,
+	assignSoundRow,
+	compactSoundRows,
+	freeRow,
+	soundEnd,
+	splitSound,
+	trimSound
+} from '$lib/model/sound';
+import {
 	MAX_VIDEO_OVERLAYS,
 	MIN_OVERLAY_SECONDS,
 	linkAt,
@@ -1200,24 +1212,24 @@ export class EditorStore {
 		this.importing++;
 		try {
 			const info = await this.storeAudio(file);
+			// The first song starts with the video; more songs start at the playhead. Each goes in
+			// the first row where it fits (a second row if it overlaps).
+			const start = this.project.sounds.length ? Math.min(this.time, Math.max(0, this.duration - MIN_SOUND)) : 0;
+			const duration = info.duration - info.startTime;
 			const sound: SoundItem = {
 				id: newId(),
 				mediaId: info.id,
 				name: file.name.replace(/\.[^.]+$/, '') || 'Music',
-				start: 0,
+				start,
 				sourceStart: info.startTime,
-				duration: info.duration - info.startTime,
+				duration,
 				volume: 0.6,
 				kind: 'music',
-				fade: true
+				fadeIn: MUSIC_FADE_IN,
+				fadeOut: MUSIC_FADE_OUT,
+				row: freeRow(this.project.sounds, start, duration)
 			};
-			const replaced = this.project.sounds.some((s) => s.kind === 'music');
-			this.edit(
-				'Add music',
-				(p) => ({ ...p, sounds: [...p.sounds.filter((s) => s.kind !== 'music'), sound] }),
-				{ select: sound.id }
-			);
-			if (replaced) toasts.show('Replaced the music. Undo to get the old song back.');
+			this.edit('Add music', (p) => ({ ...p, sounds: [...p.sounds, sound] }), { select: sound.id });
 		} catch (error) {
 			toasts.show(
 				error instanceof MediaImportError
@@ -1247,31 +1259,72 @@ export class EditorStore {
 		this.updateSound('Volume', id, (s) => ({ ...s, volume }), `sound-volume:${id}`);
 	}
 
-	setSoundFade(id: string, fade: boolean): void {
-		this.updateSound(fade ? 'Fade on' : 'Fade off', id, (s) => ({ ...s, fade }));
+	/** Fade in and out lengths (0–5 s each). `key` merges drags. */
+	setSoundFades(id: string, fadeIn: number, fadeOut: number, key?: string): void {
+		const clamp = (v: number) => Math.round(Math.min(MAX_FADE, Math.max(0, v)) * 100) / 100;
+		this.updateSound('Fade', id, (s) => ({ ...s, fadeIn: clamp(fadeIn), fadeOut: clamp(fadeOut) }), key);
 	}
 
-	/** Start the song further in (skip an intro). `offset` is seconds into the file. */
-	setMusicOffset(id: string, offset: number): void {
-		const sound = this.project.sounds.find((s) => s.id === id);
-		const info = sound && this.media[sound.mediaId];
-		if (!sound || !info) return;
-		const sourceStart = Math.min(
-			Math.max(info.startTime, info.startTime + offset),
-			info.duration - 1
+	/** The part of its file a sound clip may use. */
+	soundBounds(sound: SoundItem): { start: number; end: number } {
+		const info = this.media[sound.mediaId];
+		return info
+			? { start: info.startTime, end: info.duration }
+			: { start: sound.sourceStart, end: sound.sourceStart + sound.duration };
+	}
+
+	/** A sound clip with one edge trimmed by `delta` seconds (not applied; see setSoundTiming). */
+	trimmedSound(sound: SoundItem, edge: 'start' | 'end', delta: number): SoundItem {
+		return trimSound(sound, edge, delta, this.soundBounds(sound), soundEnd(sound, this.duration));
+	}
+
+	/**
+	 * Place a sound clip: its timing (start, part of the file) and row. If it overlaps a clip in
+	 * that row, it gets a new row below. One undo step (`key` merges quick repeats).
+	 */
+	setSoundTiming(
+		id: string,
+		timing: Pick<SoundItem, 'start' | 'sourceStart' | 'duration'>,
+		row?: number,
+		label = 'Sound timing',
+		key?: string
+	): void {
+		const sound = this.project.sounds.find((x) => x.id === id);
+		if (!sound) return;
+		const latest = Math.max(0, this.duration - MIN_SOUND);
+		const next = { ...timing, start: Math.min(Math.max(0, timing.start), latest) };
+		this.edit(
+			label,
+			(p) => {
+				const sounds = p.sounds.map((x) => (x.id === id ? { ...x, ...next } : x));
+				return { ...p, sounds: assignSoundRow(sounds, id, row ?? sound.row) };
+			},
+			{ key }
 		);
-		this.updateSound(
-			'Song start',
-			id,
-			(s) => ({ ...s, sourceStart, duration: info.duration - sourceStart }),
-			`song-start:${id}`
+	}
+
+	/** Split the selected (or given) sound clip at the playhead. */
+	splitSoundAtPlayhead(id = this.selectedSound?.id): void {
+		const sound = this.project.sounds.find((x) => x.id === id);
+		if (!sound) return;
+		const parts = splitSound($state.snapshot(sound) as SoundItem, this.player.time, newId);
+		if (!parts) {
+			toasts.show('Move the playhead into the sound to split it there.');
+			return;
+		}
+		this.edit(
+			'Split sound',
+			(p) => ({ ...p, sounds: p.sounds.flatMap((x) => (x.id === sound.id ? parts : [x])) }),
+			{ select: parts[1].id }
 		);
 	}
 
 	deleteSound(id: string): void {
-		this.edit('Remove sound', (p) => ({ ...p, sounds: p.sounds.filter((s) => s.id !== id) }), {
-			select: this.selectedId === id ? null : this.selectedId
-		});
+		this.edit(
+			'Remove sound',
+			(p) => ({ ...p, sounds: compactSoundRows(p.sounds.filter((s) => s.id !== id)) }),
+			{ select: this.selectedId === id ? null : this.selectedId }
+		);
 	}
 
 	/** Render the mixed soundtrack for a stretch of time (used by export and tests). */
@@ -1386,7 +1439,9 @@ export class EditorStore {
 				duration: Math.max(0.3, info.duration - info.startTime),
 				volume: 1,
 				kind: 'voice',
-				fade: false
+				fadeIn: 0,
+				fadeOut: 0,
+				row: freeRow(this.project.sounds, state.start, Math.max(0.3, info.duration - info.startTime))
 			};
 			this.edit('Record voiceover', (p) => ({ ...p, sounds: [...p.sounds, sound] }), {
 				select: sound.id

@@ -204,7 +204,9 @@
 			case 's':
 			case 'S':
 				event.preventDefault();
-				editor.splitAtPlayhead();
+				// A selected sound clip splits; otherwise the scene under the playhead.
+				if (editor.selectedSound) editor.splitSoundAtPlayhead();
+				else editor.splitAtPlayhead();
 				break;
 			case 'Delete':
 			case 'Backspace':
