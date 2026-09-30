@@ -868,6 +868,60 @@ npm run check        # svelte-check (TypeScript strict)
   dragged down with the marker showing becomes a scene at that position with the whole
   clip, and one undo restores it. Stress-tested with 4 workers.
 
+### 6. Rendering (done before section 5)
+
+Built before the settings panel because the panel's crop, corners, border and shadow can only be
+judged on the rendered picture. It's committed as its own section.
+
+- **One draw description for every output.** `overlayDraw` (`render/overlay.ts`) turns a placed
+  overlay into output-pixel geometry at time `t`:
+  - its box after the entrance/exit animation (fade = opacity, slide-up = offset by a quarter of
+    its height, pop = scale about the centre);
+  - the crop, then a *cover* fit into the area inside the border (no stretching if the box
+    doesn't match the picture's shape);
+  - corner radius (fraction of half the shorter side), border (project pixels scaled to the
+    output) and shadow (fractions of the frame's shorter side, so it looks the same at any size);
+  - opacity × animation;
+  - the video's look: pictures follow the whole video's mood, cards keep exact colours.
+
+  The preview, Watch mode (the same player), export and the home-screen picture all use it.
+- **Compositor.** A new pass runs after the scenes (and transitions), before words: one shader
+  per overlay on a quad grown to fit its shadow.
+  - A signed distance to the rounded box gives smooth edges, the border ring (another rounded
+    box inside), and a soft shadow (smoothstep on the offset distance).
+  - Output is premultiplied, blended `ONE, ONE_MINUS_SRC_ALPHA`, lowest row first.
+  - Each overlay has its own texture slot, so a still photo or card is uploaded once.
+- **Decoding in parallel.** Every overlay has its own frame source, keyed by overlay id, even
+  when a scene uses the same file. Scene and layer decoders run side by side.
+  - Layers are prefetched like scenes (1.5 s ahead when playing) and idle when far away.
+  - `framesReady` also waits for layer frames, so play starts cleanly and tests read exact
+    frames.
+  - Layers are part of the redraw key.
+- **Four videos at most** at any moment (`tooManyVideos`), checked when adding, moving,
+  lengthening or turning a scene into a layer. The message explains why it can't go there.
+  With four videos and the scene decoding, playback keeps pace with the clock (e2e).
+- **Crop view** for a layer: the player shows its whole source through a stand-in scene with
+  the layer's id, so it uses the layer's own decoder. The crop UI comes in section 5.
+- **Export** draws the same `OverlayDraw` list per frame. Each layer has its own reader, freed
+  1.5 s after it ends. **Sound:** `overlayAudioClips` adds video layers with sound on to the
+  playback and export mix (off by default).
+- **Home picture**: layers showing at the start are drawn with the 2D canvas using the same
+  geometry, and they're part of its cache key.
+- **Send back** was fixed along the way. It must put a layer *under* whatever it overlaps in the
+  row below (a new row just below it), not above it (`sendBack`, unit-tested).
+- Tests:
+  - Unit: cover fitting, animated placement, output-size scaling of corners, border and shadow,
+    crop before fit.
+  - e2e preview: a picture-in-picture video with pill corners, white border and strong shadow
+    (layer, border, rounded-off corner and shadow pixels); a half-transparent card over a photo
+    blends; a video over a photo scene; higher rows on top, and sending back swaps them.
+  - e2e export: the same points in the saved MP4 match the preview (within a few levels). The
+    green layer's 660 Hz tone is in the mix with its sound on; the blue layer's 880 Hz (off) is
+    absent; the red scene's 440 Hz is there.
+  - e2e limits: four videos play at once, a fifth is refused with the message, and playback
+    keeps up.
+  - The `.scenes` round trip now includes a styled layer with sound, and comes back identical.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

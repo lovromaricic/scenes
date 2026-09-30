@@ -34,7 +34,10 @@ import {
 	overlaysOf,
 	placeOverlays,
 	relinkByTime,
-	type Overlay
+	sendBack,
+	type Overlay,
+	type OverlayBox,
+	type OverlayStyle
 } from '$lib/model/overlay';
 import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
 import { computePeaks, PEAKS_PER_SECOND } from '$lib/media/waveform';
@@ -825,6 +828,16 @@ export class EditorStore {
 		});
 	}
 
+	/** Whether a video layer may play from `start` for `duration` (at most 4 videos at once). */
+	private videoRoom(o: Overlay, start: number, duration: number): boolean {
+		if (o.kind !== 'video' || !tooManyVideos(this.placedOverlays, start, duration, o.id)) return true;
+		toasts.show(
+			`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment, so this one can’t go there.`,
+			'error'
+		);
+		return false;
+	}
+
 	/** Longest this overlay may show (a video can't outlast its clip). */
 	overlayMaxDuration(o: Overlay): number {
 		return maxOverlayDuration(o, this.media[o.mediaId]?.duration);
@@ -837,6 +850,7 @@ export class EditorStore {
 		if (!o) return;
 		const latest = Math.max(0, this.duration - MIN_OVERLAY_SECONDS);
 		const at = Math.min(Math.max(0, start), latest);
+		if (!this.videoRoom(o, at, o.duration)) return;
 		this.edit(label, (p) => {
 			const moved = p.overlays.map((x) => (x.id === id ? moveOverlayTo(x, at, placeScenes(p.scenes)) : x));
 			return { ...p, overlays: assignRow(moved, id, row, placeScenes(p.scenes)) };
@@ -866,6 +880,7 @@ export class EditorStore {
 		const latest = Math.max(0, this.duration - MIN_OVERLAY_SECONDS);
 		const at = Math.min(Math.max(0, start), latest);
 		const length = Math.min(this.overlayMaxDuration({ ...o, sourceStart: sourceStart ?? o.sourceStart }), Math.max(MIN_OVERLAY_SECONDS, duration));
+		if (!this.videoRoom(o, at, length)) return;
 		this.edit(
 			'Layer timing',
 			(p) => {
@@ -1063,6 +1078,45 @@ export class EditorStore {
 		const placed = this.placed.find((p) => p.scene.id === scene.id);
 		if (placed) this.seek(placed.start);
 		return scene.id;
+	}
+
+	/** Where a layer sits and how big it is (fractions of the frame). `key` merges drags. */
+	setOverlayBox(id: string, box: OverlayBox, key?: string): void {
+		const copy = { ...box };
+		this.updateOverlay('Move layer', id, (o) => ({ ...o, box: copy }), key);
+	}
+
+	setOverlayStyle(id: string, style: OverlayStyle, key?: string): void {
+		const copy = { ...style };
+		this.updateOverlay('Layer style', id, (o) => ({ ...o, style: copy }), key);
+	}
+
+	setOverlayAnimation(id: string, which: 'enter' | 'exit', animation: TextAnimation): void {
+		this.updateOverlay('Layer animation', id, (o) => ({ ...o, [which]: animation }));
+	}
+
+	setOverlaySound(id: string, sound: { on: boolean; volume: number }, key?: string): void {
+		const copy = { ...sound };
+		this.updateOverlay('Layer sound', id, (o) => ({ ...o, sound: copy }), key);
+	}
+
+	setOverlayCard(id: string, card: CardContent, key?: string): void {
+		// $state.snapshot, not structuredClone: the card may contain reactive proxies.
+		const copy = $state.snapshot(card) as CardContent;
+		this.updateOverlay('Card', id, (o) => ({ ...o, card: copy }), key);
+	}
+
+	/** Move a layer up a row (drawn over more), or down (drawn under more). */
+	moveOverlayRow(id: string, direction: 1 | -1): void {
+		const o = this.project.overlays.find((x) => x.id === id);
+		if (!o) return;
+		this.edit(direction > 0 ? 'Bring forward' : 'Send back', (p) => {
+			const scenes = placeScenes(p.scenes);
+			// Up: into the row above (or a new row above it if something's in the way there).
+			if (direction > 0) return { ...p, overlays: assignRow(p.overlays, id, o.row + 1, scenes) };
+			// Down: into the row below (or a new row just under it if something's in the way).
+			return { ...p, overlays: sendBack(p.overlays, id, scenes) };
+		});
 	}
 
 	deleteOverlay(id: string): void {

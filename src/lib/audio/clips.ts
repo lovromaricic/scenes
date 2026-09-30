@@ -1,5 +1,6 @@
 import type { Project, Scene, SoundItem } from '$lib/model/types';
 import { placeScenes, totalDuration } from '$lib/model/timeline';
+import { placeOverlays, type Overlay } from '$lib/model/overlay';
 
 /** Automatic music fades, in seconds (shortened for short songs). */
 export const MUSIC_FADE_IN = 1.5;
@@ -85,13 +86,43 @@ export function soundAudioClips(sounds: SoundItem[], videoLength: number): Audio
 	return clips;
 }
 
-/** Every piece of sound in the project: each scene's own sound, music and voiceovers. */
+/** The sound of video layers that have it turned on (off by default). */
+export function overlayAudioClips(
+	overlays: Overlay[],
+	scenes: Scene[],
+	hasAudio: (mediaId: string) => boolean
+): AudioClip[] {
+	const length = totalDuration(scenes);
+	return placeOverlays(overlays, placeScenes(scenes))
+		.filter(
+			(p) =>
+				p.overlay.kind === 'video' &&
+				p.overlay.sound.on &&
+				p.overlay.sound.volume > 0 &&
+				p.start < length - 0.05 &&
+				hasAudio(p.overlay.mediaId)
+		)
+		.map((p) => ({
+			id: p.overlay.id,
+			mediaId: p.overlay.mediaId,
+			start: p.start,
+			end: Math.min(p.end, length),
+			sourceStart: p.overlay.sourceStart,
+			speed: 1,
+			volume: p.overlay.sound.volume,
+			fadeIn: 0,
+			fadeOut: 0
+		}));
+}
+
+/** Every piece of sound in the project: each scene's own sound, layers, music and voiceovers. */
 export function projectAudioClips(
-	project: Pick<Project, 'scenes' | 'sounds'>,
+	project: Pick<Project, 'scenes' | 'sounds'> & { overlays?: Overlay[] },
 	hasAudio: (mediaId: string) => boolean
 ): AudioClip[] {
 	return [
 		...sceneAudioClips(project.scenes, hasAudio),
+		...overlayAudioClips(project.overlays ?? [], project.scenes, hasAudio),
 		...soundAudioClips(project.sounds, totalDuration(project.scenes))
 	];
 }

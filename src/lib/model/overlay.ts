@@ -152,6 +152,25 @@ export function assignRow(overlays: Overlay[], id: string, row: number, placed: 
 	return compactRows(next);
 }
 
+/**
+ * Send overlay `id` one row down. If something there overlaps it (or it's already the lowest),
+ * it gets a new row of its own just below, so it ends up underneath.
+ */
+export function sendBack(overlays: Overlay[], id: string, placed: PlacedScene[]): Overlay[] {
+	const me = overlays.find((o) => o.id === id);
+	if (!me) return overlays;
+	const target = me.row - 1;
+	const times = new Map(placeOverlays(overlays, placed).map((p) => [p.overlay.id, p]));
+	const clash =
+		target < 0 ||
+		overlays.some((o) => o.id !== id && o.row === target && overlaps(times.get(o.id)!, times.get(id)!));
+	if (!clash) return compactRows(overlays.map((o) => (o.id === id ? { ...o, row: target } : o)));
+	const at = Math.max(0, target);
+	return compactRows(
+		overlays.map((o) => (o.id === id ? { ...o, row: at } : o.row >= at ? { ...o, row: o.row + 1 } : o))
+	);
+}
+
 /** Renumber rows 0, 1, 2… keeping their order (empty rows disappear). */
 export function compactRows(overlays: Overlay[]): Overlay[] {
 	const used = [...new Set(overlays.map((o) => o.row))].sort((a, b) => a - b);

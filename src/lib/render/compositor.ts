@@ -3,6 +3,7 @@ import type { GradeParams } from '$lib/model/moods';
 import { frameRect, showsBars, type FrameBars, type Rect } from '$lib/model/framing';
 import type { TransitionKind } from '$lib/model/types';
 import { compileProgram, createTexture } from './gl';
+import type { OverlayDraw } from './overlay';
 
 /**
  * The WebGL2 compositor draws one output frame. The same code renders the live preview and,
@@ -12,7 +13,9 @@ import { compileProgram, createTexture } from './gl';
  *   1. each visible scene frame is drawn "cover"-fitted with its colour mood (grade shader);
  *      during a transition both scenes go to offscreen framebuffers first,
  *   2. the transition shader blends them onto the output,
- *   3. text sprites are drawn on top with their animation.
+ *   3. overlays (the Layers track) are drawn on top, lowest row first, with rounded corners,
+ *      border, shadow and opacity,
+ *   4. text sprites are drawn on top of everything with their animation.
  */
 
 export interface LayerInput {
@@ -48,6 +51,8 @@ export interface CompositeFrame {
 	/** The incoming scene during a transition. */
 	b?: LayerInput | null;
 	transition?: { kind: TransitionKind; progress: number } | null;
+	/** Layers, in drawing order (lowest row first). */
+	overlays?: OverlayDraw[];
 	texts?: TextDraw[];
 }
 
@@ -176,6 +181,76 @@ void main() {
 	outColor = texture(uImage, vUv) * uOpacity; // premultiplied alpha
 }`;
 
+/**
+ * An overlay: a quad around its box (grown to fit the shadow), with the box as a rounded
+ * rectangle. Everything is worked out per pixel from a signed distance to the box's edge, so
+ * corners, border and shadow are smooth at any size. Positions are in output pixels, y down.
+ */
+const OVERLAY_VS = /* glsl */ `#version 300 es
+in vec2 aPos;
+uniform vec2 uViewport;
+uniform vec2 uCenter;
+uniform vec2 uHalf;
+uniform float uMargin;
+out vec2 vLocal;
+void main() {
+	vLocal = aPos * (uHalf + vec2(uMargin));
+	vec2 px = uCenter + vLocal;
+	gl_Position = vec4(px.x / uViewport.x * 2.0 - 1.0, 1.0 - px.y / uViewport.y * 2.0, 0.0, 1.0);
+}`;
+
+const OVERLAY_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vLocal;
+uniform vec2 uHalf;
+uniform float uRadius;
+uniform float uBorder;
+uniform vec3 uBorderColor;
+uniform float uShadowBlur;
+uniform vec2 uShadowOffset;
+uniform float uShadowAlpha;
+uniform float uOpacity;
+uniform sampler2D uImage;
+uniform vec4 uUv;
+uniform vec3 uGain;
+uniform vec3 uLift;
+uniform float uContrast;
+uniform float uSaturation;
+out vec4 outColor;
+
+float roundedBox(vec2 p, vec2 half_, float r) {
+	vec2 q = abs(p) - half_ + vec2(r);
+	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+vec3 graded(vec3 c) {
+	c *= uGain;
+	c = (c - 0.5) * uContrast + 0.5;
+	float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+	c = mix(vec3(luma), c, uSaturation);
+	c = uLift + c * (1.0 - uLift);
+	return clamp(c, 0.0, 1.0);
+}
+
+void main() {
+	float d = roundedBox(vLocal, uHalf, uRadius);
+	float box = clamp(0.5 - d, 0.0, 1.0);
+	vec2 innerHalf = max(uHalf - vec2(uBorder), vec2(0.5));
+	float di = roundedBox(vLocal, innerHalf, max(uRadius - uBorder, 0.0));
+	float picture = uBorder > 0.0 ? clamp(0.5 - di, 0.0, 1.0) : 1.0;
+	// 0–1 across the picture area, y down; textures are stored bottom-up.
+	vec2 t = clamp(vLocal / innerHalf * 0.5 + 0.5, 0.0, 1.0);
+	vec3 c = graded(texture(uImage, uUv.xy + vec2(t.x, 1.0 - t.y) * uUv.zw).rgb);
+	vec4 front = vec4(mix(uBorderColor, c, picture), 1.0) * box;
+	float shadow = 0.0;
+	if (uShadowAlpha > 0.0) {
+		float ds = roundedBox(vLocal - uShadowOffset, uHalf, uRadius);
+		shadow = uShadowAlpha * (1.0 - smoothstep(-uShadowBlur * 0.5, uShadowBlur, ds));
+	}
+	// Premultiplied: the box over its shadow, then the overlay's opacity.
+	outColor = (front + vec4(0.0, 0.0, 0.0, shadow) * (1.0 - front.a)) * uOpacity;
+}`;
+
 interface TextureSlot {
 	texture: WebGLTexture;
 	source: FrameImage | null;
@@ -203,6 +278,28 @@ export class Compositor {
 	};
 	private blur!: { program: WebGLProgram; u: Uniforms<'rect' | 'image' | 'texel'> };
 	private sprite!: { program: WebGLProgram; u: Uniforms<'rect' | 'opacity' | 'image'> };
+	private overlay!: {
+		program: WebGLProgram;
+		u: Uniforms<
+			| 'viewport'
+			| 'center'
+			| 'half'
+			| 'margin'
+			| 'radius'
+			| 'border'
+			| 'borderColor'
+			| 'shadowBlur'
+			| 'shadowOffset'
+			| 'shadowAlpha'
+			| 'opacity'
+			| 'image'
+			| 'uv'
+			| 'gain'
+			| 'lift'
+			| 'contrast'
+			| 'saturation'
+		>;
+	};
 	private slots: TextureSlot[] = [];
 	private targets: Target[] = [];
 	private spriteTextures = new Map<string, { texture: WebGLTexture; used: number }>();
@@ -268,6 +365,26 @@ export class Compositor {
 			rect: 'uRect',
 			opacity: 'uOpacity',
 			image: 'uImage'
+		});
+
+		this.overlay = this.program(OVERLAY_VS, OVERLAY_FS, {
+			viewport: 'uViewport',
+			center: 'uCenter',
+			half: 'uHalf',
+			margin: 'uMargin',
+			radius: 'uRadius',
+			border: 'uBorder',
+			borderColor: 'uBorderColor',
+			shadowBlur: 'uShadowBlur',
+			shadowOffset: 'uShadowOffset',
+			shadowAlpha: 'uShadowAlpha',
+			opacity: 'uOpacity',
+			image: 'uImage',
+			uv: 'uUv',
+			gain: 'uGain',
+			lift: 'uLift',
+			contrast: 'uContrast',
+			saturation: 'uSaturation'
 		});
 
 		this.quad = gl.createVertexArray()!;
@@ -361,8 +478,49 @@ export class Compositor {
 			gl.clear(gl.COLOR_BUFFER_BIT);
 		}
 
+		this.drawOverlays(frame.overlays ?? []);
 		this.drawTexts(frame.texts ?? []);
 		gl.bindVertexArray(null);
+	}
+
+	/** Texture slots for overlays start after the scenes' (0, 1). */
+	private static readonly OVERLAY_SLOT = 8;
+
+	private drawOverlays(overlays: OverlayDraw[]) {
+		if (overlays.length === 0) return;
+		const gl = this.gl;
+		const { width: W, height: H } = this.canvas;
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.viewport(0, 0, W, H);
+		const { program, u } = this.overlay;
+		gl.useProgram(program);
+		gl.enable(gl.BLEND);
+		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+		gl.uniform2f(u.viewport, W, H);
+		gl.uniform1i(u.image, 0);
+		overlays.forEach((o, i) => {
+			if (o.opacity <= 0.001 || o.rect.w < 1 || o.rect.h < 1) return;
+			this.bindImage(Compositor.OVERLAY_SLOT + i, o.image);
+			const s = o.shadow;
+			gl.uniform2f(u.center, o.rect.x + o.rect.w / 2, o.rect.y + o.rect.h / 2);
+			gl.uniform2f(u.half, o.rect.w / 2, o.rect.h / 2);
+			gl.uniform1f(u.margin, s ? s.blur + Math.hypot(s.offsetX, s.offsetY) + 2 : 1);
+			gl.uniform1f(u.radius, Math.min(o.radius, o.rect.w / 2, o.rect.h / 2));
+			gl.uniform1f(u.border, o.borderWidth);
+			gl.uniform3f(u.borderColor, ...o.borderColor);
+			gl.uniform1f(u.shadowBlur, s ? Math.max(1, s.blur) : 1);
+			gl.uniform2f(u.shadowOffset, s?.offsetX ?? 0, s?.offsetY ?? 0);
+			gl.uniform1f(u.shadowAlpha, s?.alpha ?? 0);
+			gl.uniform1f(u.opacity, o.opacity);
+			gl.uniform4f(u.uv, ...o.uv);
+			const g = o.grade;
+			gl.uniform3f(u.gain, g.gain[0], g.gain[1], g.gain[2]);
+			gl.uniform3f(u.lift, g.lift[0], g.lift[1], g.lift[2]);
+			gl.uniform1f(u.contrast, g.contrast);
+			gl.uniform1f(u.saturation, g.saturation);
+			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+		});
+		gl.disable(gl.BLEND);
 	}
 
 	/** A pixel rectangle (top-left origin) as uRect in clip space for a W × H target. */
@@ -502,5 +660,6 @@ export class Compositor {
 		gl.deleteProgram(this.transition.program);
 		gl.deleteProgram(this.blur.program);
 		gl.deleteProgram(this.sprite.program);
+		gl.deleteProgram(this.overlay.program);
 	}
 }

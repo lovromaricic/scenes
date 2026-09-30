@@ -24,6 +24,11 @@ import { ensureFonts, onFontsChange } from '$lib/render/fonts';
 import { resolveTextStyle } from '$lib/model/textStyle';
 import { layerInput, textDrawsAt } from '$lib/render/frame';
 import { CardCache } from '$lib/render/card';
+import { placeOverlays, type Overlay, type PlacedOverlay } from '$lib/model/overlay';
+import { cardSize, overlayDraw, type OverlayDraw } from '$lib/render/overlay';
+
+/** What has its own decoder: a scene, or a layer (even when both use the same file). */
+type Decodable = Pick<Scene, 'id' | 'kind' | 'mediaId'>;
 import { sourceTimeAt } from './time';
 
 /** What the player needs to know about imported files. */
@@ -62,6 +67,9 @@ export class Player {
 	private scenes: Scene[] = [];
 	private texts: TextItem[] = [];
 	private sounds: Project['sounds'] = [];
+	private overlays: Overlay[] = [];
+	private placedOverlays: PlacedOverlay[] = [];
+	private projectWidth = 1920;
 	private readonly sprites = new TextSpriteCache();
 	private readonly cards = new CardCache();
 	/** A text being edited on the preview is drawn by the HTML editor instead. */
@@ -162,15 +170,19 @@ export class Player {
 		this.sounds = project.sounds;
 		this.placed = placeScenes(project.scenes);
 		this.duration = this.placed.at(-1)?.end ?? 0;
+		this.overlays = project.overlays ?? [];
+		this.placedOverlays = placeOverlays(this.overlays, this.placed);
+		this.projectWidth = project.format.width;
 		this.lookup = lookup;
 		this.mood = project.mood;
 
-		// Drop decoders for scenes that no longer exist or now point at a different file.
-		for (const [sceneId, entry] of this.sources) {
-			const scene = this.scenes.find((s) => s.id === sceneId);
-			if (!scene || scene.mediaId !== entry.mediaId) {
+		// Drop decoders for scenes and layers that no longer exist or now point at a different file.
+		for (const [id, entry] of this.sources) {
+			const item: Decodable | undefined =
+				this.scenes.find((s) => s.id === id) ?? this.overlays.find((o) => o.id === id);
+			if (!item || item.mediaId !== entry.mediaId) {
 				entry.source?.dispose();
-				this.sources.delete(sceneId);
+				this.sources.delete(id);
 			}
 		}
 		if (this.time > this.duration) this.setTime(this.duration);
@@ -184,7 +196,10 @@ export class Player {
 	}
 
 	private audioClips(): AudioClip[] {
-		return projectAudioClips({ scenes: this.scenes, sounds: this.sounds }, this.hasAudio);
+		return projectAudioClips(
+			{ scenes: this.scenes, sounds: this.sounds, overlays: this.overlays },
+			this.hasAudio
+		);
 	}
 
 	/** What the sound depends on, apart from volume and fades (those can change live). */
@@ -295,7 +310,7 @@ export class Player {
 		});
 	}
 
-	private sourceFor(scene: Scene): FrameSource | null {
+	private sourceFor(scene: Decodable): FrameSource | null {
 		if (scene.kind === 'card') return null;
 		let entry = this.sources.get(scene.id);
 		if (!entry) {
@@ -353,12 +368,55 @@ export class Player {
 			: null;
 	}
 
-	/** Whether every frame needed at time `t` is decoded exactly. */
+	/** Whether every frame needed at time `t` is decoded exactly (scenes and layers). */
 	private framesReady(t: number, playing: boolean): boolean {
 		const c = this.composition(t);
 		const a = c.a && this.layerFrame(c.a, playing);
 		const b = c.b && this.layerFrame(c.b, playing);
-		return !!a && a.exact && (!c.b || (!!b && b.exact));
+		const scenesReady = !!a && a.exact && (!c.b || (!!b && b.exact));
+		return scenesReady && this.overlaysAt(t).every((p) => this.overlayFrame(p, t, playing)?.exact ?? false);
+	}
+
+	private overlaysAt(t: number): PlacedOverlay[] {
+		return this.placedOverlays.filter((p) => t >= p.start && t < p.end && t < this.duration);
+	}
+
+	/** An overlay's picture at time `t`: a video frame, the photo, or the card at its box size. */
+	private overlayFrame(p: PlacedOverlay, t: number, playing: boolean) {
+		const o = p.overlay;
+		if (o.kind === 'card') {
+			if (!this.canvas || !o.card) return null;
+			const size = cardSize(p, this.canvas.width, this.canvas.height);
+			return this.cards.frame(o.card, size.width, size.height);
+		}
+		const source = this.sourceFor(o);
+		if (!source) return null;
+		const sourceTime = o.sourceStart + (t - p.start);
+		source.want(sourceTime, playing);
+		return source.frameAt(sourceTime);
+	}
+
+	/** The layers showing at time `t`, lowest row first. */
+	private overlayDraws(t: number, playing: boolean): OverlayDraw[] {
+		if (!this.canvas) return [];
+		const draws: OverlayDraw[] = [];
+		for (const p of this.overlaysAt(t)) {
+			const frame = this.overlayFrame(p, t, playing);
+			if (!frame) continue;
+			draws.push(
+				overlayDraw(
+					frame,
+					p,
+					t,
+					this.mood,
+					this.canvas.width,
+					this.canvas.height,
+					this.projectWidth,
+					this.lookup.sourceSize(p.overlay.mediaId) ?? undefined
+				)
+			);
+		}
+		return draws;
 	}
 
 	/** The text sprites showing at time `t`, with their animation applied. */
@@ -374,6 +432,40 @@ export class Player {
 		return source.frameAt(target.sourceTime);
 	}
 
+	/**
+	 * What crop mode shows: a scene, or a layer (as a stand-in scene with the layer's id, so it
+	 * uses the layer's own decoder), at the source time under the playhead.
+	 */
+	private cropTarget(id: string, t: number): (PlacedScene & { sourceTime: number }) | null {
+		const scene = this.placed.find((p) => p.scene.id === id);
+		if (scene) return { ...scene, sourceTime: sourceTimeAt(scene, t) };
+		const layer = this.placedOverlays.find((p) => p.overlay.id === id);
+		if (!layer) return null;
+		const o = layer.overlay;
+		const local = Math.min(Math.max(0, t - layer.start), o.duration - 1 / 30);
+		const stand: Scene = {
+			id: o.id,
+			mediaId: o.mediaId,
+			kind: o.kind,
+			name: o.name,
+			sourceStart: o.sourceStart,
+			sourceEnd: o.sourceStart + o.duration,
+			speed: 1,
+			volume: 0,
+			mood: null,
+			transition: { kind: 'cut', duration: 0 },
+			crop: o.crop
+		};
+		return {
+			scene: stand,
+			index: -1,
+			start: layer.start,
+			end: layer.end,
+			duration: o.duration,
+			sourceTime: o.kind === 'video' ? o.sourceStart + local : 0
+		};
+	}
+
 	private placedAt(t: number): PlacedScene | null {
 		const placed = this.placed;
 		if (!placed.length) return null;
@@ -381,8 +473,19 @@ export class Player {
 		return placed[placed.length - 1];
 	}
 
-	/** Keep decoders busy only for scenes near the playhead; let the rest sleep. */
+	/** Keep decoders busy only for scenes and layers near the playhead; let the rest sleep. */
 	private manageSources(t: number) {
+		const ahead0 = this.playing ? PREFETCH : 0.6;
+		for (const p of this.placedOverlays) {
+			if (p.overlay.kind === 'card') continue;
+			const near = (t >= p.start && t < p.end) || (p.start >= t && p.start - t < ahead0);
+			if (near) {
+				const source = this.sourceFor(p.overlay);
+				if (source && !(t >= p.start && t < p.end)) source.want(p.overlay.sourceStart, this.playing);
+			} else if (this.cropViewId !== p.overlay.id) {
+				this.sources.get(p.overlay.id)?.source?.idle();
+			}
+		}
 		const current = this.placedAt(t);
 		const ahead = this.playing ? PREFETCH : 0.6;
 		for (const p of this.placed) {
@@ -420,9 +523,7 @@ export class Player {
 
 		this.manageSources(t);
 		let composite: CompositeFrame;
-		const cropPlaced = this.cropViewId
-			? this.placed.find((p) => p.scene.id === this.cropViewId)
-			: null;
+		const cropPlaced = this.cropViewId ? this.cropTarget(this.cropViewId, t) : null;
 		if (cropPlaced) {
 			const whole: Scene = {
 				...cropPlaced.scene,
@@ -431,7 +532,7 @@ export class Player {
 			};
 			const ref = {
 				placed: { ...cropPlaced, scene: whole },
-				sourceTime: sourceTimeAt(cropPlaced, t)
+				sourceTime: cropPlaced.sourceTime
 			};
 			const frame = this.layerFrame(ref, false);
 			composite = {
@@ -472,6 +573,8 @@ export class Player {
 		}
 		const texts = cropPlaced ? [] : this.textDraws(t, this.canvas.width, this.canvas.height);
 		composite.texts = texts;
+		const overlays = cropPlaced || this.peekTarget ? [] : this.overlayDraws(t, this.playing);
+		composite.overlays = overlays;
 		const layerKey = (l: LayerInput | null | undefined) =>
 			l
 				? `${objectId(l.image)}:${JSON.stringify(l.grade)}:${JSON.stringify(l.rect)}:${l.bars}`
@@ -487,6 +590,12 @@ export class Player {
 				.map(
 					(d) =>
 						`${d.key}:${d.opacity.toFixed(3)}:${d.scale.toFixed(3)}:${d.cx.toFixed(1)}:${d.cy.toFixed(1)}`
+				)
+				.join(','),
+			overlays
+				.map(
+					(o) =>
+						`${objectId(o.image)}:${JSON.stringify(o.rect)}:${JSON.stringify(o.uv)}:${o.radius}:${o.borderWidth}:${o.borderColor}:${JSON.stringify(o.shadow)}:${o.opacity.toFixed(3)}`
 				)
 				.join(',')
 		].join('|');
@@ -505,7 +614,8 @@ export class Player {
 
 	/** The decoded picture of a scene at a source time, if it's ready (used by the reframe view). */
 	frameImage(sceneId: string, sourceTime: number): FrameImage | null {
-		const scene = this.scenes.find((s) => s.id === sceneId);
+		const scene: Decodable | undefined =
+			this.scenes.find((s) => s.id === sceneId) ?? this.overlays.find((o) => o.id === sceneId);
 		const source = scene && this.sourceFor(scene);
 		if (!source) return null;
 		source.want(sourceTime, false);

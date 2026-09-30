@@ -24,6 +24,8 @@ import { TextSpriteCache } from '$lib/render/text';
 import { ensureFonts } from '$lib/render/fonts';
 import { resolveTextStyle } from '$lib/model/textStyle';
 import { exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
+import { placeOverlays, type PlacedOverlay } from '$lib/model/overlay';
+import { cardSize, overlayDraw, type OverlayDraw } from '$lib/render/overlay';
 import { PhotoExportReader, VideoExportReader, type ExportFrameReader } from './reader';
 
 /**
@@ -185,7 +187,8 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	output.addAudioTrack(audioSource);
 
 	const readers = new Map<string, Promise<ExportFrameReader>>();
-	const readerFor = (scene: Scene) => {
+	// Scenes and layers each get their own reader (decoding in step), even for the same file.
+	const readerFor = (scene: Pick<Scene, 'id' | 'mediaId'>) => {
 		let r = readers.get(scene.id);
 		if (!r) {
 			r = getHandle(scene.mediaId).then((h) =>
@@ -225,6 +228,39 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 			: null;
 	};
 
+	// Layers, lowest row first: each drawn with the same geometry as the preview.
+	const layers = placeOverlays(project.overlays ?? [], placed);
+	const overlaysAt = async (t: number): Promise<OverlayDraw[]> => {
+		const draws: OverlayDraw[] = [];
+		for (const p of layers) {
+			if (t < p.start || t >= p.end) continue;
+			const frame = await overlayFrame(p, t);
+			if (!frame) continue;
+			draws.push(
+				overlayDraw(
+					frame,
+					p,
+					t,
+					project.mood,
+					width,
+					height,
+					project.format.width,
+					request.sourceSize(p.overlay.mediaId) ?? undefined
+				)
+			);
+		}
+		return draws;
+	};
+	const overlayFrame = async (p: PlacedOverlay, t: number) => {
+		const o = p.overlay;
+		if (o.kind === 'card') {
+			if (!o.card) return null;
+			const size = cardSize(p, width, height);
+			return cards.frame(o.card, size.width, size.height);
+		}
+		return (await readerFor(o)).frameAt(o.sourceStart + (t - p.start));
+	};
+
 	const clips = projectAudioClips(project, request.hasAudio);
 	const totalFrames = Math.max(1, Math.round(duration * fps));
 	let audioUntil = 0;
@@ -251,17 +287,22 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 				a: await layer(c.a),
 				b: await layer(c.b),
 				transition: c.transition,
+				overlays: await overlaysAt(t),
 				texts: textDrawsAt(project.texts, t, width, height, sprites)
 			};
 			compositor.render(frame);
 			await videoSource.add(t, 1 / fps);
 			sprites.endFrame();
 
-			// Scenes well behind the playhead won't be needed again: free their decoders.
-			for (const p of placed) {
-				if (p.end + 1.5 < t && readers.has(p.scene.id)) {
-					void readers.get(p.scene.id)!.then((r) => r.dispose());
-					readers.delete(p.scene.id);
+			// Scenes and layers well behind the playhead won't be needed again: free their decoders.
+			const done = [
+				...placed.filter((p) => p.end + 1.5 < t).map((p) => p.scene.id),
+				...layers.filter((p) => p.end + 1.5 < t).map((p) => p.overlay.id)
+			];
+			for (const id of done) {
+				if (readers.has(id)) {
+					void readers.get(id)!.then((r) => r.dispose());
+					readers.delete(id);
 				}
 			}
 			if (i % 5 === 0) request.onProgress?.({ progress: i / totalFrames, elapsed: elapsed() });

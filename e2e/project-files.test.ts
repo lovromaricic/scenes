@@ -116,6 +116,16 @@ async function buildProject(page: Page) {
 	await textHex.fill('#00ff00');
 	await textHex.press('Enter');
 
+	// A layer: the red clip as picture-in-picture over the photo, styled, with its sound on.
+	await page.evaluate(() => {
+		const s = (window as unknown as { __scenes: Record<string, (...a: unknown[]) => string> & { media: Record<string, { id: string; name: string }> } }).__scenes;
+		const red = Object.values(s.media).find((m) => m.name === 'red.mp4')!.id;
+		const layer = s.addOverlayFromMedia(red, 4.5);
+		s.setOverlayStyle(layer, { radius: 0.5, borderColor: '#ffffff', borderWidth: 8, shadow: 'soft', opacity: 0.9 });
+		s.setOverlaySound(layer, { on: true, volume: 0.7 });
+	});
+	await expect(page.locator('.layer-slot')).toHaveCount(1);
+
 	// Music.
 	await page.getByRole('button', { name: /^Sound/ }).click();
 	const music = page.waitForEvent('filechooser');

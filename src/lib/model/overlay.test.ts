@@ -14,6 +14,7 @@ import {
 	placeOverlays,
 	relinkByTime,
 	rowCount,
+	sendBack,
 	tooManyVideos,
 	type Overlay
 } from './overlay';
@@ -96,6 +97,15 @@ describe('overlay rows', () => {
 	it('empty rows disappear', () => {
 		expect(compactRows([overlay('x', 'a', 0, 1, 2), overlay('y', 'a', 0, 1, 5)]).map((o) => o.row)).toEqual([0, 1]);
 		expect(rowCount([])).toBe(1);
+	});
+	it('send back goes under what it overlaps', () => {
+		const list = [overlay('low', 'a', 0, 2, 0), overlay('top', 'a', 0, 2, 1), overlay('far', 'a', 3, 1, 0)];
+		const next = sendBack(list, 'top', placed);
+		const row = (id: string) => next.find((o) => o.id === id)!.row;
+		expect(row('top')).toBeLessThan(row('low'));
+		// With nothing in the way, it just moves down a row.
+		const free = [overlay('x', 'a', 0, 1, 0), overlay('y', 'a', 2, 1, 1)];
+		expect(sendBack(free, 'y', placed).map((o) => o.row)).toEqual([0, 0]);
 	});
 	it('draws lower rows first', () => {
 		const list = [overlay('top', 'a', 0, 1, 1), overlay('low', 'a', 0, 1, 0)];
