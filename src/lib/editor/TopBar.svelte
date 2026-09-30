@@ -9,6 +9,8 @@
 	import { Button, Divider, IconButton } from '$lib/ui';
 	import { formatLength, pluralize } from '$lib/model/time';
 	import { useEditor } from '$lib/state/context';
+	import { formatLabel } from '$lib/model/format';
+	import FormatPanel from './FormatPanel.svelte';
 
 	interface Props {
 		onwatch?: () => void;
@@ -22,6 +24,17 @@
 
 	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 	const mod = isMac ? '⌘' : 'Ctrl+';
+
+	let formatPanel = $state<{ x: number; y: number } | null>(null);
+
+	function toggleFormat(event: MouseEvent) {
+		if (formatPanel) {
+			formatPanel = null;
+			return;
+		}
+		const r = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		formatPanel = { x: r.left, y: r.bottom };
+	}
 
 	let editing = $state(false);
 	let draft = $state('');
@@ -88,6 +101,17 @@
 		<p class="meta">
 			{pluralize(editor.project.scenes.length, 'scene')} · {formatLength(editor.duration)}
 		</p>
+		<button
+			type="button"
+			class="format mono"
+			data-format-button
+			aria-haspopup="dialog"
+			aria-expanded={!!formatPanel}
+			aria-label="Project format: {formatLabel(editor.project.format)}. Change"
+			onclick={toggleFormat}
+		>
+			{formatLabel(editor.project.format)}
+		</button>
 		{#if saveLabel}
 			<p class="save" class:error={editor.saveStatus === 'error'} role="status">
 				{#if editor.saveStatus === 'saved'}<Check
@@ -129,6 +153,10 @@
 		>
 	</div>
 </header>
+
+{#if formatPanel}
+	<FormatPanel x={formatPanel.x} y={formatPanel.y} onclose={() => (formatPanel = null)} />
+{/if}
 
 <style>
 	.topbar {
@@ -181,6 +209,21 @@
 		color: var(--color-muted);
 		font-size: var(--text-md);
 		white-space: nowrap;
+	}
+	.format {
+		height: 28px;
+		padding: 0 var(--space-3);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-pill);
+		background: var(--color-bg);
+		color: var(--color-ink);
+		font-size: var(--text-sm);
+		white-space: nowrap;
+		transition: border-color var(--dur-fast) var(--ease-out);
+	}
+	.format:hover,
+	.format[aria-expanded='true'] {
+		border-color: var(--color-ink);
 	}
 	.save {
 		display: inline-flex;

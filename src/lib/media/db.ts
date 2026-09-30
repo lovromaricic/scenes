@@ -21,6 +21,8 @@ export interface MediaInfo {
 	width: number;
 	height: number;
 	hasAudio: boolean;
+	/** Frames per second (videos), if known. */
+	fps?: number;
 	createdAt: number;
 }
 

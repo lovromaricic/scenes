@@ -23,6 +23,13 @@ clip green 0x00ff00 3 660 "$H264" "$AAC" mp4
 clip long magenta 12 550 "$H264" "$AAC" mp4
 clip blue blue 3 880 "-c:v libvpx-vp9 -b:v 200k -g 30 -deadline realtime -cpu-used 8" "-c:a libopus -b:a 48k" webm
 
+# A vertical (phone-shaped) clip: orange with the test pattern, 3s, 25 fps.
+ffmpeg -y -loglevel error \
+	-f lavfi -i "color=c=orange:s=360x640:r=25:d=3" -f lavfi -i "testsrc2=s=160x90:r=25:d=3" \
+	-f lavfi -i "sine=frequency=330:sample_rate=48000:duration=3" \
+	-filter_complex "[0:v][1:v]overlay=16:16,format=yuv420p[v]" -map "[v]" -map 2:a -shortest \
+	-c:v libx264 -preset veryfast -g 25 -crf 28 -c:a aac -b:a 64k portrait.mp4
+
 # A longer clip whose colour changes every second (for scrubbing accuracy), with sparse keyframes.
 ffmpeg -y -loglevel error \
 	-f lavfi -i "color=c=red:s=640x360:r=30:d=1" -f lavfi -i "color=c=0x00ff00:s=640x360:r=30:d=1" \

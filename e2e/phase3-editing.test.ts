@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { centerColor, dominant, importViaPicker, scenes, seekTo } from './helpers';
+import { centerColor, dominant, importViaPicker, scenes, seekTo, setFormat } from './helpers';
 
 const cardNames = (page: Page) =>
 	page.getByRole('button', { name: /^Scene \d+, / }).evaluateAll((els) =>
@@ -120,9 +120,7 @@ test.describe('Phase 3: editing scenes', () => {
 		await page.getByRole('button', { name: /, rename$/ }).click();
 		await page.getByRole('textbox', { name: 'Video title' }).fill('Summer holiday');
 		await page.keyboard.press('Enter');
-		await page.evaluate(() =>
-			(window as unknown as { __scenes: { setAspect(a: string): void } }).__scenes.setAspect('9:16')
-		);
+		await setFormat(page, 'Vertical');
 		await seekTo(page, 5);
 		const before = await projectJson(page);
 

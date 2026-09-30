@@ -4,7 +4,7 @@
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import { onMount } from 'svelte';
 	import { Button, IconButton } from '$lib/ui';
-	import { aspectRatioValue } from '$lib/model/catalog';
+	import { formatRatio } from '$lib/model/format';
 	import { formatClock } from '$lib/model/time';
 	import { useEditor } from '$lib/state/context';
 	import TextOverlay from './TextOverlay.svelte';
@@ -35,7 +35,7 @@
 	});
 	let previewH = $state(0);
 
-	const ratio = $derived(aspectRatioValue(editor.project.aspect));
+	const ratio = $derived(formatRatio(editor.project.format));
 	const empty = $derived(editor.ready && editor.project.scenes.length === 0);
 
 	/** Drawing-buffer size cap, to keep the preview fast on large screens. */

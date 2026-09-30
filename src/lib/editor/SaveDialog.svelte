@@ -42,7 +42,10 @@
 	let format = $state<ExportFormat | null>(null);
 
 	const size = $derived(
-		outputSize(editor.project.aspect, PRESETS.find((p) => p.id === preset)!.shortSide)
+		outputSize(
+			editor.project.format,
+			PRESETS.find((p) => p.id === preset)!
+		)
 	);
 
 	onMount(() => {
@@ -165,7 +168,7 @@
 		<div class="presets" role="radiogroup" aria-label="Quality">
 			{#each PRESETS as p (p.id)}
 				{@const checked = p.id === preset}
-				{@const s = outputSize(editor.project.aspect, p.shortSide)}
+				{@const s = outputSize(editor.project.format, p)}
 				<button
 					type="button"
 					role="radio"
@@ -182,7 +185,7 @@
 					<span class="desc">{p.description}</span>
 					<span class="meta mono">
 						{s.width} × {s.height} · about {formatBytes(
-							estimateBytes(p, editor.project.aspect, editor.duration)
+							estimateBytes(p, editor.project.format, editor.duration)
 						)}
 					</span>
 				</button>

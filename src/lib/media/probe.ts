@@ -120,6 +120,10 @@ async function probeAv(file: File, kind: MediaKind): Promise<ProbeResult> {
 				startTime,
 				width: await video.getDisplayWidth(),
 				height: await video.getDisplayHeight(),
+				fps: await video
+					.computePacketStats(120)
+					.then((s) => s.averagePacketRate)
+					.catch(() => undefined),
 				hasAudio
 			},
 			thumbnail

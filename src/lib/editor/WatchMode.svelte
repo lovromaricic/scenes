@@ -10,7 +10,7 @@
 	import X from '@lucide/svelte/icons/x';
 	import { onMount } from 'svelte';
 	import { IconButton } from '$lib/ui';
-	import { aspectRatioValue } from '$lib/model/catalog';
+	import { formatRatio } from '$lib/model/format';
 	import { formatClock } from '$lib/model/time';
 	import { useEditor } from '$lib/state/context';
 
@@ -25,7 +25,7 @@
 	let controlsVisible = $state(true);
 	let hideTimer: ReturnType<typeof setTimeout> | undefined;
 
-	const ratio = $derived(aspectRatioValue(editor.project.aspect));
+	const ratio = $derived(formatRatio(editor.project.format));
 	// Fit the video inside the window.
 	const box = $derived(vw / vh > ratio ? { w: vh * ratio, h: vh } : { w: vw, h: vw / ratio });
 	const ended = $derived(!editor.playing && editor.time >= editor.duration - 0.05);

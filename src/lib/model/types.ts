@@ -4,6 +4,9 @@
  * All times are in seconds.
  */
 
+import type { ProjectFormat } from './format';
+
+/** Shapes offered by the design-page demo switch. Projects use `ProjectFormat`. */
 export type AspectRatio = '16:9' | '9:16' | '1:1';
 
 export type MoodId = 'natural' | 'golden' | 'faded' | 'cool' | 'punchy' | 'mono';
@@ -70,7 +73,9 @@ export interface SoundItem {
 export interface Project {
 	id: string;
 	title: string;
-	aspect: AspectRatio;
+	format: ProjectFormat;
+	/** False until the first clip sets the format or the user picks one. */
+	formatSet: boolean;
 	mood: MoodId;
 	scenes: Scene[];
 	texts: TextItem[];

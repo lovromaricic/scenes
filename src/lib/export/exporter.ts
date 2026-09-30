@@ -145,7 +145,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	const duration = placed.at(-1)?.end ?? 0;
 	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
 
-	const { width, height } = outputSize(project.aspect, preset.shortSide);
+	const { width, height } = outputSize(project.format, preset);
 	const bitrate = videoBitrate(preset, width, height);
 	const format = request.format ?? (await chooseFormat(width, height, bitrate));
 	const started = performance.now();

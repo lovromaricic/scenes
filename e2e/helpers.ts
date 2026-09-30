@@ -119,3 +119,32 @@ export async function textAreaPixels(page: Page, index = 0): Promise<[number, nu
 
 export const isInkish = ([r, g, b]: [number, number, number]) => r < 70 && g < 70 && b < 70;
 export const isYellowish = ([r, g, b]: [number, number, number]) => r > 200 && g > 190 && b < 140;
+
+/** Open the Project format panel from the top bar. */
+export async function openFormat(page: Page) {
+	await page.getByRole('button', { name: /^Project format:/ }).click();
+	const panel = page.getByRole('dialog', { name: 'Project format' });
+	await expect(panel).toBeVisible();
+	return panel;
+}
+
+/** Set the project format through the panel: a shape, and optionally a size and frame rate. */
+export async function setFormat(page: Page, shape: string, size?: string, fps?: number) {
+	const panel = await openFormat(page);
+	await panel
+		.getByRole('radiogroup', { name: 'Shape' })
+		.getByRole('radio', { name: new RegExp(`^${shape}`) })
+		.click();
+	if (size)
+		await panel
+			.getByRole('radiogroup', { name: 'Size' })
+			.getByRole('radio', { name: size })
+			.click();
+	if (fps)
+		await panel
+			.getByRole('radiogroup', { name: 'Frame rate' })
+			.getByRole('radio', { name: `${fps} fps` })
+			.click();
+	await page.keyboard.press('Escape');
+	await expect(panel).toHaveCount(0);
+}

@@ -1,5 +1,3 @@
-import type { AspectRatio } from '$lib/model/types';
-
 /** The three ways to save a video, in friendly terms. */
 export type PresetId = 'best' | 'social' | 'small';
 
@@ -7,8 +5,8 @@ export interface ExportPreset {
 	id: PresetId;
 	label: string;
 	description: string;
-	/** Pixels on the short side (1080 = "1080p"). */
-	shortSide: number;
+	/** Scale the short side down to this many pixels when the project is bigger (Small file). */
+	maxShortSide?: number;
 	/** Video bits per pixel per frame; sets the bitrate for any size. */
 	bitsPerPixel: number;
 	audioBitrate: number;
@@ -19,7 +17,6 @@ export const PRESETS: ExportPreset[] = [
 		id: 'best',
 		label: 'Best quality',
 		description: 'Full HD 1080p. Best for keeping and for big screens.',
-		shortSide: 1080,
 		bitsPerPixel: 0.19,
 		audioBitrate: 192_000
 	},
@@ -28,7 +25,6 @@ export const PRESETS: ExportPreset[] = [
 		label: 'For social',
 		description:
 			'1080p in your video’s shape, with a smaller file. Ready for Instagram, TikTok or YouTube.',
-		shortSide: 1080,
 		bitsPerPixel: 0.09,
 		audioBitrate: 128_000
 	},
@@ -36,7 +32,7 @@ export const PRESETS: ExportPreset[] = [
 		id: 'small',
 		label: 'Small file',
 		description: '720p. Quick to send in messages and email.',
-		shortSide: 720,
+		maxShortSide: 720,
 		bitsPerPixel: 0.08,
 		audioBitrate: 96_000
 	}
@@ -50,15 +46,17 @@ export function presetById(id: PresetId): ExportPreset {
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
-/** Output size for a video shape: e.g. 1080p is 1920×1080, 1080×1920 or 1080×1080. */
+/**
+ * Output size for a preset: the project's own size, except "Small file", which scales the short
+ * side down to the preset's size if the project is bigger (never up).
+ */
 export function outputSize(
-	aspect: AspectRatio,
-	shortSide: number
+	format: { width: number; height: number },
+	preset: Pick<ExportPreset, 'maxShortSide'>
 ): { width: number; height: number } {
-	const [w, h] = aspect.split(':').map(Number);
-	return w >= h
-		? { width: even((shortSide * w) / h), height: even(shortSide) }
-		: { width: even(shortSide), height: even((shortSide * h) / w) };
+	const short = Math.min(format.width, format.height);
+	const scale = preset.maxShortSide ? Math.min(1, preset.maxShortSide / short) : 1;
+	return { width: even(format.width * scale), height: even(format.height * scale) };
 }
 
 export function videoBitrate(
@@ -71,9 +69,13 @@ export function videoBitrate(
 }
 
 /** Rough file size in bytes (encoders vary; shown as "about"). */
-export function estimateBytes(preset: ExportPreset, aspect: AspectRatio, seconds: number): number {
-	const { width, height } = outputSize(aspect, preset.shortSide);
-	return ((videoBitrate(preset, width, height) + preset.audioBitrate) * seconds) / 8;
+export function estimateBytes(
+	preset: ExportPreset,
+	format: { width: number; height: number; fps: number },
+	seconds: number
+): number {
+	const { width, height } = outputSize(format, preset);
+	return ((videoBitrate(preset, width, height, format.fps) + preset.audioBitrate) * seconds) / 8;
 }
 
 export function formatBytes(bytes: number): string {

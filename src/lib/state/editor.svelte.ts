@@ -34,8 +34,8 @@ import { History } from '$lib/model/history';
 import { placeScenes, totalDuration } from '$lib/model/timeline';
 import { TEXT_ENTER } from '$lib/model/textAnimation';
 import { TRANSITION_SECONDS } from '$lib/model/composition';
+import { formatFromClip, legacyFormat, type ProjectFormat } from '$lib/model/format';
 import type {
-	AspectRatio,
 	MoodId,
 	Project,
 	Scene,
@@ -136,6 +136,12 @@ export class EditorStore {
 			// Never replace work the user has already started in this session.
 			if (record && !this.history.canUndo) {
 				const { view, savedAt: _savedAt, ...project } = record;
+				// Projects saved before formats existed only had a shape ("aspect").
+				if (!project.format) {
+					project.format = legacyFormat((project as { aspect?: string }).aspect);
+					project.formatSet = true;
+					delete (project as { aspect?: string }).aspect;
+				}
 				// Projects saved before "Your media" existed: rebuild the list from their scenes.
 				project.library ??= project.scenes
 					.map((s) => s.mediaId)
@@ -807,8 +813,16 @@ export class EditorStore {
 		this.player.hideText(null);
 	}
 
-	setAspect(aspect: AspectRatio): void {
-		if (aspect !== this.project.aspect) this.edit('Video shape', (p) => ({ ...p, aspect }));
+	/** Change the project's shape, size or frame rate. */
+	setFormat(format: ProjectFormat): void {
+		const current = this.project.format;
+		const same =
+			format.preset === current.preset &&
+			format.width === current.width &&
+			format.height === current.height &&
+			format.fps === current.fps;
+		if (same && this.project.formatSet) return;
+		this.edit('Video format', (p) => ({ ...p, format: { ...format }, formatSet: true }));
 	}
 
 	setTitle(title: string): void {
@@ -844,6 +858,11 @@ export class EditorStore {
 				}
 				this.media[info.id] = info;
 				const scene = sceneFromMedia(info);
+				// A new project takes its format from the first clip.
+				if (!this.project.formatSet && this.project.scenes.length === 0) {
+					this.project.format = formatFromClip(info.width, info.height, info.fps);
+					this.project.formatSet = true;
+				}
 				this.project.scenes.push(scene);
 				this.project.library.push(info.id);
 				this.selectedId = scene.id;

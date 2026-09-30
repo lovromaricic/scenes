@@ -1,5 +1,6 @@
 import type { MediaInfo } from '$lib/media/db';
 import type { Project, Scene } from '$lib/model/types';
+import { DEFAULT_FORMAT } from '$lib/model/format';
 import { nameFromFile } from '$lib/media/kinds';
 
 export const PHOTO_SECONDS = 3;
@@ -13,7 +14,8 @@ export function newProject(): Project {
 	return {
 		id: newId(),
 		title: 'My video',
-		aspect: '16:9',
+		format: { ...DEFAULT_FORMAT },
+		formatSet: false,
 		mood: 'natural',
 		scenes: [],
 		texts: [],

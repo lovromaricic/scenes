@@ -66,7 +66,7 @@ describe('EditorStore editing with undo/redo', () => {
 		states.push(snap(store));
 
 		store.setSceneMood(ids[2], 'golden');
-		store.setAspect('9:16');
+		store.setFormat({ preset: 'vertical', width: 1080, height: 1920, fps: 30 });
 		store.setTitle('Holiday');
 		states.push(snap(store));
 

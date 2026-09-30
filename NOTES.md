@@ -310,6 +310,27 @@ npm run check        # svelte-check (TypeScript strict)
 - Playwright note: HTML5 drag-and-drop is tested with raw mouse moves; `locator.dragTo` waits for
   the target to be "stable" using animation frames, which Chromium pauses during a native drag.
 
+### 4. Project format and resolution
+
+- `project.aspect` is replaced by `project.format` = `{ preset, width, height, fps }`
+  (`src/lib/model/format.ts`, pure and unit tested). Old saved projects are migrated to 1080p at
+  30 fps in their old shape.
+- **Presets:** Landscape 16:9, Vertical 9:16, Square 1:1, Portrait 4:5, Classic 4:3, Cinematic
+  21:9, each at 720p / 1080p / 4K (short side 720 / 1080 / 2160). When the long side would pass
+  4096 (4K cinematic would be 5040×2160) both sides shrink together, so it's 4096×1756 —
+  a decision to keep every format encodable with H.264.
+- **Custom** width × height: rounded to even numbers, clamped to 240–4096 each, applied on Enter or
+  when the field loses focus. **Frame rate:** 24 / 25 / 30 / 60.
+- **First clip decides:** a new project takes its format from the first imported photo or video —
+  its shape (a preset when within 2%, otherwise Custom), the largest standard resolution not
+  bigger than the clip (720p minimum), and the nearest standard frame rate (measured with
+  Mediabunny packet stats). After that only the user changes it (`project.formatSet`). The first
+  import's undo step also undoes the format it chose.
+- The top bar shows e.g. "1920 × 1080 · 30 fps"; clicking it opens the Project format panel
+  (shape cards with a drawn outline, size chips or custom fields, frame-rate chips). Every change
+  applies immediately and is one undo step.
+- Export sizes now come from the format (section 6 finishes the dialog).
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

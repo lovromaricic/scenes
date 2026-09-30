@@ -9,12 +9,26 @@ import {
 	videoBitrate
 } from './presets';
 
+const hd = { width: 1920, height: 1080, fps: 30 };
+
 describe('outputSize', () => {
-	it('matches the video shape', () => {
-		expect(outputSize('16:9', 1080)).toEqual({ width: 1920, height: 1080 });
-		expect(outputSize('9:16', 1080)).toEqual({ width: 1080, height: 1920 });
-		expect(outputSize('1:1', 1080)).toEqual({ width: 1080, height: 1080 });
-		expect(outputSize('16:9', 720)).toEqual({ width: 1280, height: 720 });
+	it('uses the project size', () => {
+		expect(outputSize(hd, presetById('best'))).toEqual({ width: 1920, height: 1080 });
+		expect(outputSize({ width: 1080, height: 1920 }, presetById('social'))).toEqual({
+			width: 1080,
+			height: 1920
+		});
+	});
+	it('scales Small file down to 720 on the short side, never up', () => {
+		expect(outputSize(hd, presetById('small'))).toEqual({ width: 1280, height: 720 });
+		expect(outputSize({ width: 1080, height: 1350 }, presetById('small'))).toEqual({
+			width: 720,
+			height: 900
+		});
+		expect(outputSize({ width: 640, height: 480 }, presetById('small'))).toEqual({
+			width: 640,
+			height: 480
+		});
 	});
 });
 
@@ -29,10 +43,10 @@ describe('bitrates and sizes', () => {
 		expect(small).toBeLessThan(social);
 	});
 	it('estimates the file size', () => {
-		const bytes = estimateBytes(presetById('best'), '16:9', 30);
+		const bytes = estimateBytes(presetById('best'), hd, 30);
 		expect(bytes / 1e6).toBeGreaterThan(35);
 		expect(bytes / 1e6).toBeLessThan(55);
-		expect(estimateBytes(presetById('small'), '16:9', 30)).toBeLessThan(bytes / 3);
+		expect(estimateBytes(presetById('small'), hd, 30)).toBeLessThan(bytes / 3);
 	});
 	it('formats sizes', () => {
 		expect(formatBytes(500_000)).toBe('under 1 MB');

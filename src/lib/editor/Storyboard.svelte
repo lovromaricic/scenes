@@ -12,7 +12,7 @@
 	import SoundLane from './SoundLane.svelte';
 	import WordsLane from './WordsLane.svelte';
 	import { stackRows } from '$lib/model/edits';
-	import { aspectRatioValue } from '$lib/model/catalog';
+	import { formatRatio } from '$lib/model/format';
 	import { dragHasMedia, MEDIA_DRAG_TYPE } from '$lib/media/dragTypes';
 	import { fitPxPerSec, ticks } from './scale';
 
@@ -423,7 +423,7 @@
 							width={Math.max(24, item.width - CARD_GAP)}
 							thumbnail={thumbnailFor(item.scene)}
 							scene={item.scene}
-							tileAspect={aspectRatioValue(editor.project.aspect)}
+							tileAspect={formatRatio(editor.project.format)}
 							{selected}
 							onselect={() => onCardClick(item.scene.id)}
 							onkeydown={(e) => onCardKeydown(e, item)}

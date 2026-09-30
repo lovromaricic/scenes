@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { fixture, importViaPicker, scenes, seekTo } from './helpers';
+import { fixture, importViaPicker, scenes, seekTo, setFormat } from './helpers';
 
 type RGB = [number, number, number];
 
@@ -95,6 +95,11 @@ async function buildProject(page: Page) {
 		s.setSceneLength(s.project.scenes[2].id, 14);
 	});
 	await expect(page.getByText('3 scenes · 30 sec')).toBeVisible();
+	// The first clip is 640×360, so the project started at 720p; make it Full HD.
+	await setFormat(page, 'Landscape', '1080p');
+	await expect(
+		page.getByRole('button', { name: /^Project format: 1920 × 1080 · 30 fps/ })
+	).toBeVisible();
 
 	// A crossfade between scenes 1 and 2.
 	await page.getByRole('button', { name: /Transition between scene 1 and 2/ }).click();

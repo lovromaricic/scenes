@@ -40,6 +40,11 @@ describe('sceneFromMedia', () => {
 
 describe('newProject', () => {
 	it('starts empty', () => {
-		expect(newProject()).toMatchObject({ scenes: [], texts: [], sounds: [], aspect: '16:9' });
+		expect(newProject()).toMatchObject({
+			scenes: [],
+			texts: [],
+			sounds: [],
+			format: { width: 1920, height: 1080, fps: 30 }
+		});
 	});
 });

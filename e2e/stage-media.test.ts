@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { importViaPicker } from './helpers';
+import { importViaPicker, setFormat } from './helpers';
 
 const cardNames = (page: Page) =>
 	page.getByRole('button', { name: /^Scene \d+, / }).evaluateAll((els) =>
@@ -40,25 +40,23 @@ test('the preview fills the stage in the project’s shape and follows window si
 	await page.goto('/');
 	await importViaPicker(page, ['red.mp4'], 'Choose photos & videos');
 	await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
-	for (const [aspect, ratio] of [
-		['16:9', 16 / 9],
-		['9:16', 9 / 16],
-		['1:1', 1]
+	for (const [shape, ratio] of [
+		['Landscape', 16 / 9],
+		['Vertical', 9 / 16],
+		['Square', 1],
+		['Cinematic', 21 / 9],
+		['Portrait', 4 / 5],
+		['Classic', 4 / 3]
 	] as const) {
-		await page.evaluate(
-			(a) =>
-				(window as unknown as { __scenes: { setAspect(a: string): void } }).__scenes.setAspect(a),
-			aspect
-		);
+		await setFormat(page, shape);
 		await expectPreviewFills(page, ratio);
 	}
 	// A tall project gets a tall preview: it uses the full available height.
-	const tall = await fit(page);
-	await page.evaluate(() =>
-		(window as unknown as { __scenes: { setAspect(a: string): void } }).__scenes.setAspect('9:16')
-	);
+	await setFormat(page, 'Square');
+	const square = await fit(page);
+	await setFormat(page, 'Vertical');
 	await expectPreviewFills(page, 9 / 16);
-	expect((await fit(page)).h).toBeGreaterThan(tall.h * 0.95);
+	expect((await fit(page)).h).toBeGreaterThan(square.h * 0.95);
 	// Resizing the window resizes the preview immediately.
 	await page.setViewportSize({ width: 1280, height: 760 });
 	await expectPreviewFills(page, 9 / 16);
