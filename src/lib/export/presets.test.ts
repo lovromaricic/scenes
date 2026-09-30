@@ -80,6 +80,6 @@ describe('exportFileName', () => {
 	it('uses the title without unsafe characters', () => {
 		expect(exportFileName('Summer in Split', 'mp4')).toBe('Summer in Split.mp4');
 		expect(exportFileName('a/b:c?', 'webm')).toBe('a b c.webm');
-		expect(exportFileName('   ', 'mp4')).toBe('My video.mp4');
+		expect(exportFileName('   ', 'mp4')).toBe('Untitled video.mp4');
 	});
 });

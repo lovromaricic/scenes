@@ -496,6 +496,53 @@ npm run check        # svelte-check (TypeScript strict)
   (Pacifico, OFL, fixture) that survives a reload; a deleted font falling back with the warning;
   and the saved MP4's text pixels matching the preview's with Anton and custom colours.
 
+## Project management
+
+### 1. Multiple projects in the app
+
+- **Storage (IndexedDB v4).** `projects` already held one record per project, so the existing
+  project simply becomes the first entry in the list; nothing is copied or renamed. It keeps
+  its title ("My video"). New projects are called "Untitled video". The upgrade adds a `hash`
+  index on `media`, a `files` store (where each project was last saved as a file), and a
+  `settings` store.
+- **Media per project, stored once.** Files stay in one shared `media` store, and projects refer
+  to them by id. That makes "the same file imported twice is stored once" hold across projects
+  as well as within one, and it makes duplicating a project free. Each file gets a fingerprint:
+  SHA-256 of its size plus three 1 MB samples (start, middle, end), or of the whole file if it
+  is under 3 MB. Hashing whole multi-GB videos would take seconds; the samples plus the exact
+  size are enough to tell files apart in practice. On import, a matching fingerprint reuses
+  the stored file (no probing, thumbnails or storing). Files stored before this version get
+  their fingerprint in the background on first launch (`backfillMediaHashes`).
+- **Deleting** a project removes its thumbnail and file link, plus the media and uploaded or
+  computer fonts that no other project uses (`orphansAfterDelete`, pure and unit-tested).
+- **Migration** runs in `migrateProject`, which is shared with project files (section 4). It is
+  safe on current data. It handles:
+  - the legacy `aspect` field, converted to a format;
+  - missing fields, which get defaults;
+  - "Your media", rebuilt from the scenes when missing;
+  - unknown text styles, which fall back to Clean.
+- **One store per project.** `EditorStore(projectId, fresh)`:
+  - A fresh project isn't written to storage until something is changed, so opening
+    "New video" and leaving creates nothing.
+  - Emergency copies (written on pagehide) are now per project: `scenes:unsaved-project:<id>`.
+    The home screen stores any newer copy before listing projects.
+- **Home-card thumbnails.** A 320 px JPEG of the first scene, in the project's shape, with its
+  crop and framing (a card is drawn directly). It is only regenerated when the first scene or
+  the format changes, 800 ms after the edit.
+- **Persistent storage.** `navigator.storage.persist()` is asked once, on first use. The answer
+  is recorded in `settings` (`persistAsked`, `persisted`).
+- **Fix found along the way.** The editor now mounts after an async step (choosing which
+  project to open). Svelte's `bind:clientWidth/Height` on the preview read its size during that
+  first layout (2 px short) and never corrected it, so words and card rectangles were placed for
+  a slightly smaller frame. The overlays now take their size from the same ResizeObserver entry
+  as the canvas, so they always match the picture.
+- Tests:
+  - Unit: library actions (duplicate, rename, delete keeps shared files, emergency copies),
+    fingerprints, and migration of unknown styles.
+  - e2e: a real version-3 database (one project, media without fingerprints) opens unchanged
+    as "My video", gets its fingerprint, and re-importing the same file stores nothing new; the
+    persistence answer is recorded; the same file imported twice is stored once.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
@@ -509,7 +556,6 @@ npm run check        # svelte-check (TypeScript strict)
 - Card ideas: gradients, several shapes, images on cards, saving a card as a reusable style.
 - Font ideas: letter spacing and line height controls, text alignment, per-word colours, more
   subsets (Cyrillic/Greek) for the built-in fonts, cleaning up stored fonts nobody uses.
-- Only one project exists at a time (no project list). Ideas: a small "Your videos" page.
 - Undo history isn't persisted across reloads.
 
 ## Summary

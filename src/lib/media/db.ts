@@ -23,6 +23,8 @@ export interface MediaInfo {
 	hasAudio: boolean;
 	/** Frames per second (videos), if known. */
 	fps?: number;
+	/** Content fingerprint (see fingerprint.ts), to store the same file only once. */
+	hash?: string;
 	createdAt: number;
 }
 
@@ -42,8 +44,21 @@ export interface ProjectRecord extends Project {
 	savedAt?: number;
 }
 
+/** Where a project was last saved as a file, and which version of it the file holds. */
+export interface FileLink {
+	projectId: string;
+	/** The file's name, e.g. "summer-trip.scenes". */
+	name: string;
+	/** File System Access handle (Chrome/Edge) so Ctrl/Cmd+S can save there again. */
+	handle?: FileSystemFileHandle;
+	/** The project's `updatedAt` when it was saved to the file. */
+	savedUpdatedAt: number;
+}
+
 interface ScenesDB extends DBSchema {
-	media: { key: string; value: MediaRecord };
+	media: { key: string; value: MediaRecord; indexes: { hash: string } };
+	files: { key: string; value: FileLink };
+	settings: { key: string; value: { key: string; value: unknown } };
 	thumbnails: { key: string; value: { id: string; blob: Blob } };
 	projects: { key: string; value: ProjectRecord; indexes: { updatedAt: number } };
 	waveforms: { key: string; value: { id: string; peaks: Float32Array; perSecond: number } };
@@ -64,13 +79,13 @@ export interface FontFaceRecord {
 }
 
 const DB_NAME = 'scenes';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise: Promise<IDBPDatabase<ScenesDB>> | null = null;
 
 export function db(): Promise<IDBPDatabase<ScenesDB>> {
 	dbPromise ??= openDB<ScenesDB>(DB_NAME, DB_VERSION, {
-		upgrade(database, oldVersion) {
+		upgrade(database, oldVersion, _newVersion, transaction) {
 			if (oldVersion < 1) {
 				database.createObjectStore('media', { keyPath: 'id' });
 				database.createObjectStore('thumbnails', { keyPath: 'id' });
@@ -82,6 +97,13 @@ export function db(): Promise<IDBPDatabase<ScenesDB>> {
 			}
 			if (oldVersion < 3) {
 				database.createObjectStore('fonts', { keyPath: 'id' });
+			}
+			if (oldVersion < 4) {
+				// Many projects: deduplicate media by content, remember project files, settings.
+				// Existing data is kept as it is; media fingerprints are filled in later.
+				transaction.objectStore('media').createIndex('hash', 'hash');
+				database.createObjectStore('files', { keyPath: 'projectId' });
+				database.createObjectStore('settings', { keyPath: 'key' });
 			}
 		}
 	});
@@ -129,26 +151,100 @@ export async function getThumbnail(id: string): Promise<Blob | undefined> {
 	return (await (await db()).get('thumbnails', id))?.blob;
 }
 
-/** Ask the browser not to evict our data under storage pressure. Best effort. */
-export async function requestPersistentStorage(): Promise<void> {
+/**
+ * Ask the browser not to evict our data under storage pressure (once), and record the answer.
+ * Returns whether storage is persistent.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
 	try {
-		if (navigator.storage?.persisted && !(await navigator.storage.persisted())) {
-			await navigator.storage.persist?.();
+		let persisted = (await navigator.storage?.persisted?.()) ?? false;
+		if (!persisted && !(await getSetting('persistAsked'))) {
+			persisted = (await navigator.storage?.persist?.()) ?? false;
+			await putSetting('persistAsked', true);
 		}
+		await putSetting('persisted', persisted);
+		return persisted;
 	} catch {
-		// Not supported or denied: data still saves, it just may be evicted under pressure.
+		// Not supported: data still saves, it just may be evicted under pressure.
+		return false;
 	}
+}
+
+export async function getSetting<T>(key: string): Promise<T | undefined> {
+	return (await (await db()).get('settings', key))?.value as T | undefined;
+}
+
+export async function putSetting(key: string, value: unknown): Promise<void> {
+	await (await db()).put('settings', { key, value });
+}
+
+/** How much space the browser is using for Scenes, and how much it may use. */
+export async function storageEstimate(): Promise<{ usage: number; quota: number; persisted: boolean }> {
+	const est = (await navigator.storage?.estimate?.()) ?? {};
+	const persisted = (await navigator.storage?.persisted?.()) ?? false;
+	return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted };
 }
 
 export async function saveProject(record: ProjectRecord): Promise<void> {
 	await (await db()).put('projects', record);
 }
 
-/** The most recently edited project, if any. */
-export async function loadLatestProject(): Promise<ProjectRecord | undefined> {
+export async function getProject(id: string): Promise<ProjectRecord | undefined> {
+	return (await db()).get('projects', id);
+}
+
+/** Every project, most recently edited first. */
+export async function listProjects(): Promise<ProjectRecord[]> {
+	const all = await (await db()).getAll('projects');
+	return all.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** A stored file with this content, if there is one. */
+export async function findMediaByHash(hash: string): Promise<MediaInfo | undefined> {
+	const record = await (await db()).getFromIndex('media', 'hash', hash);
+	if (!record) return undefined;
+	const { blob: _blob, ...info } = record;
+	return info;
+}
+
+/** Fill in fingerprints for files stored before deduplication existed (in the background). */
+export async function backfillMediaHashes(hash: (blob: Blob) => Promise<string>): Promise<void> {
 	const d = await db();
-	const cursor = await d.transaction('projects').store.index('updatedAt').openCursor(null, 'prev');
-	return cursor?.value;
+	for (const id of await d.getAllKeys('media')) {
+		const record = await d.get('media', id);
+		if (!record || record.hash) continue;
+		record.hash = await hash(record.blob);
+		await d.put('media', record);
+	}
+}
+
+export async function getFileLink(projectId: string): Promise<FileLink | undefined> {
+	return (await db()).get('files', projectId);
+}
+
+export async function putFileLink(link: FileLink): Promise<void> {
+	await (await db()).put('files', link);
+}
+
+export async function projectThumbnail(projectId: string): Promise<Blob | undefined> {
+	return getThumbnail(`project:${projectId}`);
+}
+
+export async function putProjectThumbnail(projectId: string, blob: Blob): Promise<void> {
+	await putThumbnail(`project:${projectId}`, blob);
+}
+
+/**
+ * Delete a project, its thumbnail and file link, and the media and fonts that only it used
+ * (files another project uses too are kept).
+ */
+export async function deleteProject(id: string, orphans: { media: string[]; fonts: string[] }): Promise<void> {
+	const d = await db();
+	await d.delete('projects', id);
+	await d.delete('thumbnails', `project:${id}`);
+	await d.delete('files', id);
+	for (const mediaId of orphans.media) await deleteMedia(mediaId);
+	for (const fontId of orphans.fonts) await deleteFontFace(fontId);
 }
 
 /** Info for stored media, without touching the file contents. */

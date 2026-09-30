@@ -1,0 +1,96 @@
+import { legacyFormat } from './format';
+import { resolveTextStyle, TEXT_STYLE_SPECS } from './textStyle';
+import type { Project } from './types';
+
+/**
+ * Pure helpers for managing many projects: what each one uses, what becomes unused when one is
+ * deleted, bringing old project data up to date, and friendly dates.
+ */
+
+/** Every stored file (clip, photo, sound) a project refers to, including "Your media". */
+export function projectMediaIds(project: Pick<Project, 'scenes' | 'sounds' | 'library'>): string[] {
+	const ids = [
+		...project.scenes.filter((s) => s.kind !== 'card').map((s) => s.mediaId),
+		...project.sounds.map((s) => s.mediaId),
+		...(project.library ?? [])
+	].filter(Boolean);
+	return ids.filter((id, i) => ids.indexOf(id) === i);
+}
+
+/** Stored font faces (from this computer or uploaded) a project's words use. */
+export function projectFontIds(project: Pick<Project, 'texts'>): string[] {
+	const ids = project.texts.map((t) => t.font).filter((f) => f && f.source !== 'builtin').map((f) => f!.id);
+	return ids.filter((id, i) => ids.indexOf(id) === i);
+}
+
+/** Media and fonts that only the deleted project used (so they can be deleted with it). */
+export function orphansAfterDelete(
+	projects: Pick<Project, 'id' | 'scenes' | 'sounds' | 'library' | 'texts'>[],
+	deletedId: string
+): { media: string[]; fonts: string[] } {
+	const deleted = projects.find((p) => p.id === deletedId);
+	if (!deleted) return { media: [], fonts: [] };
+	const others = projects.filter((p) => p.id !== deletedId);
+	const otherMedia = others.flatMap(projectMediaIds);
+	const otherFonts = others.flatMap(projectFontIds);
+	return {
+		media: projectMediaIds(deleted).filter((id) => !otherMedia.includes(id)),
+		fonts: projectFontIds(deleted).filter((id) => !otherFonts.includes(id))
+	};
+}
+
+/**
+ * Bring project data saved by an older version of Scenes up to date. Safe to run on current
+ * data (it changes nothing then). Used when restoring from the browser and when opening files.
+ */
+export function migrateProject<T extends Partial<Project> & { aspect?: string }>(input: T): Project {
+	const project = structuredClone(input) as Project & { aspect?: string };
+	// Before formats, projects only had a shape ("aspect").
+	if (!project.format) {
+		project.format = legacyFormat(project.aspect);
+		project.formatSet = true;
+	}
+	delete project.aspect;
+	project.formatSet ??= true;
+	project.scenes ??= [];
+	project.texts ??= [];
+	project.sounds ??= [];
+	project.mood ??= 'natural';
+	project.title ??= 'My video';
+	// Words in a style this version doesn't know are shown in the plain style.
+	for (const text of project.texts) if (!(text.style in TEXT_STYLE_SPECS)) text.style = 'clean';
+	// Before "Your media", the list is rebuilt from the scenes.
+	project.library ??= project.scenes
+		.filter((s) => s.kind !== 'card')
+		.map((s) => s.mediaId)
+		.filter((id, i, all) => all.indexOf(id) === i);
+	project.createdAt ??= Date.now();
+	project.updatedAt ??= project.createdAt;
+	return project;
+}
+
+/** The total length and the fonts' families, for a project's card on the home screen. */
+export function projectFonts(project: Pick<Project, 'texts'>): string[] {
+	return project.texts.map((t) => resolveTextStyle(t).font.family).filter((f, i, all) => all.indexOf(f) === i);
+}
+
+/** "Edited just now", "Edited 5 minutes ago", "Edited yesterday", "Edited 3 Mar". */
+export function formatEdited(time: number, now = Date.now()): string {
+	const s = Math.max(0, (now - time) / 1000);
+	if (s < 60) return 'Edited just now';
+	const m = Math.floor(s / 60);
+	if (m < 60) return `Edited ${m} minute${m === 1 ? '' : 's'} ago`;
+	const h = Math.floor(m / 60);
+	if (h < 24) return `Edited ${h} hour${h === 1 ? '' : 's'} ago`;
+	const d = Math.floor(h / 24);
+	if (d === 1) return 'Edited yesterday';
+	if (d < 7) return `Edited ${d} days ago`;
+	const date = new Date(time);
+	const sameYear = date.getFullYear() === new Date(now).getFullYear();
+	return `Edited ${date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })}`;
+}
+
+/** A copy's name: "Trip" → "Trip (copy)". */
+export function copyName(title: string): string {
+	return `${title.replace(/\s+\(copy\)$/, '')} (copy)`;
+}

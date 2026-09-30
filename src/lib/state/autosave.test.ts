@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Autosaver } from './autosave';
 import { newProject } from './project';
-import { loadLatestProject, saveProject } from '$lib/media/db';
+import { getProject, saveProject } from '$lib/media/db';
 
 describe('Autosaver', () => {
 	it('batches changes and saves only the latest', async () => {
@@ -49,7 +49,7 @@ describe('Autosaver', () => {
 	it('round-trips a project through IndexedDB', async () => {
 		const p = { ...newProject(), title: 'Holiday', updatedAt: Date.now() + 1000 };
 		await saveProject({ ...p, view: { time: 4.5, selectedId: null } });
-		const loaded = await loadLatestProject();
+		const loaded = await getProject(p.id);
 		expect(loaded).toMatchObject({ id: p.id, title: 'Holiday', view: { time: 4.5 } });
 	});
 });

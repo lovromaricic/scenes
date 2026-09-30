@@ -1,14 +1,16 @@
 import {
-	deleteUnusedMedia,
+	findMediaByHash,
+	getProject,
 	getMediaInfos,
+	putProjectThumbnail,
 	getThumbnail,
 	getWaveform,
 	putWaveform,
-	loadLatestProject,
 	saveProject,
 	putMedia,
 	putThumbnail,
 	requestPersistentStorage,
+	backfillMediaHashes,
 	type MediaInfo,
 	type ProjectRecord
 } from '$lib/media/db';
@@ -34,7 +36,10 @@ import { History } from '$lib/model/history';
 import { placeScenes, totalDuration } from '$lib/model/timeline';
 import { TEXT_ENTER } from '$lib/model/textAnimation';
 import { TRANSITION_SECONDS } from '$lib/model/composition';
-import { formatFromClip, legacyFormat, type ProjectFormat } from '$lib/model/format';
+import { formatFromClip, type ProjectFormat } from '$lib/model/format';
+import { migrateProject, projectMediaIds } from '$lib/model/projects';
+import { fingerprint } from '$lib/media/fingerprint';
+import { makeProjectThumbnail, thumbnailKey } from './projectThumbnail';
 import { DEFAULT_FRAME, type SceneFrame } from '$lib/model/framing';
 import type { CardContent } from '$lib/model/card';
 import type { TextColors, TextFont } from '$lib/model/textStyle';
@@ -80,6 +85,8 @@ interface EditOptions {
  * All changes to the project go through `edit()`, which records an undo step and schedules an
  * autosave. The project itself is plain data; the actual edit logic lives in `$lib/model`.
  */
+let hashesBackfilled = false;
+
 export class EditorStore {
 	project = $state<Project>(newProject());
 	selectedId = $state<string | null>(null);
@@ -126,7 +133,14 @@ export class EditorStore {
 	selectedText = $derived(this.project.texts.find((t) => t.id === this.selectedId) ?? null);
 	selectedSound = $derived(this.project.sounds.find((s) => s.id === this.selectedId) ?? null);
 
-	constructor() {
+	/**
+	 * @param projectId the project to open
+	 * @param fresh start a new, empty project with this id instead of opening a saved one
+	 */
+	constructor(
+		readonly projectId: string = newId(),
+		private readonly fresh = false
+	) {
 		this.player.on({
 			time: (t) => (this.time = t),
 			playing: (p) => (this.playing = p)
@@ -135,67 +149,75 @@ export class EditorStore {
 
 	// ─── Loading and saving ──────────────────────────────────────────────────────────────────
 
-	/** Restore the most recent project from this device. */
+	/**
+	 * Open this store's project: a new empty one, or the saved one with this id (brought up to
+	 * date by `migrateProject`). Resolves `false` if a saved project couldn't be found.
+	 */
 	load(): Promise<void> {
 		this.loaded ??= this.restoreSaved();
 		return this.loaded;
 	}
 
+	/** Whether the project is in storage yet (new, untouched projects aren't saved). */
+	private stored = false;
+	/** Set if the project to open doesn't exist (e.g. deleted in another tab). */
+	notFound = $state(false);
+
 	private async restoreSaved(): Promise<void> {
 		void this.fonts.init();
+		void requestPersistentStorage();
+		if (!hashesBackfilled) {
+			// Files stored before deduplication get their fingerprint, in the background.
+			hashesBackfilled = true;
+			void backfillMediaHashes(fingerprint).catch((e) => console.warn('Fingerprinting failed', e));
+		}
 		try {
-			let record = await loadLatestProject();
+			if (this.fresh) {
+				this.project = { ...newProject(), id: this.projectId };
+				return;
+			}
+			let record = await getProject(this.projectId);
 			// A copy written while the page was closing may be newer than the last database save.
-			const copy = emergencyCopy.read();
+			const copy = emergencyCopy.read(this.projectId);
 			if (copy && (!record || (copy.savedAt ?? 0) > (record.savedAt ?? 0))) {
 				record = copy;
 				await saveProject(copy);
-				emergencyCopy.clearIfSaved(copy.savedAt ?? 0);
+				emergencyCopy.clearIfSaved(this.projectId, copy.savedAt ?? 0);
 			}
+			if (!record) {
+				this.notFound = true;
+				return;
+			}
+			this.stored = true;
 			// Never replace work the user has already started in this session.
-			if (record && !this.history.canUndo) {
-				const { view, savedAt: _savedAt, ...project } = record;
-				// Projects saved before formats existed only had a shape ("aspect").
-				if (!project.format) {
-					project.format = legacyFormat((project as { aspect?: string }).aspect);
-					project.formatSet = true;
-					delete (project as { aspect?: string }).aspect;
-				}
-				// Projects saved before "Your media" existed: rebuild the list from their scenes.
-				project.library ??= project.scenes
-					.filter((s) => s.kind !== 'card')
-					.map((s) => s.mediaId)
-					.filter((id, i, all) => all.indexOf(id) === i);
-				const ids = [
-					...project.scenes.filter((s) => s.kind !== 'card').map((s) => s.mediaId),
-					...project.sounds.map((s) => s.mediaId),
-					...project.library
-				].filter((id, i, all) => all.indexOf(id) === i);
-				const infos = await getMediaInfos(ids);
-				for (const info of infos) this.media[info.id] = info;
-				// Scenes whose file has gone missing (e.g. storage was cleared) can't play; drop them.
-				// Cards have no file, so they always stay.
-				const hasFile = (s: Scene) => s.kind === 'card' || !!this.media[s.mediaId];
-				const missing = project.scenes.filter((s) => !hasFile(s));
-				if (missing.length) {
-					project.scenes = project.scenes.filter(hasFile);
-					toasts.show(
-						`${missing.length === 1 ? 'One clip was' : `${missing.length} clips were`} missing from this device and has been left out.`,
-						'error'
-					);
-				}
-				project.library = project.library.filter((id) => this.media[id]);
-				this.project = project;
-				this.selectedId = view?.selectedId ?? null;
-				this.syncPlayer();
-				this.player.seek(view?.time ?? 0);
-				void this.loadThumbnails(ids);
-				void this.loadWaveforms(project.sounds.map((s) => s.mediaId));
+			if (this.history.canUndo) return;
+			const { view, savedAt: _savedAt, ...saved } = record;
+			const project = migrateProject(saved);
+			const ids = projectMediaIds(project);
+			const infos = await getMediaInfos(ids);
+			for (const info of infos) this.media[info.id] = info;
+			// Scenes whose file has gone missing (e.g. storage was cleared) can't play; drop them.
+			// Cards have no file, so they always stay.
+			const hasFile = (s: Scene) => s.kind === 'card' || !!this.media[s.mediaId];
+			const missing = project.scenes.filter((s) => !hasFile(s));
+			if (missing.length) {
+				project.scenes = project.scenes.filter(hasFile);
+				toasts.show(
+					`${missing.length === 1 ? 'One clip was' : `${missing.length} clips were`} missing from this device and has been left out.`,
+					'error'
+				);
 			}
-			void deleteUnusedMedia().catch(() => {});
+			project.library = project.library.filter((id) => this.media[id]);
+			this.project = project;
+			this.selectedId = view?.selectedId ?? null;
+			this.syncPlayer();
+			this.player.seek(view?.time ?? 0);
+			void this.loadThumbnails(ids);
+			void this.loadWaveforms(project.sounds.map((s) => s.mediaId));
 		} catch (error) {
-			console.error('Could not restore the last project', error);
-			toasts.show('Your last project couldn’t be opened, so a new one was started.', 'error');
+			console.error('Could not open the project', error);
+			toasts.show('This project couldn’t be opened.', 'error');
+			this.notFound = true;
 		} finally {
 			this.ready = true;
 		}
@@ -209,18 +231,40 @@ export class EditorStore {
 		};
 	}
 
-	/** Save soon. Called after every change, and when the playhead or selection moves. */
+	/**
+	 * Save soon. Called after every change, and when the playhead or selection moves. A new
+	 * project is only saved once something has actually been changed in it.
+	 */
 	scheduleSave(): void {
-		if (this.ready) this.autosaver.schedule(this.record());
+		if (!this.ready || this.notFound || (!this.stored && !this.history.canUndo)) return;
+		this.stored = true;
+		this.autosaver.schedule(this.record());
+		this.updateThumbnail();
 	}
 
 	/** Save right away (page hidden or closing). */
 	flushSave(): Promise<void> {
-		if (!this.ready) return Promise.resolve();
+		if (!this.ready || this.notFound || !this.stored) return Promise.resolve();
 		const record = this.record();
 		emergencyCopy.write(record);
 		this.autosaver.schedule(record);
 		return this.autosaver.flush();
+	}
+
+	private thumbKey = '';
+	private thumbTimer: ReturnType<typeof setTimeout> | undefined;
+
+	/** Keep the home screen's picture of this project up to date (only when its first scene changes). */
+	private updateThumbnail(): void {
+		clearTimeout(this.thumbTimer);
+		this.thumbTimer = setTimeout(async () => {
+			const project = this.snapshot();
+			const key = thumbnailKey(project);
+			if (key === this.thumbKey) return;
+			this.thumbKey = key;
+			const blob = await makeProjectThumbnail(project, this.media).catch(() => null);
+			if (blob) await putProjectThumbnail(project.id, blob);
+		}, 800);
 	}
 
 	private async loadThumbnails(ids: string[]): Promise<void> {
@@ -640,11 +684,19 @@ export class EditorStore {
 
 	/** Store an audio file, its waveform, and return its info. */
 	private async storeAudio(file: File): Promise<MediaInfo> {
+		// The same file again is stored only once.
+		const hash = await fingerprint(file);
+		const existing = await findMediaByHash(hash);
+		if (existing?.kind === 'audio') {
+			this.media[existing.id] = existing;
+			void this.loadWaveforms([existing.id]);
+			return existing;
+		}
 		const { info: probed } = await probeFile(file);
 		if (probed.kind !== 'audio') {
 			throw new MediaImportError(`“${file.name}” isn’t a sound file. Try an MP3, M4A or WAV.`);
 		}
-		const info: MediaInfo = { ...probed, id: newId(), createdAt: Date.now() };
+		const info: MediaInfo = { ...probed, id: newId(), hash, createdAt: Date.now() };
 		await putMedia({ ...info, blob: file });
 		registerBlob(info, file);
 		this.media[info.id] = info;
@@ -999,7 +1051,7 @@ export class EditorStore {
 	}
 
 	setTitle(title: string): void {
-		const clean = title.trim().slice(0, 80) || 'My video';
+		const clean = title.trim().slice(0, 80) || 'Untitled video';
 		if (clean !== this.project.title) this.edit('Rename', (p) => ({ ...p, title: clean }));
 	}
 
@@ -1017,17 +1069,28 @@ export class EditorStore {
 		const before = this.snapshot();
 		for (const file of files) {
 			try {
-				const { info: probed, thumbnail } = await probeFile(file);
-				if (probed.kind === 'audio') {
+				// The same file again (in this or another project) is stored only once.
+				const hash = await fingerprint(file);
+				let info = await findMediaByHash(hash);
+				if (info && info.kind === 'audio') {
 					toasts.show(`“${file.name}” is a sound file. Add it from Sound instead.`, 'error');
 					continue;
 				}
-				const info: MediaInfo = { ...probed, id: newId(), createdAt: Date.now() };
-				await putMedia({ ...info, blob: file });
-				registerBlob(info, file);
-				if (thumbnail) {
-					await putThumbnail(info.id, thumbnail);
-					this.thumbnails[info.id] = URL.createObjectURL(thumbnail);
+				if (info) {
+					void this.loadThumbnails([info.id]);
+				} else {
+					const { info: probed, thumbnail } = await probeFile(file);
+					if (probed.kind === 'audio') {
+						toasts.show(`“${file.name}” is a sound file. Add it from Sound instead.`, 'error');
+						continue;
+					}
+					info = { ...probed, id: newId(), hash, createdAt: Date.now() };
+					await putMedia({ ...info, blob: file });
+					registerBlob(info, file);
+					if (thumbnail) {
+						await putThumbnail(info.id, thumbnail);
+						this.thumbnails[info.id] = URL.createObjectURL(thumbnail);
+					}
 				}
 				this.media[info.id] = info;
 				const scene = sceneFromMedia(info);
@@ -1037,7 +1100,7 @@ export class EditorStore {
 					this.project.formatSet = true;
 				}
 				this.project.scenes.push(scene);
-				this.project.library.push(info.id);
+				if (!this.project.library.includes(info.id)) this.project.library.push(info.id);
 				this.selectedId = scene.id;
 				this.syncPlayer();
 				added++;

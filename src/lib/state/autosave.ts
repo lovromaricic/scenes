@@ -2,7 +2,7 @@ import { saveProject, type ProjectRecord } from '$lib/media/db';
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-const EMERGENCY_KEY = 'scenes:unsaved-project';
+const EMERGENCY_PREFIX = 'scenes:unsaved-project:';
 
 /**
  * A synchronous copy of the project in localStorage, written when the page is being hidden or
@@ -12,24 +12,41 @@ const EMERGENCY_KEY = 'scenes:unsaved-project';
 export const emergencyCopy = {
 	write(record: ProjectRecord): void {
 		try {
-			localStorage.setItem(EMERGENCY_KEY, JSON.stringify(record));
+			localStorage.setItem(EMERGENCY_PREFIX + record.id, JSON.stringify(record));
 		} catch {
 			// Storage full or blocked: IndexedDB is still the main copy.
 		}
 	},
-	read(): ProjectRecord | null {
+	read(projectId: string): ProjectRecord | null {
 		try {
-			const raw = localStorage.getItem(EMERGENCY_KEY);
+			const raw = localStorage.getItem(EMERGENCY_PREFIX + projectId);
 			return raw ? (JSON.parse(raw) as ProjectRecord) : null;
 		} catch {
 			return null;
 		}
 	},
-	/** Remove the copy if IndexedDB now has something at least as new. */
-	clearIfSaved(savedAt: number): void {
+	remove(projectId: string): void {
 		try {
-			const copy = emergencyCopy.read();
-			if (copy && (copy.savedAt ?? 0) <= savedAt) localStorage.removeItem(EMERGENCY_KEY);
+			localStorage.removeItem(EMERGENCY_PREFIX + projectId);
+		} catch {
+			// Ignore.
+		}
+	},
+	/** Projects that have a copy waiting (after a crash or a closed tab). */
+	ids(): string[] {
+		try {
+			return Object.keys(localStorage)
+				.filter((k) => k.startsWith(EMERGENCY_PREFIX))
+				.map((k) => k.slice(EMERGENCY_PREFIX.length));
+		} catch {
+			return [];
+		}
+	},
+	/** Remove the copy if IndexedDB now has something at least as new. */
+	clearIfSaved(projectId: string, savedAt: number): void {
+		try {
+			const copy = emergencyCopy.read(projectId);
+			if (copy && (copy.savedAt ?? 0) <= savedAt) localStorage.removeItem(EMERGENCY_PREFIX + projectId);
 		} catch {
 			// Ignore.
 		}
@@ -69,7 +86,7 @@ export class Autosaver {
 		this.onStatus('saving');
 		this.inFlight = this.save(record)
 			.then(() => {
-				emergencyCopy.clearIfSaved(record.savedAt ?? 0);
+				emergencyCopy.clearIfSaved(record.id, record.savedAt ?? 0);
 				this.onStatus(this.pending ? 'saving' : 'saved');
 			})
 			.catch((error) => {

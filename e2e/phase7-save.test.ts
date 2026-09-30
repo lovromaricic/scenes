@@ -153,7 +153,7 @@ test.describe('Phase 7: save video', () => {
 		await dialog.getByRole('button', { name: 'Save video' }).click();
 		await expect(page.getByRole('progressbar', { name: 'Saving progress' })).toBeVisible();
 		const download = await downloadPromise;
-		expect(download.suggestedFilename()).toBe('My video.mp4');
+		expect(download.suggestedFilename()).toBe('Untitled video.mp4');
 		const file = info.outputPath('export.mp4');
 		await download.saveAs(file);
 		await expect(page.getByRole('dialog', { name: 'Your video is ready' })).toBeVisible();
@@ -256,7 +256,7 @@ test.describe('Phase 7: save video', () => {
 		const downloadPromise = page.waitForEvent('download', { timeout: 60_000 });
 		await dialog.getByRole('button', { name: 'Save video' }).click();
 		const download = await downloadPromise;
-		expect(download.suggestedFilename()).toBe('My video.webm');
+		expect(download.suggestedFilename()).toBe('Untitled video.webm');
 		const file = info.outputPath('export.webm');
 		await download.saveAs(file);
 		const meta = probe(file);

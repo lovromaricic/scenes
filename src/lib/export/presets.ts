@@ -109,5 +109,5 @@ export function exportFileName(title: string, extension: 'mp4' | 'webm'): string
 		.replace(/\s+/g, ' ')
 		.trim()
 		.slice(0, 80);
-	return `${clean || 'My video'}.${extension}`;
+	return `${clean || 'Untitled video'}.${extension}`;
 }

@@ -15,7 +15,7 @@ export function newProject(): Project {
 	const now = Date.now();
 	return {
 		id: newId(),
-		title: 'My video',
+		title: 'Untitled video',
 		format: { ...DEFAULT_FORMAT },
 		formatSet: false,
 		mood: 'natural',

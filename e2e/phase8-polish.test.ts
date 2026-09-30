@@ -51,12 +51,13 @@ test.describe('Phase 8: polish', () => {
 		await page.getByRole('radio', { name: /Small file/ }).click();
 		const download = page.waitForEvent('download', { timeout: 60_000 });
 		await page.getByRole('dialog').getByRole('button', { name: 'Save video' }).click();
-		expect((await download).suggestedFilename()).toBe('My video.mp4');
+		expect((await download).suggestedFilename()).toBe('Untitled video.mp4');
 		await expect(page.getByRole('dialog', { name: 'Your video is ready' })).toBeVisible();
 	});
 
 	test('? shows the keyboard shortcuts', async ({ page }) => {
 		await page.goto('/');
+		await expect(page.getByText('Start with your photos & videos')).toBeVisible();
 		await page.keyboard.press('?');
 		const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
 		await expect(dialog).toBeVisible();

@@ -15,7 +15,11 @@
 	import WatchMode from './WatchMode.svelte';
 	import TopBar from './TopBar.svelte';
 
-	const editor = provideEditor(new EditorStore());
+	let { projectId, fresh = false }: { projectId: string; fresh?: boolean } = $props();
+
+	// The page keys the editor by project, so each project gets its own store.
+	// svelte-ignore state_referenced_locally
+	const editor = provideEditor(new EditorStore(projectId, fresh));
 
 	let saving = $state(false);
 	let watching = $state(false);
@@ -32,6 +36,8 @@
 		return () => {
 			window.removeEventListener('pagehide', save);
 			document.removeEventListener('visibilitychange', onVisibility);
+			// Leaving this project (e.g. for the home screen): store the latest changes.
+			save();
 			editor.player.dispose();
 		};
 	});

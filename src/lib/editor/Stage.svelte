@@ -49,6 +49,9 @@
 		editor.player.attach(canvas);
 		const observer = new ResizeObserver((entries) => {
 			const entry = entries[0];
+			// The overlays use the same measurement as the picture, so they always line up with it.
+			previewW = entry.contentRect.width;
+			previewH = entry.contentRect.height;
 			const box = entry.devicePixelContentBoxSize?.[0];
 			let w = box ? box.inlineSize : entry.contentRect.width * devicePixelRatio;
 			let h = box ? box.blockSize : entry.contentRect.height * devicePixelRatio;
@@ -78,8 +81,6 @@
 				// Double-click the picture to crop the scene under the playhead.
 				if (!editor.cropping && !empty) editor.enterCrop();
 			}}
-			bind:clientWidth={previewW}
-			bind:clientHeight={previewH}
 			style:--ar={ratio}
 		>
 			<div class="clip">
