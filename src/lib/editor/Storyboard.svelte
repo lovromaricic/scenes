@@ -14,7 +14,15 @@
 	import { stackRows } from '$lib/model/edits';
 	import { formatRatio } from '$lib/model/format';
 	import { dragHasCard, dragHasMedia, MEDIA_DRAG_TYPE } from '$lib/media/dragTypes';
-	import { fitPxPerSec, ticks } from './scale';
+	import Maximize from '@lucide/svelte/icons/maximize-2';
+	import {
+		fitTimeline,
+		mapTicks,
+		MIN_ITEM_PX,
+		ppsToZoom,
+		timeMap,
+		zoomToPps
+	} from './scale';
 
 	interface Props {
 		onaddscene?: () => void;
@@ -83,10 +91,74 @@
 	/** The scale is frozen during a gesture so the storyboard doesn't rescale under the pointer. */
 	let frozenPps = $state<number | null>(null);
 
+	const durations = $derived(scenes.map(sceneDuration));
+	/** The scale that shows the whole video ("Fit"). */
 	const fittedPps = $derived(
-		fitPxPerSec(trackWidth - TRACK_PAD - ADD_CARD_W - END_PAD - CARD_GAP, duration)
+		fitTimeline(durations, trackWidth - TRACK_PAD - ADD_CARD_W - END_PAD - CARD_GAP)
 	);
-	const pps = $derived(frozenPps ?? fittedPps);
+	/** Zoom slider, 0 = Fit, 1 = closest. */
+	let zoom = $state(0);
+	const pps = $derived(frozenPps ?? zoomToPps(zoom, fittedPps));
+	/** Where times sit on the storyboard (short scenes get a minimum width, see TimeMap). */
+	const map = $derived(timeMap(durations, pps));
+	/** A scene card's width. */
+	const segW = (s: Scene) => Math.max(MIN_ITEM_PX, sceneDuration(s) * pps);
+
+	/** Zoom so that the time under `clientX` stays under the pointer. */
+	let anchor: { t: number; x: number; from: 'wheel' | 'slider' } | null = null;
+	let zooming = $state(false);
+	let zoomingTimer: ReturnType<typeof setTimeout> | undefined;
+	function zoomAround(value: number, clientX?: number) {
+		const rect = tracks.getBoundingClientRect();
+		// From the slider: keep the playhead in place if it's in view, else the middle.
+		const playheadX = map.x(editor.time) - tracks.scrollLeft;
+		const anchorX =
+			clientX !== undefined
+				? clientX - rect.left
+				: playheadX >= 0 && playheadX <= rect.width
+					? playheadX
+					: rect.width / 2;
+		// A burst of wheel events (or slider moves) keeps its first anchor until the zooming stops,
+		// so each step doesn't drift by the scroll the previous one hasn't applied yet.
+		const from = clientX === undefined ? 'slider' : 'wheel';
+		if (!anchor || anchor.from !== from || (from === 'wheel' && Math.abs(anchor.x - anchorX) > 2)) {
+			anchor = { t: map.t(tracks.scrollLeft + anchorX), x: anchorX, from };
+		}
+		// No card animations while zooming, so everything scales together.
+		zooming = true;
+		clearTimeout(zoomingTimer);
+		zoomingTimer = setTimeout(() => {
+			zooming = false;
+			anchor = null;
+		}, 200);
+		zoom = Math.min(1, Math.max(0, value));
+	}
+
+	// After each zoom step is on screen, scroll so the anchor time is back under the pointer.
+	$effect(() => {
+		const m = map;
+		if (anchor && zooming) tracks.scrollLeft = Math.max(0, m.x(anchor.t) - anchor.x);
+	});
+
+	function fit() {
+		anchor = null;
+		zooming = false;
+		zoom = 0;
+		tracks.scrollLeft = 0;
+	}
+
+	// Ctrl/Cmd + scroll zooms around the pointer (a non-passive listener, to stop page zoom).
+	$effect(() => {
+		const el = tracks;
+		const onwheel = (event: WheelEvent) => {
+			if (!event.ctrlKey && !event.metaKey) return;
+			event.preventDefault();
+			const current = ppsToZoom(pps, fittedPps);
+			void zoomAround(current - event.deltaY * 0.0025, event.clientX);
+		};
+		el.addEventListener('wheel', onwheel, { passive: false });
+		return () => el.removeEventListener('wheel', onwheel);
+	});
 
 	interface Item {
 		scene: Scene;
@@ -108,32 +180,31 @@
 		const items: Item[] = [];
 		for (const { scene, index } of order) {
 			const dur = sceneDuration(scene);
+			const w = segW(scene);
 			if (trim && trim.id === scene.id) {
 				const trimmed = sceneDuration(trimEdge(scene, trim.edge, trim.delta, editor.bounds(scene)));
+				const tw = Math.max(MIN_ITEM_PX, trimmed * pps);
 				if (trim.edge === 'end') {
-					items.push({ scene, index, left: x, width: trimmed * pps, duration: trimmed });
-					x += trimmed * pps;
+					items.push({ scene, index, left: x, width: tw, duration: trimmed });
+					x += tw;
 				} else {
 					// The left edge follows the pointer; later cards move once the trim is done.
-					items.push({
-						scene,
-						index,
-						left: x + (dur - trimmed) * pps,
-						width: trimmed * pps,
-						duration: trimmed
-					});
-					x += dur * pps;
+					items.push({ scene, index, left: x + w - tw, width: tw, duration: trimmed });
+					x += w;
 				}
 			} else {
-				items.push({ scene, index, left: x, width: dur * pps, duration: dur });
-				x += dur * pps;
+				items.push({ scene, index, left: x, width: w, duration: dur });
+				x += w;
 			}
 		}
 		return { items, end: x };
 	});
 
 	const WORD_ROW_H = 28;
-	const wordRows = $derived(stackRows(editor.project.texts));
+	/** Stack by where items sit on screen (with minimum widths), so short ones never overlap. */
+	const onScreen = (items: { start: number; duration: number }[]) =>
+		items.map((i) => ({ start: map.x(i.start), duration: map.width(i.start, i.duration) }));
+	const wordRows = $derived(stackRows(onScreen(editor.project.texts)));
 	const wordsH = $derived(Math.max(1, Math.max(0, ...wordRows) + 1) * WORD_ROW_H + 4);
 
 	const SOUND_ROW_H = 40;
@@ -144,7 +215,7 @@
 		const hasMusic = sounds.some((s) => s.kind === 'music');
 		for (const s of sounds) if (s.kind === 'music') rows[s.id] = 0;
 		const voices = sounds.filter((s) => s.kind === 'voice');
-		stackRows(voices).forEach((row, i) => (rows[voices[i].id] = row + (hasMusic ? 1 : 0)));
+		stackRows(onScreen(voices)).forEach((row, i) => (rows[voices[i].id] = row + (hasMusic ? 1 : 0)));
 		return rows;
 	});
 	const soundH = $derived(
@@ -153,9 +224,9 @@
 
 	const loadingWidth = $derived(importing * (LOADING_CARD_W + CARD_GAP));
 	const contentWidth = $derived(
-		Math.max(layout.end, duration * pps) + loadingWidth + CARD_GAP + ADD_CARD_W
+		Math.max(layout.end, map.x(duration)) + loadingWidth + CARD_GAP + ADD_CARD_W
 	);
-	const rulerTicks = $derived(ticks(duration, pps));
+	const rulerTicks = $derived(mapTicks(map, duration));
 
 	function thumbnailFor(scene: Scene): string {
 		const url = editor.thumbnails[scene.mediaId];
@@ -199,7 +270,7 @@
 		let to = 0;
 		for (const s of scenes) {
 			if (s.id === d.id) continue;
-			const w = sceneDuration(s) * pps;
+			const w = segW(s);
 			if (offset + w / 2 < x) to++;
 			offset += w;
 		}
@@ -226,7 +297,7 @@
 		let offset = 0;
 		let index = 0;
 		for (const s of scenes) {
-			const w = sceneDuration(s) * pps;
+			const w = segW(s);
 			if (offset + w / 2 < x) index++;
 			offset += w;
 		}
@@ -235,7 +306,7 @@
 
 	/** Pixel position of the gap before scene `index`. */
 	function gapX(index: number): number {
-		return scenes.slice(0, index).reduce((x, s) => x + sceneDuration(s) * pps, 0);
+		return scenes.slice(0, index).reduce((x, s) => x + segW(s), 0);
 	}
 
 	function onMediaDragOver(event: DragEvent) {
@@ -328,7 +399,7 @@
 
 	// Playhead
 	function timeFromPointer(event: PointerEvent): number {
-		return Math.min(duration, Math.max(0, contentX(event.clientX) / pps));
+		return Math.min(duration, Math.max(0, map.t(contentX(event.clientX))));
 	}
 
 	function onRulerDown(event: PointerEvent) {
@@ -361,7 +432,7 @@
 		if (event.button !== 0 || editor.cropping) return;
 		const target = event.target as Element;
 		const onItem = target.closest(
-			'button, [role="button"], .card-slot, .pill-slot, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
+			'button, input, .zoom, [role="button"], .card-slot, .pill-slot, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
 		);
 		if (!onItem) editor.deselect();
 	}
@@ -385,7 +456,7 @@
 {/if}
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc deselects from the keyboard) -->
-<section class="storyboard" aria-label="Storyboard" onpointerdown={onEmptyPointerDown}>
+<section class="storyboard" class:zooming aria-label="Storyboard" onpointerdown={onEmptyPointerDown}>
 	<div class="labels" aria-hidden="true">
 		<span class="label ruler-label"></span>
 		<span class="label scenes-label">Scenes</span>
@@ -403,7 +474,7 @@
 				onpointermove={onRulerMove}
 			>
 				{#each rulerTicks as t (t)}
-					<span class="tick mono" style:left="{t * pps}px">{formatClock(t)}</span>
+					<span class="tick mono" style:left="{map.x(t)}px">{formatClock(t)}</span>
 				{/each}
 			</div>
 
@@ -512,16 +583,16 @@
 
 			<!-- Words lane -->
 			<div class="row lane words-lane" role="group" aria-label="Words" style:height="{wordsH}px">
-				<WordsLane {pps} rows={wordRows} rowHeight={WORD_ROW_H} />
+				<WordsLane {map} rows={wordRows} rowHeight={WORD_ROW_H} />
 			</div>
 
 			<!-- Sound lane -->
 			<div class="row lane sound-lane" role="group" aria-label="Sound" style:height="{soundH}px">
-				<SoundLane {pps} rows={soundRows} rowHeight={SOUND_ROW_H} />
+				<SoundLane {map} rows={soundRows} rowHeight={SOUND_ROW_H} />
 			</div>
 
 			<!-- Playhead -->
-			<div class="playhead" style:translate="{editor.time * pps}px 0">
+			<div class="playhead" style:translate="{map.x(editor.time)}px 0">
 				<button
 					type="button"
 					class="handle"
@@ -533,10 +604,71 @@
 			</div>
 		</div>
 	</div>
+
+	<div class="zoom">
+		<button
+			type="button"
+			class="fit"
+			title="Show the whole video"
+			aria-pressed={zoom === 0}
+			onclick={fit}
+		>
+			<Maximize size={12} strokeWidth={2} aria-hidden="true" />
+			Fit
+		</button>
+		<input
+			type="range"
+			aria-label="Storyboard zoom"
+			aria-valuetext={zoom === 0 ? 'Whole video' : `${Math.round(pps)} pixels per second`}
+			min="0"
+			max="1"
+			step="0.01"
+			value={ppsToZoom(pps, fittedPps)}
+			oninput={(e) => void zoomAround(Number(e.currentTarget.value))}
+		/>
+	</div>
 </section>
 
 <style>
+	/* Zoom sits at the right end of the ruler, above the scrolling tracks. */
+	.zoom {
+		position: absolute;
+		top: var(--space-3);
+		right: var(--space-6);
+		z-index: 8;
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		height: var(--ruler-h);
+		padding-left: var(--space-3);
+		background: linear-gradient(to right, transparent, var(--color-bg) var(--space-3));
+	}
+	.fit {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		height: 20px;
+		padding: 0 8px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-pill);
+		background: var(--color-bg);
+		color: var(--color-muted);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
+	}
+	.fit:hover {
+		border-color: var(--color-ink);
+		color: var(--color-ink);
+	}
+	.fit[aria-pressed='true'] {
+		color: var(--color-ink);
+	}
+	.zoom input {
+		width: 110px;
+		accent-color: var(--color-ink);
+	}
 	.storyboard {
+		position: relative;
 		--ruler-h: 26px;
 		--scenes-h: 104px;
 		--words-h: 32px;
@@ -640,7 +772,8 @@
 			left var(--dur) var(--ease-out),
 			width var(--dur) var(--ease-out);
 	}
-	.card-slot.trimming {
+	.card-slot.trimming,
+	.zooming .card-slot {
 		transition: none;
 	}
 	.card-slot.lifted {

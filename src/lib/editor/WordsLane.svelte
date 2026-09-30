@@ -7,14 +7,15 @@
 	import { formatShort } from '$lib/model/time';
 	import type { TextItem } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
+	import type { TimeMap } from './scale';
 
 	interface Props {
-		pps: number;
+		map: TimeMap;
 		rows: number[];
 		rowHeight: number;
 	}
 
-	let { pps, rows, rowHeight }: Props = $props();
+	let { map, rows, rowHeight }: Props = $props();
 
 	const editor = useEditor();
 
@@ -51,8 +52,10 @@
 			g.active = true;
 			editor.beginGesture();
 		}
-		const delta = dx / pps;
 		const o = g.original;
+		// Times follow the storyboard's scale (short scenes get extra room, see TimeMap).
+		const from = g.mode === 'end' ? o.start + o.duration : o.start;
+		const delta = map.t(map.x(from) + dx) - from;
 		const next =
 			g.mode === 'move'
 				? {
@@ -101,8 +104,8 @@
 	<div
 		class="pill-slot"
 		class:active
-		style:left="{item.start * pps}px"
-		style:width="{Math.max(24, item.duration * pps - 3)}px"
+		style:left="{map.x(item.start)}px"
+		style:width="{map.width(item.start, item.duration) - 3}px"
 		style:top="{3 + (rows[i] ?? 0) * rowHeight}px"
 		style:height="{rowHeight - 4}px"
 	>
@@ -110,6 +113,7 @@
 			type="button"
 			class="pill"
 			class:selected
+			class:narrow={map.width(item.start, item.duration) < 64}
 			title="{item.text} — drag to move, drag the ends to change timing"
 			aria-label="Words: {item.text}, from {formatShort(item.start)} for {formatShort(
 				item.duration
@@ -175,6 +179,10 @@
 	.active .pill {
 		cursor: grabbing;
 		box-shadow: var(--shadow-float);
+	}
+	/* Very short pills show just their outline; the words are in the tooltip. */
+	.narrow .label {
+		display: none;
 	}
 	.label {
 		overflow: hidden;

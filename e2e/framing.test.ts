@@ -220,7 +220,7 @@ test.describe('Framing', () => {
 			.getByRole('radio', { name: 'Custom' })
 			.click();
 		// Zoom with the slider, then with the mouse wheel on the preview.
-		await page.getByRole('slider', { name: 'Zoom' }).fill('2');
+		await page.getByRole('slider', { name: 'Zoom', exact: true }).fill('2');
 		expect((await frameOf(page, 0)).zoom).toBeCloseTo(2);
 		const box = (await page.getByTestId('preview').boundingBox())!;
 		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

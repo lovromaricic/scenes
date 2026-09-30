@@ -11,14 +11,15 @@
 	import type { SoundItem } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
 	import Waveform from './Waveform.svelte';
+	import type { TimeMap } from './scale';
 
 	interface Props {
-		pps: number;
+		map: TimeMap;
 		rows: Record<string, number>;
 		rowHeight: number;
 	}
 
-	let { pps, rows, rowHeight }: Props = $props();
+	let { map, rows, rowHeight }: Props = $props();
 
 	const editor = useEditor();
 
@@ -51,7 +52,7 @@
 			g.active = true;
 			editor.beginGesture();
 		}
-		const start = Math.min(Math.max(0, g.start0 + dx / pps), Math.max(0, editor.duration - 0.5));
+		const start = Math.min(Math.max(0, map.t(map.x(g.start0) + dx)), Math.max(0, editor.duration - 0.5));
 		editor.live((p) => {
 			const s = p.sounds.find((s) => s.id === g.id);
 			if (s) s.start = start;
@@ -77,8 +78,10 @@
 		class="sound {sound.kind}"
 		class:selected
 		class:active={gesture?.active && gesture.id === sound.id}
-		style:left="{sound.start * pps}px"
-		style:width="{Math.max(24, length * pps - 3)}px"
+		style:left="{map.x(sound.start)}px"
+		style:width="{map.width(sound.start, length) - 3}px"
+		title={sound.name}
+		class:narrow={map.width(sound.start, length) < 64}
 		style:top="{3 + (rows[sound.id] ?? 0) * rowHeight}px"
 		style:height="{rowHeight - 4}px"
 		aria-label="{sound.kind === 'music' ? 'Music' : 'Voiceover'}: {sound.name}, {formatShort(
@@ -134,6 +137,9 @@
 	.sound.active {
 		cursor: grabbing;
 		box-shadow: var(--shadow-float);
+	}
+	.narrow .name {
+		display: none;
 	}
 	.name {
 		position: absolute;

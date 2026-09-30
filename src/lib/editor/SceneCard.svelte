@@ -42,6 +42,8 @@
 	class="card"
 	class:selected
 	class:narrow={width < 88}
+	class:tiny={width < 64}
+	title="{index + 1} · {name} · {formatShort(duration)}"
 	style:width="{width}px"
 	aria-pressed={selected}
 	aria-label="Scene {index + 1}, {name}, {formatShort(duration)}"
@@ -134,5 +136,12 @@
 	}
 	.narrow .dur {
 		display: none;
+	}
+	/* Very short scenes show only their number; the name is in the tooltip. */
+	.tiny .name {
+		font-size: 0;
+	}
+	.tiny .num {
+		font-size: var(--text-xs);
 	}
 </style>

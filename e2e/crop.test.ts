@@ -271,7 +271,7 @@ test.describe('Crop', () => {
 			.getByRole('radiogroup', { name: 'Frame' })
 			.getByRole('radio', { name: 'Custom' })
 			.click();
-		await page.getByRole('slider', { name: 'Zoom' }).fill('3');
+		await page.getByRole('slider', { name: 'Zoom', exact: true }).fill('3');
 		await expect(page.getByText(/Enlarged 5\.3×, may look a bit soft/)).toBeVisible();
 
 		// A second scene from the same clip gets the crop with one click.

@@ -716,6 +716,44 @@ npm run check        # svelte-check (TypeScript strict)
     Esc hide the handles (the card's settings stay); clicking the rectangle selects it; changing
     the card's settings selects it.
 
+## Layers track
+
+### 1. Storyboard zoom
+
+- **Minimum widths without losing alignment.** Drawing short items wider would push everything
+  after them away from the ruler and playhead. Instead, `TimeMap` in `editor/scale.ts`:
+  - Each scene gets `max(48 px, duration × zoom)`, and time runs evenly inside each scene; after
+    the last scene it runs at the plain scale.
+  - The ruler, playhead, scene cards, words, sound and (soon) layers all position through
+    `map.x(t)` / `map.t(x)`, so they stay lined up.
+  - Words and sound pills are at least 48 px too. Their rows are stacked by where they sit on
+    screen, so short ones never overlap.
+  - Ruler labels skip any that would crowd.
+- **Short items.**
+  - Scene cards under 64 px show just their number, and pills hide their label.
+  - The full name is in the tooltip (`title`) on every card and pill.
+- **Zoom.**
+  - A slider ("Storyboard zoom") sits at the right end of the ruler, outside the scroll area.
+    It's logarithmic, from Fit (0) to 400 px per second.
+  - Ctrl/Cmd + scroll zooms around the mouse. It's a non-passive listener, so the page itself
+    never zooms. The slider zooms around the playhead when it's in view.
+  - "Fit" shows the whole video. `fitTimeline` finds the scale by binary search, counting the
+    minimum widths. Long videos can now fit below the old 14 px/s limit.
+- **Keeping the zoom anchor in place.** The time under the pointer is remembered at the start
+  of a burst of zoom steps. It's re-applied in an `$effect` after each step is on screen, and
+  forgotten 200 ms after the burst.
+  - An earlier version scrolled after `tick()`. Under load, that sometimes ran before the next
+    step's DOM update, so the scroll was clamped. It also reused a slider's anchor for a wheel
+    zoom that followed quickly.
+  - Card slide animations are off while zooming, so everything scales together.
+- Tests:
+  - Unit: map, fit and zoom.
+  - e2e: a 0.5 s scene between longer ones is ≥ 36 px wide, has a tooltip, is clickable and
+    lines up with the playhead; Fit needs no scrolling; the slider zooms; Fit restores the
+    fitted size; Ctrl/Cmd+wheel keeps the time under the mouse in place (stress-tested with
+    4 parallel workers × 8 runs).
+  - The framing panel also has a "Zoom" slider, so older tests now match it exactly.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
