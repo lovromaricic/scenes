@@ -34,6 +34,7 @@ import {
 	DEFAULT_OVERLAY_STYLE,
 	defaultBox,
 	tooManyVideos,
+	mostVideosAtOnce,
 	fitShape,
 	maxOverlayDuration,
 	placeOverlays,
@@ -474,10 +475,27 @@ export class EditorStore {
 	edit(label: string, change: (project: Project) => Project, options: EditOptions = {}): void {
 		const before = this.snapshot();
 		const after = { ...this.reconcile(before, change(structuredClone(before))), updatedAt: Date.now() };
+		if (!this.videosFit(before, after)) return;
 		this.history.record(label, before, after, options.key);
 		this.project = after;
 		if (options.select !== undefined) this.selectedId = options.select;
 		this.afterChange();
+	}
+
+	/**
+	 * Whether a change keeps within MAX_VIDEO_OVERLAYS videos playing on top at once (hidden
+	 * tracks count too, so showing one again never goes over). A change that would go over is
+	 * refused with a message; one that doesn't make things worse is allowed.
+	 */
+	private videosFit(before: Project, after: Project): boolean {
+		if (after.overlays === before.overlays) return true;
+		const most = mostVideosAtOnce(placeOverlays(after.overlays));
+		if (most <= MAX_VIDEO_OVERLAYS || most <= mostVideosAtOnce(placeOverlays(before.overlays))) return true;
+		toasts.show(
+			`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment, so that can’t be done here.`,
+			'error'
+		);
+		return false;
 	}
 
 	/**
@@ -517,6 +535,11 @@ export class EditorStore {
 		const before = this.gestureBefore ?? this.snapshot();
 		this.gestureBefore = null;
 		const after = this.reconcile(before, change(structuredClone(this.snapshot())));
+		if (!this.videosFit(before, after)) {
+			this.project = before;
+			this.afterChange();
+			return;
+		}
 		const unchanged =
 			JSON.stringify({ ...after, updatedAt: 0 }) === JSON.stringify({ ...before, updatedAt: 0 });
 		if (unchanged) return;

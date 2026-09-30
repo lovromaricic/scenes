@@ -150,6 +150,13 @@ export function tooManyVideos(placed: PlacedOverlay[], start: number, duration: 
 	);
 }
 
+/** The most video overlays playing at the same moment. */
+export function mostVideosAtOnce(placed: PlacedOverlay[]): number {
+	const videos = placed.filter((p) => p.overlay.kind === 'video');
+	// The count only goes up at starts.
+	return Math.max(0, ...videos.map((v) => videos.filter((p) => v.start >= p.start - 1e-6 && v.start < p.end - 1e-6).length));
+}
+
 /** Quick placement: a corner or the centre, with a small margin. */
 export type Placement = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
 

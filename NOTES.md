@@ -1353,6 +1353,43 @@ Overlays aren't linked to scenes any more.
     green);
   - with that track moved to the top, the words show again.
 
+### 6. Rendering
+
+- **One drawing order everywhere.** `visualsAt` gives the scenes first, then overlay tracks from
+  the lowest to the highest, skipping hidden tracks. The preview, Watch, export and the home
+  picture all use it.
+- **One mix everywhere.** `projectAudioClips` combines the scenes' own sound, video overlays
+  with their sound on (not on hidden tracks), and clips on audio tracks that aren't muted. Live
+  playback, `mixdown` and export all use it.
+- **At most four videos on top at once.**
+  - Adding, dropping and pasting already checked this.
+  - Now `edit()` and `endGesture()` also refuse any change that would go over four when it
+    wasn't over before, with the same friendly message. This covers moving items, duplicating a
+    track, ripple and anything added later.
+  - Hidden tracks count too, so showing one again can never go over.
+  - `mostVideosAtOnce` was added to `model/overlay.ts`.
+- **Tests** (`tracks-render.test.ts`):
+  - A project with a low blue card, a higher yellow card over it, a hidden magenta full-frame
+    card, and a hidden video with its sound on.
+  - The same five points are checked in the preview, Watch, the saved MP4 (with ffmpeg, also
+    compared against the preview) and the home picture.
+  - The MP4 has the scene's 440 Hz tone and not the hidden video's 880 Hz tone.
+  - A second test fills up to four videos, then checks that a fifth, or a duplicated track with
+    a video, is refused.
+- **Done-when check** (all covered by the tests above):
+  - An old project opens looking and sounding the same (`tracks-migration`).
+  - The Logo PNG stretched to the end stays there as scenes are added (`tracks-ripple`).
+  - Tracks can be added, renamed, reordered, hidden, locked, duplicated and deleted
+    (`tracks-headers`).
+  - Items move between tracks, make new tracks from gaps, can be multi-selected, and copy/paste
+    (`tracks-moving`).
+  - Ripple works on and off (`tracks-ripple`), and the MP4 matches the preview
+    (`tracks-render`).
+- **Test totals:** 248 unit and 116 Playwright tests pass.
+  - `phase5-sound`'s voiceover test failed once in a full run (it records 2 s from the fake
+    microphone). It passed 4/4 on its own, so it looks timing-sensitive under load rather than
+    broken.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
@@ -1389,7 +1426,7 @@ What you can do:
 - Reorder by dragging cards, trim by dragging card edges (with a live frame peek) or with the
   Length stepper, split at the playhead (S), delete, change speed (0.5×/1×/2×).
 - Add titles and captions: six ready-made styles, typed directly on the video, dragged into
-  place, with fade / slide-up / pop entrances, timed in the Words lane.
+  place, with fade / slide-up / pop entrances, timed on the Text track.
 - Add background music with waveform, volumes per scene and for music, automatic fades, and
   record voiceovers at the playhead.
 - Pick transitions between scenes (cut, crossfade, fade to black, slide, zoom) and colour moods for
@@ -1397,11 +1434,14 @@ What you can do:
 - Save an MP4 (H.264/AAC; WebM fallback) in three presets, rendered through the same compositor
   as the preview, streamed to disk with progress, time left and cancel.
 - Undo/redo everything; projects autosave continuously on the device.
-- Put videos, photos and cards on top of the scenes on a Layers track: picture-in-picture at any
-  size and position, with crop, rounded corners, border, shadow, opacity, entrance/exit
-  animations and optional sound. Layers stack in rows, follow their scene, and turn into scenes
-  (and back) by dragging. The storyboard zooms (slider, Ctrl/Cmd+scroll, Fit), and short items
-  stay easy to click.
+- Put videos, photos, cards and words on overlay tracks above the scenes, and music and
+  voiceovers on audio tracks below: picture-in-picture at any size and position, with crop,
+  rounded corners, border, shadow, opacity, entrance/exit animations and optional sound. Tracks
+  can be added, renamed, reordered, hidden or muted, locked, duplicated and deleted. Items move
+  between tracks, snap, multi-select and copy/paste; an optional ripple keeps them with their
+  scenes, and anything ending at the video's end stays there. Overlays turn into scenes (and
+  back) by dragging. The storyboard zooms (slider, Ctrl/Cmd+scroll, Fit), and short items stay
+  easy to click.
 - Keep any number of projects: a home screen with pictures, rename, duplicate, delete, and
   `.scenes` project files to save, move and reopen a whole project (media and fonts included).
 
