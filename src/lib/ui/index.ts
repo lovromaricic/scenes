@@ -10,3 +10,6 @@ export { default as Divider } from './Divider.svelte';
 export { default as Slider } from './Slider.svelte';
 export { default as Switch } from './Switch.svelte';
 export type * from './types';
+export { default as Menu } from './Menu.svelte';
+export { default as ConfirmDialog } from './ConfirmDialog.svelte';
+export { default as Logo } from './Logo.svelte';

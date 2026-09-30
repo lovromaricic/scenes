@@ -59,7 +59,7 @@ interface ScenesDB extends DBSchema {
 	media: { key: string; value: MediaRecord; indexes: { hash: string } };
 	files: { key: string; value: FileLink };
 	settings: { key: string; value: { key: string; value: unknown } };
-	thumbnails: { key: string; value: { id: string; blob: Blob } };
+	thumbnails: { key: string; value: { id: string; blob: Blob; key?: string } };
 	projects: { key: string; value: ProjectRecord; indexes: { updatedAt: number } };
 	waveforms: { key: string; value: { id: string; peaks: Float32Array; perSecond: number } };
 	fonts: { key: string; value: FontFaceRecord };
@@ -226,12 +226,15 @@ export async function putFileLink(link: FileLink): Promise<void> {
 	await (await db()).put('files', link);
 }
 
-export async function projectThumbnail(projectId: string): Promise<Blob | undefined> {
-	return getThumbnail(`project:${projectId}`);
+/** A project's picture for the home screen, with the key of what it shows (see thumbnailKey). */
+export async function projectThumbnail(
+	projectId: string
+): Promise<{ blob: Blob; key?: string } | undefined> {
+	return (await db()).get('thumbnails', `project:${projectId}`);
 }
 
-export async function putProjectThumbnail(projectId: string, blob: Blob): Promise<void> {
-	await putThumbnail(`project:${projectId}`, blob);
+export async function putProjectThumbnail(projectId: string, blob: Blob, key?: string): Promise<void> {
+	await (await db()).put('thumbnails', { id: `project:${projectId}`, blob, key });
 }
 
 /**

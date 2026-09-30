@@ -1,4 +1,4 @@
-import { getThumbnail } from '$lib/media/db';
+import { getMediaInfos, getThumbnail, projectThumbnail, putProjectThumbnail } from '$lib/media/db';
 import { croppedSize } from '$lib/model/crop';
 import { frameRect, showsBars } from '$lib/model/framing';
 import type { MediaInfo } from '$lib/media/db';
@@ -47,4 +47,21 @@ export async function makeProjectThumbnail(project: Project, media: Record<strin
 		image.close();
 	}
 	return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
+}
+
+/**
+ * The project's picture, made again if it's missing or out of date (e.g. the editor was closed
+ * before it caught up). Returns null for empty projects.
+ */
+export async function currentProjectThumbnail(project: Project): Promise<Blob | null> {
+	const key = thumbnailKey(project);
+	if (!key) return null;
+	const stored = await projectThumbnail(project.id);
+	if (stored && stored.key === key) return stored.blob;
+	const scene = project.scenes[0];
+	const media: Record<string, MediaInfo> = {};
+	if (scene.kind !== 'card') for (const info of await getMediaInfos([scene.mediaId])) media[info.id] = info;
+	const blob = await makeProjectThumbnail(project, media).catch(() => null);
+	if (blob) await putProjectThumbnail(project.id, blob, key);
+	return blob ?? stored?.blob ?? null;
 }

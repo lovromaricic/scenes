@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { dominant, importViaPicker, scenes, seekTo, setFormat } from './helpers';
+import { dominant, importViaPicker, scenes, seekTo, setFormat, openNewVideo } from './helpers';
 
 type RGB = [number, number, number];
 
@@ -90,7 +90,7 @@ test.describe('Framing', () => {
 		page
 	}, info) => {
 		test.skip(!hasFfmpeg, 'needs ffmpeg to inspect the saved file');
-		await page.goto('/');
+		await openNewVideo(page);
 		// Red | green | blue thirds, three times.
 		await importViaPicker(page, ['bands.mp4', 'bands.mp4', 'bands.mp4'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 3, / })).toBeVisible();
@@ -209,7 +209,7 @@ test.describe('Framing', () => {
 	test('framing is undoable, can be applied to all scenes, zooms, resets and is saved', async ({
 		page
 	}) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['bands.mp4', 'red.mp4'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
 		await setFormat(page, 'Square');

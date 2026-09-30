@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { importViaPicker, setFormat } from './helpers';
+import { importViaPicker, setFormat, openNewVideo } from './helpers';
 
 const hasFfmpeg = (() => {
 	try {
@@ -39,7 +39,7 @@ test.describe('Save video uses the project format', () => {
 	test('presets show the final size and frame rate, and save at the project’s resolution and fps', async ({
 		page
 	}, info) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['red.mp4'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
 		await setFormat(page, 'Landscape', '1080p', 60);
@@ -72,7 +72,7 @@ test.describe('Save video uses the project format', () => {
 	});
 
 	test('Small file scales a vertical 1080p project down to 720 wide', async ({ page }, info) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['portrait.mp4'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
 		await setFormat(page, 'Vertical', '1080p');

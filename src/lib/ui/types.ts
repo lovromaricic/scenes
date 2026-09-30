@@ -20,3 +20,14 @@ export interface ToolbarAction {
 	icon: Icon;
 	onclick?: () => void;
 }
+
+export interface MenuItem {
+	label: string;
+	icon?: Icon;
+	/** Keyboard shortcut shown on the right, e.g. "⌘S". */
+	shortcut?: string;
+	/** Draw a line above this item, to group it with the ones after it. */
+	separator?: boolean;
+	disabled?: boolean;
+	onselect: () => void;
+}

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { fixture, importViaPicker, scenes, seekTo } from './helpers';
+import { fixture, importViaPicker, scenes, seekTo, openNewVideo } from './helpers';
 
 /**
  * Renders the mix for [from, to) with the app's own offline mixer and measures how loud each
@@ -53,7 +53,7 @@ test.describe('Phase 5: sound', () => {
 	test('music mixes with clip sound at the chosen volumes and fades at the ends', async ({
 		page
 	}) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['red.mp4', 'green.mp4', 'blue.webm'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 3, / })).toBeVisible();
 
@@ -106,7 +106,7 @@ test.describe('Phase 5: sound', () => {
 	});
 
 	test('a recorded voiceover plays back where it was recorded', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['red.mp4', 'green.mp4', 'blue.webm'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 3, / })).toBeVisible();
 		// Mute the clips so only the voice is left in the mix.

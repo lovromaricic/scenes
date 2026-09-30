@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { fixture, importViaPicker, scenes, seekTo, setFormat } from './helpers';
+import { fixture, importViaPicker, scenes, seekTo, setFormat, openNewVideo } from './helpers';
 
 type RGB = [number, number, number];
 
@@ -79,7 +79,7 @@ async function previewPixel(page: Page, fx: number, fy: number): Promise<RGB> {
 const close = (a: RGB, b: RGB, tol: number) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
 
 async function buildProject(page: Page) {
-	await page.goto('/');
+	await openNewVideo(page);
 	// Red 4s, magenta 12s, a yellow photo stretched to 14s: 30 seconds, three scenes.
 	await importViaPicker(page, ['red.mp4', 'long.mp4', 'yellow.jpg'], 'Choose photos & videos');
 	await expect(page.getByRole('button', { name: /^Scene 3, / })).toBeVisible();
@@ -231,7 +231,7 @@ test.describe('Phase 7: save video', () => {
 	});
 
 	test('saving can be cancelled', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['long.mp4'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
 		await page.getByRole('button', { name: 'Save video' }).click();
@@ -245,7 +245,7 @@ test.describe('Phase 7: save video', () => {
 	});
 
 	test('falls back to WebM when MP4 can’t be made, and says so', async ({ page }, info) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await page.evaluate(() => localStorage.setItem('scenes:force-webm', '1'));
 		await importViaPicker(page, ['red.mp4', 'blue.webm'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();

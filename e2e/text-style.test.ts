@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { fixture, importViaPicker, scenes, seekTo, textAreaPixels } from './helpers';
+import { fixture, importViaPicker, scenes, seekTo, textAreaPixels, openNewVideo } from './helpers';
 
 type RGB = [number, number, number];
 const near = (a: RGB, b: RGB, tol: number) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
@@ -26,7 +26,7 @@ const boxSize = async (page: Page) => {
 };
 
 async function setup(page: Page, words = 'Saturday market') {
-	await page.goto('/');
+	await openNewVideo(page);
 	await importViaPicker(page, ['red.mp4'], 'Choose photos & videos');
 	await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
 	await seekTo(page, 1);

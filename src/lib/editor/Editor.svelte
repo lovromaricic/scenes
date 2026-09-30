@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
+	import { beforeNavigate } from '$app/navigation';
 	import { ACCEPT_VISUAL } from '$lib/media/kinds';
 	import { dragHasFiles, pickFiles } from '$lib/media/picker';
 	import { EditorStore } from '$lib/state/editor.svelte';
 	import { provideEditor } from '$lib/state/context';
+	import { trackPendingSave } from '$lib/state/library';
 	import AddColumn from './AddColumn.svelte';
 	import DropOverlay from './DropOverlay.svelte';
 	import Inspector from './Inspector.svelte';
@@ -25,6 +28,10 @@
 	let watching = $state(false);
 	let showShortcuts = $state(false);
 
+	// Leaving for the home screen or another project: store everything (and the picture on its
+	// card) before the next page reads it.
+	beforeNavigate(() => trackPendingSave(editor.close()));
+
 	onMount(() => {
 		// Handy for tests and debugging in the console.
 		(window as unknown as { __scenes: unknown }).__scenes = editor;
@@ -36,8 +43,8 @@
 		return () => {
 			window.removeEventListener('pagehide', save);
 			document.removeEventListener('visibilitychange', onVisibility);
-			// Leaving this project (e.g. for the home screen): store the latest changes.
-			save();
+			// Leaving this project (e.g. for the home screen): store the latest changes and picture.
+			trackPendingSave(editor.close());
 			editor.player.dispose();
 		};
 	});
@@ -175,7 +182,19 @@
 
 <svelte:window {ondragenter} {ondragover} {ondragleave} {ondrop} {onkeydown} />
 
-<div class="editor">
+<svelte:head>
+	<title>{editor.notFound ? 'Scenes' : `${editor.project.title} · Scenes`}</title>
+</svelte:head>
+
+{#if editor.notFound}
+	<div class="missing" role="alert">
+		<h1 class="serif">This video isn’t here</h1>
+		<p>It may have been deleted, or it was made in another browser.</p>
+		<a class="back" href={resolve('/')}>Go to your videos</a>
+	</div>
+{/if}
+
+<div class="editor" hidden={editor.notFound}>
 	<TopBar
 		onsave={() => (saving = true)}
 		onwatch={() => {
@@ -213,6 +232,34 @@
 <Toasts />
 
 <style>
+	.missing {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-3);
+		min-height: 100vh;
+		text-align: center;
+	}
+	.missing h1 {
+		font-size: var(--text-display);
+		line-height: 1;
+	}
+	.missing p {
+		color: var(--color-muted);
+	}
+	.back {
+		margin-top: var(--space-3);
+		padding: 10px 18px;
+		border-radius: var(--radius-pill);
+		background: var(--color-ink);
+		color: var(--color-on-ink);
+		font-weight: var(--weight-medium);
+		text-decoration: none;
+	}
+	.editor[hidden] {
+		display: none;
+	}
 	.editor {
 		display: grid;
 		grid-template-rows: var(--topbar-h) minmax(0, 1fr) auto;

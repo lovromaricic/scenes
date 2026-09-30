@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { centerColor, dominant, importViaPicker, scenes, seekTo, setFormat } from './helpers';
+import { centerColor, dominant, importViaPicker, scenes, seekTo, setFormat, openNewVideo } from './helpers';
 
 const cardNames = (page: Page) =>
 	page.getByRole('button', { name: /^Scene \d+, / }).evaluateAll((els) =>
@@ -15,7 +15,7 @@ const projectJson = (page: Page) =>
 	);
 
 async function setup(page: Page) {
-	await page.goto('/');
+	await openNewVideo(page);
 	await importViaPicker(page, ['red.mp4', 'green.mp4', 'blue.webm'], 'Choose photos & videos');
 	await expect(page.getByRole('button', { name: /^Scene 3, / })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();

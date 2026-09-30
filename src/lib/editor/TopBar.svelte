@@ -6,7 +6,7 @@
 	import Download from '@lucide/svelte/icons/download';
 	import Check from '@lucide/svelte/icons/check';
 	import Keyboard from '@lucide/svelte/icons/keyboard';
-	import { Button, Divider, IconButton } from '$lib/ui';
+	import { Button, Divider, IconButton, Logo } from '$lib/ui';
 	import { formatLength, pluralize } from '$lib/model/time';
 	import { useEditor } from '$lib/state/context';
 	import { formatLabel } from '$lib/model/format';
@@ -64,14 +64,11 @@
 
 <header class="topbar">
 	<div class="project">
-		<a class="brand" href={resolve('/')} aria-label="Scenes">
-			<svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
-				<rect width="32" height="32" rx="8" fill="var(--color-ink)" />
-				<rect x="6" y="9" width="8" height="14" rx="2" fill="var(--color-bg)" />
-				<rect x="16" y="9" width="10" height="14" rx="2" fill="var(--color-bg)" opacity=".55" />
-				<rect x="15" y="5" width="2" height="22" rx="1" fill="var(--color-accent)" />
-			</svg>
+		<a class="brand" href={resolve('/')} aria-label="Scenes" title="Your videos">
+			<Logo />
 		</a>
+		<a class="projects-link" href={resolve('/')}>Projects</a>
+		<span class="crumb" aria-hidden="true">/</span>
 		{#if editing}
 			<input
 				bind:this={input}
@@ -177,6 +174,22 @@
 	.brand {
 		display: grid;
 		border-radius: var(--radius-sm);
+	}
+	.projects-link {
+		color: var(--color-muted);
+		font-size: var(--text-md);
+		text-decoration: none;
+		border-radius: var(--radius-sm);
+		padding: 2px 4px;
+		margin: 0 -4px;
+	}
+	.projects-link:hover {
+		color: var(--color-ink);
+		background: var(--color-surface);
+	}
+	.crumb {
+		color: var(--color-border);
+		margin: 0 -4px;
 	}
 	.title-wrap {
 		min-width: 0;

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { importViaPicker, scenes, seekTo, setFormat } from './helpers';
+import { importViaPicker, scenes, seekTo, setFormat, openNewVideo } from './helpers';
 
 type RGB = [number, number, number];
 const near = (a: RGB, b: RGB, tol: number) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
@@ -55,7 +55,7 @@ const cardOf = (page: Page, i: number) =>
 	).then((c) => c[i]);
 
 async function setup(page: Page) {
-	await page.goto('/');
+	await openNewVideo(page);
 	await importViaPicker(page, ['red.mp4', 'blue.webm'], 'Choose photos & videos');
 	await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
 	await setFormat(page, 'Landscape', '1080p');

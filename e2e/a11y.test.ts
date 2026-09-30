@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { importViaPicker } from './helpers';
+import { importViaPicker, openNewVideo } from './helpers';
 
 /** Automated accessibility checks (contrast, names, roles) on the main screens. */
 test.describe('Accessibility', () => {
@@ -24,13 +24,13 @@ test.describe('Accessibility', () => {
 	};
 
 	test('empty editor', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await expect(page.getByText('Start with your photos & videos')).toBeVisible();
 		await check(page);
 	});
 
 	test('editor with scenes, words and the save dialog', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['red.mp4', 'blue.webm'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
 		await page.getByRole('button', { name: /^Words/ }).click();
@@ -40,6 +40,25 @@ test.describe('Accessibility', () => {
 		await check(page);
 		await page.getByRole('button', { name: 'Save video' }).click();
 		await expect(page.getByRole('dialog', { name: 'Save video' })).toBeVisible();
+		await check(page);
+	});
+
+	test('home screen, empty and with projects, menu and delete dialog', async ({ page }) => {
+		await page.goto('/');
+		await expect(page.getByText('Your videos will appear here.')).toBeVisible();
+		await check(page);
+		await openNewVideo(page);
+		await importViaPicker(page, ['red.mp4'], 'Choose photos & videos');
+		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
+		await page.getByRole('link', { name: 'Projects' }).click();
+		await expect(page.getByRole('article')).toHaveCount(1);
+		await expect(page.getByRole('article').locator('img')).toHaveCount(1);
+		await check(page);
+		await page.getByRole('button', { name: 'More for Untitled video' }).click();
+		await expect(page.getByRole('menu')).toBeVisible();
+		await check(page);
+		await page.getByRole('menuitem', { name: 'Delete' }).click();
+		await expect(page.getByRole('dialog')).toBeVisible();
 		await check(page);
 	});
 

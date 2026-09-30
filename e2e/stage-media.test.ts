@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { importViaPicker, setFormat } from './helpers';
+import { importViaPicker, setFormat, openNewVideo } from './helpers';
 
 const cardNames = (page: Page) =>
 	page.getByRole('button', { name: /^Scene \d+, / }).evaluateAll((els) =>
@@ -37,7 +37,7 @@ export async function expectPreviewFills(page: Page, ratio: number) {
 test('the preview fills the stage in the project’s shape and follows window size', async ({
 	page
 }) => {
-	await page.goto('/');
+	await openNewVideo(page);
 	await importViaPicker(page, ['red.mp4'], 'Choose photos & videos');
 	await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
 	for (const [shape, ratio] of [
@@ -65,7 +65,7 @@ test('the preview fills the stage in the project’s shape and follows window si
 test('“Your media” lists imported clips; click or drag one to add it as a scene', async ({
 	page
 }) => {
-	await page.goto('/');
+	await openNewVideo(page);
 	await importViaPicker(page, ['red.mp4', 'green.mp4'], 'Choose photos & videos');
 	await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
 

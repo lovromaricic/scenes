@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { dominant, importViaPicker } from './helpers';
+import { dominant, importViaPicker, openNewVideo } from './helpers';
 
 /** Dominant colour at the centre of every filmstrip tile of the first scene card. */
 async function tileColors(page: Page): Promise<string[]> {
@@ -21,7 +21,7 @@ async function tileColors(page: Page): Promise<string[]> {
 }
 
 test('filmstrips show different frames across a clip and follow trimming', async ({ page }) => {
-	await page.goto('/');
+	await openNewVideo(page);
 	// steps.mp4 is 6s: red, green, blue, white, black, yellow — one colour per second.
 	await importViaPicker(page, ['steps.mp4'], 'Choose photos & videos');
 	await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();

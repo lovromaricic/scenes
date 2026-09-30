@@ -5,6 +5,14 @@ import path from 'node:path';
 export const FIXTURES = path.resolve('e2e/fixtures');
 export const fixture = (name: string) => path.join(FIXTURES, name);
 
+/** Go to the home screen and start a new, empty video. */
+export async function openNewVideo(page: Page) {
+	await page.goto('/');
+	await page.getByRole('button', { name: /^New video/ }).click();
+	await expect(page).toHaveURL(/\/edit\/[^/?]+\?new=1$/);
+	await expect(page.getByText('Start with your photos & videos')).toBeVisible();
+}
+
 /** Import files through the real file picker. */
 export async function importViaPicker(page: Page, names: string[], buttonName: RegExp | string) {
 	const chooser = page.waitForEvent('filechooser');

@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { centerColor, dominant, importViaDrop, importViaPicker, scenes, seekTo } from './helpers';
+import { centerColor, dominant, importViaDrop, importViaPicker, scenes, seekTo, openNewVideo } from './helpers';
 
 test.describe('Phase 2: import, preview and playback', () => {
 	test('three clips become scene cards, play in order with sound, and scrub', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await expect(page.getByText('Start with your photos & videos')).toBeVisible();
 
 		await importViaPicker(page, ['red.mp4', 'green.mp4', 'blue.webm'], 'Choose photos & videos');
@@ -70,7 +70,7 @@ test.describe('Phase 2: import, preview and playback', () => {
 	});
 
 	test('playback runs to the end and stops', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['green.mp4'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
 		await page.getByRole('button', { name: 'Play', exact: true }).click();
@@ -82,7 +82,7 @@ test.describe('Phase 2: import, preview and playback', () => {
 	test('drag and drop adds photos as 3-second scenes, and rejects other files kindly', async ({
 		page
 	}) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaDrop(page, ['yellow.jpg', 'notes.txt']);
 		await expect(page.getByRole('button', { name: /^Scene 1, Yellow, 3s/ })).toBeVisible();
 		await expect(
@@ -92,7 +92,7 @@ test.describe('Phase 2: import, preview and playback', () => {
 	});
 
 	test('scrubbing lands on the exact frame in a clip with sparse keyframes', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['steps.mp4'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
 		const expected = ['red', 'green', 'blue', 'white', 'black', 'yellow'];

@@ -135,7 +135,7 @@ export class EditorStore {
 
 	/**
 	 * @param projectId the project to open
-	 * @param fresh start a new, empty project with this id instead of opening a saved one
+	 * @param fresh a new video: start empty if nothing is stored under this id yet
 	 */
 	constructor(
 		readonly projectId: string = newId(),
@@ -172,10 +172,6 @@ export class EditorStore {
 			void backfillMediaHashes(fingerprint).catch((e) => console.warn('Fingerprinting failed', e));
 		}
 		try {
-			if (this.fresh) {
-				this.project = { ...newProject(), id: this.projectId };
-				return;
-			}
 			let record = await getProject(this.projectId);
 			// A copy written while the page was closing may be newer than the last database save.
 			const copy = emergencyCopy.read(this.projectId);
@@ -185,7 +181,9 @@ export class EditorStore {
 				emergencyCopy.clearIfSaved(this.projectId, copy.savedAt ?? 0);
 			}
 			if (!record) {
-				this.notFound = true;
+				// A new video starts empty (it's stored once something is added).
+				if (this.fresh) this.project = { ...newProject(), id: this.projectId };
+				else this.notFound = true;
 				return;
 			}
 			this.stored = true;
@@ -257,14 +255,27 @@ export class EditorStore {
 	/** Keep the home screen's picture of this project up to date (only when its first scene changes). */
 	private updateThumbnail(): void {
 		clearTimeout(this.thumbTimer);
-		this.thumbTimer = setTimeout(async () => {
-			const project = this.snapshot();
-			const key = thumbnailKey(project);
-			if (key === this.thumbKey) return;
-			this.thumbKey = key;
-			const blob = await makeProjectThumbnail(project, this.media).catch(() => null);
-			if (blob) await putProjectThumbnail(project.id, blob);
-		}, 800);
+		this.thumbTimer = setTimeout(() => void this.writeThumbnail(), 800);
+	}
+
+	private async writeThumbnail(): Promise<void> {
+		this.thumbTimer = undefined;
+		const project = this.snapshot();
+		const key = thumbnailKey(project);
+		if (key === this.thumbKey) return;
+		this.thumbKey = key;
+		const blob = await makeProjectThumbnail(project, this.media).catch((error) => {
+			console.warn('Couldn’t make the project’s picture', error);
+			this.thumbKey = '';
+			return null;
+		});
+		if (blob) await putProjectThumbnail(project.id, blob, key);
+	}
+
+	/** Leaving this project (for the home screen or another one): store the latest changes now. */
+	close(): Promise<void> {
+		clearTimeout(this.thumbTimer);
+		return this.flushSave();
 	}
 
 	private async loadThumbnails(ids: string[]): Promise<void> {

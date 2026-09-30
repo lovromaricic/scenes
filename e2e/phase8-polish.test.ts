@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { fixture, importViaPicker, scenes } from './helpers';
+import { fixture, importViaPicker, scenes, openNewVideo } from './helpers';
 
 test.describe('Phase 8: polish', () => {
 	test('a first-time user can make and save a short video with only what’s on screen', async ({
 		page
 	}) => {
-		await page.goto('/');
+		await openNewVideo(page);
 
 		// The empty project explains what to do.
 		await expect(page.getByText('Start with your photos & videos')).toBeVisible();
@@ -56,8 +56,7 @@ test.describe('Phase 8: polish', () => {
 	});
 
 	test('? shows the keyboard shortcuts', async ({ page }) => {
-		await page.goto('/');
-		await expect(page.getByText('Start with your photos & videos')).toBeVisible();
+		await openNewVideo(page);
 		await page.keyboard.press('?');
 		const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
 		await expect(dialog).toBeVisible();
@@ -70,7 +69,7 @@ test.describe('Phase 8: polish', () => {
 	});
 
 	test('Watch plays the whole video full screen and returns to editing', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['red.mp4', 'blue.webm'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
 		await page.getByRole('button', { name: 'Watch' }).click();
@@ -91,7 +90,7 @@ test.describe('Phase 8: polish', () => {
 
 	test('the editor works on a tablet in landscape', async ({ page }) => {
 		await page.setViewportSize({ width: 1024, height: 768 });
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['red.mp4', 'green.mp4', 'blue.webm'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 3, / })).toBeVisible();
 		for (const [width, height] of [

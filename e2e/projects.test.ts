@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { fixture, importViaPicker, scenes } from './helpers';
+import { fixture, importViaPicker, openNewVideo, scenes } from './helpers';
 
 /** Read a whole object store from the app's database. */
 function readStore(page: Page, store: string) {
@@ -112,6 +112,12 @@ test.describe('Projects', () => {
 	test('the project from before is kept, unchanged, as "My video"', async ({ page }) => {
 		await seedVersion3(page);
 		await page.goto('/');
+		// It's the one project on the home screen, and opens as it was.
+		const card = page.getByRole('article', { name: 'My video' });
+		await expect(card).toContainText('0:04 · 1280 × 720');
+		await expect(card).toContainText('Edited 14 Nov 2023');
+		await card.getByRole('link', { name: 'My video' }).click();
+		await expect(page).toHaveURL(/\/edit\/old-project$/);
 		await expect(page.getByRole('heading', { level: 1 })).toHaveText('My video');
 		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Words: Still here' }).first()).toBeVisible();
@@ -138,7 +144,7 @@ test.describe('Projects', () => {
 	});
 
 	test('the same file imported twice is stored once', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['red.mp4', 'yellow.jpg'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
 		await page.getByRole('button', { name: /^Clips/ }).click();
@@ -150,5 +156,112 @@ test.describe('Projects', () => {
 		expect(project.scenes[2].mediaId).toBe(project.scenes[0].mediaId);
 		expect(project.library).toHaveLength(2);
 		expect(await readStore(page, 'media')).toHaveLength(2);
+	});
+
+	test('first launch shows an empty home; New video opens an empty editor', async ({ page }) => {
+		await page.goto('/');
+		await expect(page.getByRole('heading', { name: 'Your videos' })).toBeVisible();
+		await expect(page.getByText('Your videos will appear here.')).toBeVisible();
+		await expect(page.getByRole('article')).toHaveCount(0);
+		await expect(page.getByRole('region', { name: 'Storage' })).toContainText(
+			/Your videos use .* on this device/
+		);
+		await page.getByRole('button', { name: /^New video/ }).click();
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Untitled video');
+		await expect(page.getByText('Start with your photos & videos')).toBeVisible();
+		// Leaving without adding anything doesn't keep an empty project.
+		await page.getByRole('link', { name: 'Projects' }).click();
+		await expect(page.getByText('Your videos will appear here.')).toBeVisible();
+		await expect(page.getByRole('article')).toHaveCount(0);
+	});
+
+	test('create, switch, rename, duplicate and delete projects', async ({ page }) => {
+		// Two projects: a red one and a yellow photo one.
+		await openNewVideo(page);
+		await importViaPicker(page, ['red.mp4'], 'Choose photos & videos');
+		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
+		await page.getByRole('button', { name: 'Untitled video, rename' }).click();
+		await page.getByRole('textbox', { name: 'Video title' }).fill('Red day');
+		await page.keyboard.press('Enter');
+		const redUrl = page.url().replace('?new=1', '');
+		await page.getByRole('link', { name: 'Projects' }).click();
+
+		await page.getByRole('button', { name: /^New video/ }).click();
+		await importViaPicker(page, ['yellow.jpg', 'green.mp4'], 'Choose photos & videos');
+		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
+		await page.getByRole('link', { name: 'Projects' }).click();
+
+		// Newest first, each with its picture, length, format and when it was edited.
+		const cards = page.getByRole('article');
+		await expect(cards).toHaveCount(2);
+		await expect(cards.nth(0)).toHaveAccessibleName('Untitled video');
+		await expect(cards.nth(1)).toHaveAccessibleName('Red day');
+		await expect(cards.nth(0)).toContainText('0:06 · 960 × 720');
+		await expect(cards.nth(1)).toContainText('0:04 · 1280 × 720');
+		await expect(cards.nth(1)).toContainText('Edited just now');
+		await expect(cards.nth(0).locator('img')).toHaveCount(1);
+		await expect(cards.nth(1).locator('img')).toHaveCount(1);
+		// The thumbnail shows the first scene: yellow for the photo project.
+		const src = await cards.nth(0).locator('img').getAttribute('src');
+		const pixel = await page.evaluate(async (src) => {
+			const bitmap = await createImageBitmap(await (await fetch(src!)).blob());
+			const c = new OffscreenCanvas(bitmap.width, bitmap.height);
+			const ctx = c.getContext('2d')!;
+			ctx.drawImage(bitmap, 0, 0);
+			return Array.from(ctx.getImageData(bitmap.width >> 1, bitmap.height >> 1, 1, 1).data);
+		}, src);
+		expect(pixel[0]).toBeGreaterThan(200);
+		expect(pixel[1]).toBeGreaterThan(180);
+		expect(pixel[2]).toBeLessThan(90);
+
+		// Switch: open Red day from its menu; it's as it was.
+		await cards.nth(1).getByRole('button', { name: 'More for Red day' }).click();
+		await page.getByRole('menuitem', { name: 'Open' }).click();
+		await expect(page).toHaveURL(redUrl);
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Red day');
+		await expect(page.getByText('1 scene · 4 sec')).toBeVisible();
+		await page.getByRole('link', { name: 'Projects' }).click();
+
+		// Rename from the menu.
+		await page.getByRole('button', { name: 'More for Untitled video' }).click();
+		await page.getByRole('menuitem', { name: 'Rename' }).click();
+		await page.getByRole('textbox', { name: 'Video name' }).fill('Picnic');
+		await page.keyboard.press('Enter');
+		await expect(page.getByRole('article', { name: 'Picnic' })).toBeVisible();
+
+		// Duplicate: a copy with the same scenes, listed first.
+		await page.getByRole('button', { name: 'More for Picnic' }).click();
+		await page.getByRole('menuitem', { name: 'Duplicate' }).click();
+		await expect(cards).toHaveCount(3);
+		await expect(cards.nth(0)).toHaveAccessibleName('Picnic (copy)');
+		await expect(cards.nth(0)).toContainText('0:06 · 960 × 720');
+		await cards.nth(0).getByRole('link', { name: 'Picnic (copy)' }).click();
+		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
+		await page.getByRole('link', { name: 'Projects' }).click();
+
+		// Delete asks first; Cancel keeps it.
+		await page.getByRole('button', { name: 'More for Picnic', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Delete' }).click();
+		const confirm = page.getByRole('dialog', { name: 'Delete “Picnic”?' });
+		await expect(confirm).toBeVisible();
+		await confirm.getByRole('button', { name: 'Cancel' }).click();
+		await expect(cards).toHaveCount(3);
+		await page.getByRole('button', { name: 'More for Picnic', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Delete' }).click();
+		await confirm.getByRole('button', { name: 'Delete' }).click();
+		await expect(cards).toHaveCount(2);
+		await expect(page.getByRole('article', { name: 'Picnic', exact: true })).toHaveCount(0);
+		// The copy still has its clips (they're shared, so they weren't deleted with the original).
+		expect(await readStore(page, 'media')).toHaveLength(3);
+		await page.getByRole('article', { name: 'Picnic (copy)' }).getByRole('link').click();
+		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
+		await page.getByRole('link', { name: 'Projects' }).click();
+
+		// Deleting the last user of a file deletes the file too.
+		await page.getByRole('button', { name: 'More for Picnic (copy)' }).click();
+		await page.getByRole('menuitem', { name: 'Delete' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+		await expect(cards).toHaveCount(1);
+		await expect.poll(async () => (await readStore(page, 'media')).length).toBe(1);
 	});
 });

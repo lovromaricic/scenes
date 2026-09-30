@@ -17,6 +17,10 @@ class Toasts {
 		setTimeout(() => this.dismiss(id), ms);
 	}
 
+	clear(): void {
+		this.items = [];
+	}
+
 	dismiss(id: number): void {
 		this.items = this.items.filter((t) => t.id !== id);
 	}

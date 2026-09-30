@@ -543,6 +543,51 @@ npm run check        # svelte-check (TypeScript strict)
     as "My video", gets its fingerprint, and re-importing the same file stores nothing new; the
     persistence answer is recorded; the same file imported twice is stored once.
 
+### 2. Home screen
+
+- **Routes.** `/` is the home screen; `/edit/<id>` opens a project. "New video" opens
+  `/edit/<new id>?new=1`, which starts empty when nothing is stored under that id. Reloading
+  after something was added opens the stored project, never a blank one. The editor is keyed
+  by id, so switching projects gives a fresh store. An id that doesn't exist (deleted in another
+  tab, or a link from another browser) shows "This video isn't here" with a way back. The
+  browser-support check moved to the layout, so it covers every page.
+- **Layout.**
+  - A large ink "New video" card, then the projects in a responsive grid, most recently edited
+    first.
+  - Each card shows the project's picture (in its own shape, letterboxed on the surface
+    colour), name, length and format in mono ("0:30 · 1920 × 1080"), and "Edited 2 hours ago".
+    The edited time refreshes every 30 s.
+  - On first launch there are no cards, only the New video card and a line saying videos will
+    appear there.
+  - The accent colour isn't used on this screen: it stays reserved for the playhead, selection
+    and Save video.
+- **Card menu.** Open, Rename (inline, on the card), Duplicate, Delete. Delete asks first
+  ("Delete “Trip”?", then Cancel or Delete) through a new shared `ConfirmDialog`. The menu is a
+  new shared `ui/Menu` (arrow keys, Home/End, Esc, click outside; focus returns to the button),
+  which the editor's title menu will also use. Save to file comes in section 4.
+- **Storage line.** "Your videos use 120 MB on this device.", then either that the browser keeps
+  them safely (persistent) or that it may clear them when space runs low, with a suggestion to
+  save important ones to a file.
+- **Editor.** The top bar has a "Projects /" link before the title (the logo also goes home).
+  The page title is the video's name. Toasts from the editor are cleared on the home screen.
+- **Leaving the editor** saves right away (`beforeNavigate`, as well as on destroy), and the
+  home screen waits for those saves before listing. That way a rename or import made just
+  before clicking Projects always shows.
+- **Card pictures are self-healing.** Each picture is stored with the key of what it shows
+  (first scene, crop, framing, format). The editor writes pictures while you work, and the
+  home screen makes any missing or stale one itself. At first the editor made the picture when
+  it closed, but in Chrome `createImageBitmap`/`img.decode()` on the stored thumbnail sometimes
+  never settled while the page was switching, so that project was left without a picture.
+- Tests (e2e):
+  - Empty first launch, and New video → empty "Untitled video" → back with nothing kept.
+  - Two projects: order, pictures (the photo project's picture really is yellow), length, format
+    and edited time; switching; renaming from the menu; duplicating (the copy opens with its
+    scenes); deleting with Cancel, then Delete. Shared clips survive while the copy uses them
+    and are removed with the last project that uses them.
+  - axe checks on the home screen (empty, with projects, with the menu, with the delete
+    dialog).
+  - Every existing test now starts from the home screen (`openNewVideo`).
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { importViaPicker, isInkish, isYellowish, scenes, seekTo, textAreaPixels } from './helpers';
+import { importViaPicker, isInkish, isYellowish, scenes, seekTo, textAreaPixels, openNewVideo } from './helpers';
 
 type Text = {
 	id: string;
@@ -18,7 +18,7 @@ const texts = (page: Page) =>
 
 test.describe('Phase 4: words', () => {
 	test('add a caption, type on the preview, restyle, animate and retime it', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['red.mp4', 'green.mp4', 'blue.webm'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 3, / })).toBeVisible();
 		await seekTo(page, 1);
@@ -128,7 +128,7 @@ test.describe('Phase 4: words', () => {
 	});
 
 	test('a title is added at the playhead and can be removed with Delete', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['green.mp4'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();
 		await page.getByRole('button', { name: /^Words/ }).click();

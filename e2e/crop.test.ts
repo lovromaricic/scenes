@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { importViaPicker, scenes, seekTo, setFormat } from './helpers';
+import { importViaPicker, scenes, seekTo, setFormat, openNewVideo } from './helpers';
 
 type RGB = [number, number, number];
 const isMagenta = ([r, g, b]: RGB) => r > 180 && g < 110 && b > 180;
@@ -72,7 +72,7 @@ const sceneCrop = (page: Page, i = 0) =>
 	).then((c) => c[i] as { x: number; y: number; w: number; h: number } | null);
 
 async function setup(page: Page) {
-	await page.goto('/');
+	await openNewVideo(page);
 	// A 1280×800 "screen recording" with an 80-pixel magenta browser toolbar across the top.
 	await importViaPicker(page, ['screen.mp4'], 'Choose photos & videos');
 	await expect(page.getByRole('button', { name: /^Scene 1, / })).toBeVisible();

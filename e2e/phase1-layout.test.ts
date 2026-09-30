@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { importViaPicker } from './helpers';
+import { importViaPicker, openNewVideo } from './helpers';
 
 test.describe('Phase 1: design system and layout', () => {
 	test('design page shows every component', async ({ page }) => {
@@ -25,7 +25,7 @@ test.describe('Phase 1: design system and layout', () => {
 	});
 
 	test('editor layout has every region', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await importViaPicker(page, ['red.mp4', 'green.mp4', 'blue.webm'], 'Choose photos & videos');
 		// Top bar
 		await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -60,7 +60,7 @@ test.describe('Phase 1: design system and layout', () => {
 	});
 
 	test('add panels open and close with Escape', async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		await page.getByRole('button', { name: /^Words/ }).click();
 		await expect(page.getByRole('button', { name: /^Title/ })).toBeVisible();
 		await page.keyboard.press('Escape');
@@ -72,7 +72,7 @@ test.describe('Phase 1: design system and layout', () => {
 	test('no horizontal page scroll at 1280 and tablet landscape', async ({ page }) => {
 		for (const width of [1280, 1024]) {
 			await page.setViewportSize({ width, height: 768 });
-			await page.goto('/');
+			await openNewVideo(page);
 			const overflow = await page.evaluate(
 				() => document.documentElement.scrollWidth - document.documentElement.clientWidth
 			);

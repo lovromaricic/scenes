@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { importViaPicker, openFormat, setFormat } from './helpers';
+import { importViaPicker, openFormat, setFormat, openNewVideo } from './helpers';
 
 const formatButton = (page: Page) => page.getByRole('button', { name: /^Project format:/ });
 const previewRatio = (page: Page) =>
@@ -11,7 +11,7 @@ const previewRatio = (page: Page) =>
 test('a new project takes its format from the first clip; later clips don’t change it', async ({
 	page
 }) => {
-	await page.goto('/');
+	await openNewVideo(page);
 	await expect(formatButton(page)).toContainText('1920 × 1080 · 30 fps');
 	// A 360×640, 25 fps phone-shaped clip → Vertical 720p at 25 fps.
 	await importViaPicker(page, ['portrait.mp4'], 'Choose photos & videos');
@@ -34,7 +34,7 @@ test('a new project takes its format from the first clip; later clips don’t ch
 test('the Project format panel changes shape, size and frame rate; undoable and saved', async ({
 	page
 }) => {
-	await page.goto('/');
+	await openNewVideo(page);
 	await importViaPicker(page, ['red.mp4'], 'Choose photos & videos');
 	await expect(formatButton(page)).toContainText('1280 × 720 · 30 fps');
 

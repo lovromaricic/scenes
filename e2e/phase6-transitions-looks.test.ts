@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { importViaPicker, scenes, seekTo } from './helpers';
+import { importViaPicker, scenes, seekTo, openNewVideo } from './helpers';
 import { applyGrade, MOOD_GRADES } from '../src/lib/model/moods';
 
 type RGB = [number, number, number];
@@ -40,7 +40,7 @@ async function setTransition(page: Page, name: string) {
 
 test.describe('Phase 6: transitions and looks', () => {
 	test.beforeEach(async ({ page }) => {
-		await page.goto('/');
+		await openNewVideo(page);
 		// Red (4s) then blue (3s): the cut is at 4s.
 		await importViaPicker(page, ['red.mp4', 'blue.webm'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();

@@ -30,8 +30,17 @@ export async function settleEmergencyCopies(): Promise<void> {
 	}
 }
 
+const pending = new Set<Promise<unknown>>();
+
+/** Saves still being written by an editor that was just closed; the home screen waits for them. */
+export function trackPendingSave(save: Promise<unknown>): void {
+	pending.add(save);
+	void save.finally(() => pending.delete(save));
+}
+
 /** Every project, most recently edited first, brought up to date. */
 export async function allProjects(): Promise<ProjectRecord[]> {
+	await Promise.allSettled([...pending]);
 	await settleEmergencyCopies();
 	return (await listProjects()).map((p) => ({ ...p, ...migrateProject(p) }));
 }
@@ -60,7 +69,7 @@ export async function duplicateProject(id: string): Promise<ProjectRecord | unde
 	};
 	await saveProject(copy);
 	const thumb = await projectThumbnail(id);
-	if (thumb) await putProjectThumbnail(copy.id, thumb);
+	if (thumb) await putProjectThumbnail(copy.id, thumb.blob, thumb.key);
 	return copy;
 }
 
