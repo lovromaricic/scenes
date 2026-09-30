@@ -25,6 +25,8 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { ConfirmDialog, Menu, type MenuItem } from '$lib/ui';
 	import type { Track } from '$lib/model/tracks';
+	import { RULER_H, trackHeight } from './layout';
+	import { tick } from 'svelte';
 	import {
 		fitTimeline,
 		mapTicks,
@@ -36,17 +38,17 @@
 
 	interface Props {
 		onaddscene?: () => void;
+		/** The storyboard's height (set with the divider above it). */
+		height?: number;
 	}
 
-	let { onaddscene }: Props = $props();
+	let { onaddscene, height }: Props = $props();
 
 	const editor = useEditor();
 
 	const CARD_GAP = 10;
 	/** Width of the track headers on the left (matches --track-header-w). */
-	const HEADER_W = 150;
-	const OVERLAY_H = 58;
-	const AUDIO_H = 44;
+	const HEADER_W = 172;
 	const ADD_CARD_W = 104;
 	const LOADING_CARD_W = 120;
 	const END_PAD = 24;
@@ -78,6 +80,8 @@
 		x: number;
 		active: boolean;
 		startY: number;
+		/** The tracks' scroll when the drag began. */
+		startScroll: number;
 		/** Dragged up onto an overlay track (or a gap): where it would become an overlay (else null). */
 		toLayers: { start: number; duration: number; target: DropTarget } | null;
 		dy: number;
@@ -173,6 +177,13 @@
 	$effect(() => {
 		const el = tracks;
 		const onwheel = (event: WheelEvent) => {
+			// Shift + wheel scrolls sideways (a plain wheel scrolls the tracks up and down).
+			if (event.shiftKey && !event.ctrlKey && !event.metaKey) {
+				if (event.deltaX !== 0 || event.deltaY === 0) return;
+				event.preventDefault();
+				el.scrollLeft += event.deltaY;
+				return;
+			}
 			if (!event.ctrlKey && !event.metaKey) return;
 			event.preventDefault();
 			const current = ppsToZoom(pps, fittedPps);
@@ -262,6 +273,62 @@
 		return accepts(track, kind) && !track.locked ? { kind: 'track', id: track.id } : null;
 	}
 
+	// ─── Height, scrolling ──────────────────────────────────────────────────────────────────
+	/** How far the tracks are scrolled sideways (the playhead hides under the headers). */
+	let scrollLeft = $state(0);
+	/** Every item's track and kind, for the tracks' heights. */
+	const itemKinds = $derived(allItems(editor.project).map((i) => ({ trackId: i.trackId, kind: i.kind })));
+
+	/** Auto-scroll while dragging near the top or bottom edge of the tracks. */
+	const EDGE = 36;
+	const MAX_SPEED = 16;
+	let autoY: number | null = null;
+	let autoFrame = 0;
+	let onAutoScroll: (() => void) | undefined;
+	function autoScroll(clientY: number | null, onscroll?: () => void) {
+		autoY = clientY;
+		onAutoScroll = onscroll;
+		if (clientY === null) {
+			cancelAnimationFrame(autoFrame);
+			autoFrame = 0;
+		} else if (!autoFrame) autoFrame = requestAnimationFrame(autoStep);
+	}
+	function autoStep() {
+		autoFrame = 0;
+		if (autoY === null || !tracks) return;
+		const r = tracks.getBoundingClientRect();
+		const top = r.top + RULER_H;
+		let v = 0;
+		if (autoY < top + EDGE) v = -Math.min(1, (top + EDGE - autoY) / EDGE) * MAX_SPEED;
+		else if (autoY > r.bottom - EDGE) v = Math.min(1, (autoY - (r.bottom - EDGE)) / EDGE) * MAX_SPEED;
+		if (v === 0) return;
+		const before = tracks.scrollTop;
+		tracks.scrollTop = before + Math.round(v);
+		if (tracks.scrollTop !== before) onAutoScroll?.();
+		// (The callback may have asked for the next step already.)
+		if (!autoFrame && autoY !== null) autoFrame = requestAnimationFrame(autoStep);
+	}
+	onDestroy(() => cancelAnimationFrame(autoFrame));
+
+	// A new track scrolls into view.
+	let knownTracks: Set<string> | null = null;
+	$effect(() => {
+		const ids = trackList.map((t) => t.id);
+		const known = knownTracks;
+		knownTracks = new Set(ids);
+		const added = known ? ids.filter((id) => !known.has(id)) : [];
+		if (added.length !== 1) return;
+		void tick().then(() => {
+			const row = tracks?.querySelector<HTMLElement>(`[data-track-row][data-track-id="${added[0]}"]`);
+			if (!row) return;
+			// Below the sticky ruler if it's above it.
+			const r = row.getBoundingClientRect();
+			const view = tracks.getBoundingClientRect();
+			if (r.top < view.top + RULER_H) tracks.scrollTop -= view.top + RULER_H - r.top + 4;
+			else if (r.bottom > view.bottom) tracks.scrollTop += r.bottom - view.bottom + 4;
+		});
+	});
+
 	const services: LaneServices = {
 		targetAt: (clientY, kind, clientX) => targetAt(clientY, kind, clientX),
 		showTarget: (target, from) => {
@@ -275,7 +342,9 @@
 				if (!except.includes(i.id)) list.push(i.start, i.start + i.duration);
 			return list;
 		},
-		setSnap: (x) => (snapX = x)
+		setSnap: (x) => (snapX = x),
+		autoScroll,
+		scrollTop: () => tracks?.scrollTop ?? 0
 	};
 
 	// ─── Track headers: menu, rename, delete, move ─────────────────────────────────────────
@@ -330,8 +399,12 @@
 					if (!active) handle.capture(tracks);
 					active = true;
 					reorder = { id: track.id, index: reorderIndexAt(e.clientY, track) };
+					autoScroll(e.clientY, () => {
+						if (reorder) reorder = { id: track.id, index: reorderIndexAt(e.clientY, track) };
+					});
 				},
 				end: (_e, cancelled) => {
+					autoScroll(null);
 					const r = reorder;
 					reorder = null;
 					if (!active || cancelled || !r) return;
@@ -372,6 +445,7 @@
 			x: item.left,
 			active: false,
 			startY: event.clientY,
+			startScroll: tracks.scrollTop,
 			toLayers: null,
 			dy: 0
 		};
@@ -392,10 +466,12 @@
 			// page as the order changes, which would lose the capture.
 			cardDrag?.capture(tracks);
 		}
-		autoScroll(event.clientX);
+		autoScrollX(event.clientX);
+		autoScroll(event.clientY, () => onCardPointerMove(event));
 		const x = contentX(event.clientX);
 		d.x = x - d.grab;
-		d.dy = event.clientY - d.startY;
+		// The card follows the pointer, also when the tracks scroll under it.
+		d.dy = event.clientY - d.startY + tracks.scrollTop - d.startScroll;
 		// Up onto an overlay track (or into a gap above the Scenes track): it would become an
 		// overlay there (the scenes don't reorder meanwhile).
 		const up = event.clientY < scenesRow!.getBoundingClientRect().top - 2;
@@ -427,6 +503,7 @@
 
 	function onCardDragEnd() {
 		cardDrag = null;
+		autoScroll(null);
 		const d = drag;
 		if (!d) return;
 		drag = null;
@@ -529,7 +606,7 @@
 		);
 	}
 
-	function autoScroll(clientX: number) {
+	function autoScrollX(clientX: number) {
 		const rect = tracks.getBoundingClientRect();
 		const edge = 48;
 		if (clientX < rect.left + edge) tracks.scrollLeft -= 12;
@@ -617,10 +694,11 @@
 		drags.start(
 			event,
 			{
-				move: (e) => {
+				move: function move(e) {
 					const g = grid.getBoundingClientRect();
 					const to = { x: e.clientX - g.left, y: e.clientY - g.top };
 					if (!band && Math.hypot(to.x - from.x, to.y - from.y) < 4) return;
+					autoScroll(e.clientY, () => move(e));
 					band = {
 						left: Math.min(from.x, to.x),
 						top: Math.min(from.y, to.y),
@@ -641,7 +719,10 @@
 						.map((el) => el.dataset.itemId!);
 					editor.selectItems([...kept, ...hit.filter((id) => !kept.includes(id))]);
 				},
-				end: () => (band = null)
+				end: () => {
+					autoScroll(null);
+					band = null;
+				}
 			},
 			null
 		);
@@ -694,7 +775,13 @@
 {/if}
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc deselects from the keyboard) -->
-<section class="storyboard" class:zooming aria-label="Storyboard" onpointerdown={onEmptyPointerDown}>
+<section
+	class="storyboard"
+	class:zooming
+	aria-label="Storyboard"
+	style:height={height ? `${height}px` : undefined}
+	onpointerdown={onEmptyPointerDown}
+>
 	<!-- One scroller for all tracks: headers stay on the left when scrolling sideways; the ruler
 		stays on top and the Scenes track stays in view when scrolling up and down. The browser's own
 		drag of pictures or selected text would swallow a drag's release, so it's turned off. -->
@@ -704,6 +791,7 @@
 		role="presentation"
 		bind:this={tracks}
 		bind:clientWidth={trackWidth}
+		onscroll={() => (scrollLeft = tracks.scrollLeft)}
 	>
 		<div class="grid" bind:this={grid} style:width="{HEADER_W + contentWidth + TRACK_PAD}px" style:--header-w="{HEADER_W}px">
 			<!-- Ruler: click or drag to move the playhead -->
@@ -856,7 +944,7 @@
 							}}
 							ondrop={(e) => onLaneDrop(e, track.id)}
 						>
-							<TrackLane {track} {map} height={track.kind === 'audio' ? AUDIO_H : OVERLAY_H} {services} />
+							<TrackLane {track} {map} height={trackHeight(track, itemKinds)} {services} />
 							{#if laneDrop?.trackId === track.id}
 								<span
 									class="drop-ghost"
@@ -895,11 +983,20 @@
 
 			{#if snapX !== null}
 				<!-- A dragged item has snapped here. -->
-				<span class="snap-line" style:left="{HEADER_W + snapX}px" aria-hidden="true"></span>
+				<span
+					class="snap-line"
+					style:left="{HEADER_W + snapX}px"
+					style:visibility={snapX < scrollLeft ? 'hidden' : undefined}
+					aria-hidden="true"
+				></span>
 			{/if}
 
 			<!-- Playhead -->
-			<div class="playhead" style:translate="{HEADER_W + map.x(editor.time)}px 0">
+			<div
+				class="playhead"
+				style:translate="{HEADER_W + map.x(editor.time)}px 0"
+				style:visibility={map.x(editor.time) < scrollLeft - 1 ? 'hidden' : undefined}
+			>
 				<button
 					type="button"
 					class="handle"
@@ -992,7 +1089,10 @@
 	}
 	.storyboard {
 		position: relative;
+		display: flex;
+		flex-direction: column;
 		min-width: 0;
+		min-height: 0;
 		--ruler-h: 26px;
 		--scenes-h: 104px;
 		--row-gap: 6px;
@@ -1013,9 +1113,10 @@
 		position: relative;
 		/* Its rows stack among themselves, under the zoom controls. */
 		isolation: isolate;
+		/* The storyboard's height is set with the divider; the tracks scroll inside it. */
+		flex: 1;
+		min-height: 0;
 		overflow: auto;
-		/* Many tracks: the list scrolls up and down (the ruler and Scenes track stay in view). */
-		max-height: min(44vh, 520px);
 		scrollbar-width: thin;
 	}
 	.grid {
@@ -1042,18 +1143,15 @@
 	.ruler-row {
 		position: sticky;
 		top: 0;
-		z-index: 13;
+		z-index: 15;
 		background: var(--color-bg);
 	}
-	/* The Scenes track stays in view: under the ruler when scrolled down, at the bottom when up. */
 	.main-row {
-		position: sticky;
-		top: var(--ruler-h);
-		bottom: 0;
 		z-index: 12;
 		background: var(--color-bg);
 		padding: 2px 0;
 	}
+
 	.corner {
 		display: flex;
 		align-items: center;
@@ -1085,7 +1183,7 @@
 	}
 	.band {
 		position: absolute;
-		z-index: 16;
+		z-index: 18;
 		border: 1px solid var(--color-ink);
 		border-radius: 2px;
 		background: color-mix(in srgb, var(--color-ink) 8%, transparent);
@@ -1127,7 +1225,7 @@
 		flex: none;
 		height: 0;
 		margin-left: var(--header-w);
-		z-index: 15;
+		z-index: 17;
 	}
 	.gap-line::after {
 		content: '';
@@ -1150,7 +1248,7 @@
 		opacity: 0.5;
 		pointer-events: none;
 		/* Across every track, the Scenes track included (under the headers). */
-		z-index: 13;
+		z-index: 16;
 	}
 	.ruler {
 		position: relative;
@@ -1357,7 +1455,7 @@
 		margin-left: -1px;
 		background: var(--color-accent);
 		pointer-events: none;
-		z-index: 13;
+		z-index: 16;
 		will-change: translate;
 	}
 	.handle {

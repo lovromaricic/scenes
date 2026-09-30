@@ -23,6 +23,8 @@ export interface Track {
 	muted: boolean;
 	/** Its items can't be selected, moved or changed. */
 	locked: boolean;
+	/** Shown as a thin strip in the storyboard (a view setting, saved with the project). */
+	collapsed?: boolean;
 }
 
 export const MAIN_TRACK_ID = 'main';

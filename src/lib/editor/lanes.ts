@@ -22,4 +22,11 @@ export interface LaneServices {
 	snapTargets(except: string[]): number[];
 	/** Show the snap line at content x (or hide it). */
 	setSnap(x: number | null): void;
+	/**
+	 * While dragging: scroll the tracks up or down when the pointer is near the top or bottom edge
+	 * (null: stop). `onscroll` runs after each scroll step, to update the drag for the new view.
+	 */
+	autoScroll(clientY: number | null, onscroll?: () => void): void;
+	/** How far the tracks are scrolled down now (px). */
+	scrollTop(): number;
 }

@@ -48,7 +48,9 @@
 
 	const entries = $derived<Entry[]>(
 		track.kind === 'audio'
-			? editor.project.sounds.filter((s) => s.trackId === track.id).map((item) => ({ kind: 'sound', item }))
+			? editor.project.sounds
+					.filter((s) => s.trackId === track.id)
+					.map((item) => ({ kind: 'sound', item }))
 			: [
 					...editor.project.overlays
 						.filter((o) => o.trackId === track.id)
@@ -66,7 +68,13 @@
 		mode: Mode;
 		startX: number;
 		startY: number;
-		original: { start: number; duration: number; sourceStart: number; fadeIn: number; fadeOut: number };
+		original: {
+			start: number;
+			duration: number;
+			sourceStart: number;
+			fadeIn: number;
+			fadeOut: number;
+		};
 		active: boolean;
 		/** Where it would go. */
 		start: number;
@@ -78,13 +86,17 @@
 		target: DropTarget | null;
 		/** Other selected items moving along (time only). */
 		group: string[];
+		/** The tracks' scroll when it began (the item follows the pointer as they scroll). */
+		startScroll: number;
 	} | null>(null);
 
 	let lane: HTMLDivElement;
 
 	/** Where an item ends on screen: sound clips stop when the video ends. */
 	const visibleEnd = (e: Entry, start: number, duration: number) =>
-		e.kind === 'sound' ? Math.min(start + duration, Math.max(editor.duration, start + 0.05)) : start + duration;
+		e.kind === 'sound'
+			? Math.min(start + duration, Math.max(editor.duration, start + 0.05))
+			: start + duration;
 
 	function onpointerdown(event: PointerEvent, e: Entry, mode: Mode) {
 		if (event.button !== 0 || track.locked) return;
@@ -94,7 +106,13 @@
 			editor.toggleSelected(e.item.id);
 			return;
 		}
-		const i = e.item as { start: number; duration: number; sourceStart?: number; fadeIn?: number; fadeOut?: number };
+		const i = e.item as {
+			start: number;
+			duration: number;
+			sourceStart?: number;
+			fadeIn?: number;
+			fadeOut?: number;
+		};
 		const original = {
 			start: i.start,
 			duration: i.duration,
@@ -117,7 +135,8 @@
 			...original,
 			dy: 0,
 			target: null,
-			group
+			group,
+			startScroll: services.scrollTop()
 		};
 		drags.start(event, { move: onpointermove, end: onend });
 	}
@@ -126,11 +145,13 @@
 		const g = gesture;
 		if (!g) return;
 		const dx = event.clientX - g.startX;
-		const dy = event.clientY - g.startY;
+		const dy = event.clientY - g.startY + services.scrollTop() - g.startScroll;
 		if (!g.active) {
 			if (Math.hypot(dx, dy) < 3) return;
 			g.active = true;
 		}
+		// Near the top or bottom of the tracks, they scroll (and the drag follows).
+		if (g.mode === 'move') services.autoScroll(event.clientY, () => onpointermove(event));
 		const o = g.original;
 		const entry = entries.find((x) => x.item.id === g.id);
 		if (!entry) return;
@@ -150,7 +171,8 @@
 			g.dy = g.group.length ? 0 : dy;
 			g.target = g.group.length ? null : services.targetAt(event.clientY, g.kind, event.clientX);
 			services.showTarget(g.target, track.id);
-			if (g.kind !== 'sound') editor.seek(Math.min(g.start + 0.05, Math.max(0, editor.duration - 0.01)));
+			if (g.kind !== 'sound')
+				editor.seek(Math.min(g.start + 0.05, Math.max(0, editor.duration - 0.01)));
 		} else if (g.mode === 'start' || g.mode === 'end') {
 			const end = visibleEnd(entry, o.start, o.duration);
 			const from = g.mode === 'start' ? o.start : end;
@@ -164,7 +186,11 @@
 			g.start = next.start;
 			g.duration = next.duration;
 			g.sourceStart = next.sourceStart;
-			editor.seek(g.mode === 'start' ? g.start : Math.max(g.start, visibleEnd(entry, g.start, g.duration) - 0.05));
+			editor.seek(
+				g.mode === 'start'
+					? g.start
+					: Math.max(g.start, visibleEnd(entry, g.start, g.duration) - 0.05)
+			);
 		} else {
 			const t = map.t(event.clientX - lane.getBoundingClientRect().left);
 			const end = visibleEnd(entry, o.start, o.duration);
@@ -190,6 +216,7 @@
 	function onend() {
 		const g = gesture;
 		gesture = null;
+		services.autoScroll(null);
 		services.setSnap(null);
 		services.showTarget(null, track.id);
 		if (!g) return;
@@ -202,7 +229,12 @@
 			const t = g.target;
 			if (t?.kind === 'main' && g.kind === 'overlay') editor.overlayToScene(g.id, t.index);
 			else if (t?.kind === 'gap') editor.moveItemToNewTrack(g.id, g.start, t.index);
-			else editor.moveItems([g.id, ...g.group], g.start - o.start, t?.kind === 'track' ? t.id : undefined);
+			else
+				editor.moveItems(
+					[g.id, ...g.group],
+					g.start - o.start,
+					t?.kind === 'track' ? t.id : undefined
+				);
 		} else if (g.mode === 'start' || g.mode === 'end') {
 			if (g.kind === 'overlay') editor.setOverlayTiming(g.id, g.start, g.duration, g.sourceStart);
 			else if (g.kind === 'text') editor.setTextTiming(g.id, g.start, g.duration);
@@ -243,152 +275,195 @@
 	class="lane-items"
 	class:locked={track.locked}
 	class:dimmed={track.hidden || track.muted}
+	class:collapsed={track.collapsed}
 	bind:this={lane}
 	style:height="{height}px"
 >
-	{#each entries as e (e.item.id)}
-		{@const g = gesture?.active && gesture.id === e.item.id ? gesture : null}
-		{@const moving = !!gesture?.active && gesture.mode === 'move' && gesture.group.includes(e.item.id)}
-		{@const shift = moving && gesture ? gesture.start - gesture.original.start : 0}
-		{@const start = g ? g.start : e.item.start + shift}
-		{@const duration = g ? g.duration : e.item.duration}
-		{@const end = visibleEnd(e, start, duration)}
-		{@const length = Math.max(0, end - start)}
-		{@const width = Math.max(1, map.width(start, length) - 3)}
-		{@const selected = editor.selectedIds.includes(e.item.id)}
-		{@const atEnd = editor.endsWithVideo(e.item)}
-		<div
-			class="item-slot {e.kind}"
-			class:active={!!g}
-			class:narrow={width < 64}
-			data-item-id={e.item.id}
-			style:left="{map.x(start)}px"
-			style:width="{width}px"
-			style:top="2px"
-			style:height="{height - 4}px"
-			style:translate={g && g.mode === 'move' && g.dy ? `0 ${g.dy}px` : undefined}
-		>
-			<button
-				type="button"
-				class="item {e.kind}"
-				class:selected
-				title="{label(e)} · {formatClock(length)}"
-				aria-label="{label(e)}, from {formatShort(start)} for {formatShort(length)}"
-				aria-pressed={selected}
-				aria-disabled={track.locked}
-				aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
-				onpointerdown={(ev) => onpointerdown(ev, e, 'move')}
-				onclick={(ev) => {
-					// Keyboard activation only; pointer clicks are handled when the press ends.
-					if (ev.detail === 0 && !track.locked) editor.select(e.item.id);
-				}}
-				onkeydown={(ev) => onkeydown(ev, e)}
+	{#if track.collapsed}
+		<!-- Collapsed: only where its items are. -->
+		{#each entries as e (e.item.id)}
+			{@const end = visibleEnd(e, e.item.start, e.item.duration)}
+			<span
+				class="bar {e.kind}"
+				class:selected={editor.selectedIds.includes(e.item.id)}
+				data-bar-id={e.item.id}
+				title="{label(e)} · {formatClock(end - e.item.start)}"
+				style:left="{map.x(e.item.start)}px"
+				style:width="{Math.max(3, map.width(e.item.start, end - e.item.start) - 3)}px"
+				style:background-color={e.kind === 'overlay' && e.item.kind === 'card'
+					? e.item.card?.background
+					: undefined}
+			></span>
+		{/each}
+	{:else}
+		{#each entries as e (e.item.id)}
+			{@const g = gesture?.active && gesture.id === e.item.id ? gesture : null}
+			{@const moving =
+				!!gesture?.active && gesture.mode === 'move' && gesture.group.includes(e.item.id)}
+			{@const shift = moving && gesture ? gesture.start - gesture.original.start : 0}
+			{@const start = g ? g.start : e.item.start + shift}
+			{@const duration = g ? g.duration : e.item.duration}
+			{@const end = visibleEnd(e, start, duration)}
+			{@const length = Math.max(0, end - start)}
+			{@const width = Math.max(1, map.width(start, length) - 3)}
+			{@const selected = editor.selectedIds.includes(e.item.id)}
+			{@const atEnd = editor.endsWithVideo(e.item)}
+			<div
+				class="item-slot {e.kind}"
+				class:active={!!g}
+				class:narrow={width < 64}
+				data-item-id={e.item.id}
+				style:left="{map.x(start)}px"
+				style:width="{width}px"
+				style:top="2px"
+				style:height="{height - 4}px"
+				style:translate={g && g.mode === 'move' && g.dy ? `0 ${g.dy}px` : undefined}
 			>
-				{#if e.kind === 'overlay'}
-					<span
-						class="thumb"
-						style:background-image={thumbnail(e.item)}
-						style:background-color={e.item.kind === 'card' ? e.item.card?.background : undefined}
-					></span>
-					<span class="meta">
-						<span class="name">{e.item.name}</span>
-						<span class="dur mono">{formatShort(length)}</span>
-					</span>
-				{:else if e.kind === 'text'}
-					<span class="words">
-						<TypeIcon size={12} strokeWidth={2} aria-hidden="true" />
-						<span class="name">{e.item.text}</span>
-					</span>
-				{:else}
-					{@const wave = editor.waveforms[e.item.mediaId]}
-					{@const fades = effectiveFades(g ? { fadeIn: g.fadeIn, fadeOut: g.fadeOut } : e.item, length)}
-					{@const fadeInPx = Math.min(width, map.x(start + fades.fadeIn) - map.x(start))}
-					{@const fadeOutPx = Math.min(width, map.x(end) - map.x(end - fades.fadeOut))}
-					{@const h = height - 4}
-					{#if wave}
-						<Waveform
-							peaks={wave.peaks}
-							perSecond={wave.perSecond}
-							from={g ? g.sourceStart : e.item.sourceStart}
-							{length}
-						/>
-					{/if}
-					<svg class="fades" aria-hidden="true" {width} height={h}>
-						{#if fadeInPx > 0.5}
-							<path class="fade-area" d="M0 0 L{fadeInPx} 0 L0 {h} Z" />
-							<line class="fade-line in" x1="0" y1={h} x2={fadeInPx} y2="0" />
-						{/if}
-						{#if fadeOutPx > 0.5}
-							<path class="fade-area" d="M{width} 0 L{width - fadeOutPx} 0 L{width} {h} Z" />
-							<line class="fade-line out" x1={width - fadeOutPx} y1="0" x2={width} y2={h} />
-						{/if}
-					</svg>
-					<span class="sound-name">
-						{#if e.item.kind === 'music'}<Music size={11} strokeWidth={2} aria-hidden="true" />{:else}<Mic
-								size={11}
-								strokeWidth={2}
-								aria-hidden="true"
-							/>{/if}
-						{e.item.name}
-					</span>
-					{#if (selected || g) && !track.locked}
+				<button
+					type="button"
+					class="item {e.kind}"
+					class:selected
+					title="{label(e)} · {formatClock(length)}"
+					aria-label="{label(e)}, from {formatShort(start)} for {formatShort(length)}"
+					aria-pressed={selected}
+					aria-disabled={track.locked}
+					aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+					onpointerdown={(ev) => onpointerdown(ev, e, 'move')}
+					onclick={(ev) => {
+						// Keyboard activation only; pointer clicks are handled when the press ends.
+						if (ev.detail === 0 && !track.locked) editor.select(e.item.id);
+					}}
+					onkeydown={(ev) => onkeydown(ev, e)}
+				>
+					{#if e.kind === 'overlay'}
 						<span
-							class="fade-dot in"
-							data-sound-fade="in"
-							style:left="{fadeInPx}px"
-							title="Drag to set the fade in"
-							aria-hidden="true"
-							onpointerdown={(ev) => onpointerdown(ev, e, 'fade-in')}
+							class="thumb"
+							style:background-image={thumbnail(e.item)}
+							style:background-color={e.item.kind === 'card' ? e.item.card?.background : undefined}
 						></span>
-						<span
-							class="fade-dot out"
-							data-sound-fade="out"
-							style:left="{width - fadeOutPx}px"
-							title="Drag to set the fade out"
-							aria-hidden="true"
-							onpointerdown={(ev) => onpointerdown(ev, e, 'fade-out')}
-						></span>
-					{/if}
-				{/if}
-				{#if atEnd}
-					<span class="end-marker mono" title="Stays until the end of the video" aria-label="Lasts to the end"
-						>end</span
-					>
-				{/if}
-			</button>
-			{#if !track.locked}
-				{#each ['start', 'end'] as const as edge (edge)}
-					<span
-						class="trim {edge}"
-						class:visible={selected || g?.mode === edge}
-						data-trim={edge}
-						data-sound-trim={e.kind === 'sound' ? edge : undefined}
-						title={edge === 'start' ? 'Drag to trim the start' : 'Drag to trim the end'}
-						aria-hidden="true"
-						onpointerdown={(ev) => onpointerdown(ev, e, edge)}
-					></span>
-				{/each}
-			{/if}
-			{#if g}
-				<span class="badge mono" data-testid="item-drag-label">
-					{#if g.mode === 'move'}
-						{formatClock(start)}
-					{:else if g.mode === 'fade-in'}
-						Fade in {g.fadeIn.toFixed(1)} s
-					{:else if g.mode === 'fade-out'}
-						Fade out {g.fadeOut.toFixed(1)} s
+						<span class="meta">
+							<span class="name">{e.item.name}</span>
+							<span class="dur mono">{formatShort(length)}</span>
+						</span>
+					{:else if e.kind === 'text'}
+						<span class="words">
+							<TypeIcon size={12} strokeWidth={2} aria-hidden="true" />
+							<span class="name">{e.item.text}</span>
+						</span>
 					{:else}
-						{formatClock(length)}
+						{@const wave = editor.waveforms[e.item.mediaId]}
+						{@const fades = effectiveFades(
+							g ? { fadeIn: g.fadeIn, fadeOut: g.fadeOut } : e.item,
+							length
+						)}
+						{@const fadeInPx = Math.min(width, map.x(start + fades.fadeIn) - map.x(start))}
+						{@const fadeOutPx = Math.min(width, map.x(end) - map.x(end - fades.fadeOut))}
+						{@const h = height - 4}
+						{#if wave}
+							<Waveform
+								peaks={wave.peaks}
+								perSecond={wave.perSecond}
+								from={g ? g.sourceStart : e.item.sourceStart}
+								{length}
+							/>
+						{/if}
+						<svg class="fades" aria-hidden="true" {width} height={h}>
+							{#if fadeInPx > 0.5}
+								<path class="fade-area" d="M0 0 L{fadeInPx} 0 L0 {h} Z" />
+								<line class="fade-line in" x1="0" y1={h} x2={fadeInPx} y2="0" />
+							{/if}
+							{#if fadeOutPx > 0.5}
+								<path class="fade-area" d="M{width} 0 L{width - fadeOutPx} 0 L{width} {h} Z" />
+								<line class="fade-line out" x1={width - fadeOutPx} y1="0" x2={width} y2={h} />
+							{/if}
+						</svg>
+						<span class="sound-name">
+							{#if e.item.kind === 'music'}<Music
+									size={11}
+									strokeWidth={2}
+									aria-hidden="true"
+								/>{:else}<Mic size={11} strokeWidth={2} aria-hidden="true" />{/if}
+							{e.item.name}
+						</span>
+						{#if (selected || g) && !track.locked}
+							<span
+								class="fade-dot in"
+								data-sound-fade="in"
+								style:left="{fadeInPx}px"
+								title="Drag to set the fade in"
+								aria-hidden="true"
+								onpointerdown={(ev) => onpointerdown(ev, e, 'fade-in')}
+							></span>
+							<span
+								class="fade-dot out"
+								data-sound-fade="out"
+								style:left="{width - fadeOutPx}px"
+								title="Drag to set the fade out"
+								aria-hidden="true"
+								onpointerdown={(ev) => onpointerdown(ev, e, 'fade-out')}
+							></span>
+						{/if}
 					{/if}
-				</span>
-			{/if}
-		</div>
-	{/each}
+					{#if atEnd}
+						<span
+							class="end-marker mono"
+							title="Stays until the end of the video"
+							aria-label="Lasts to the end">end</span
+						>
+					{/if}
+				</button>
+				{#if !track.locked}
+					{#each ['start', 'end'] as const as edge (edge)}
+						<span
+							class="trim {edge}"
+							class:visible={selected || g?.mode === edge}
+							data-trim={edge}
+							data-sound-trim={e.kind === 'sound' ? edge : undefined}
+							title={edge === 'start' ? 'Drag to trim the start' : 'Drag to trim the end'}
+							aria-hidden="true"
+							onpointerdown={(ev) => onpointerdown(ev, e, edge)}
+						></span>
+					{/each}
+				{/if}
+				{#if g}
+					<span class="badge mono" data-testid="item-drag-label">
+						{#if g.mode === 'move'}
+							{formatClock(start)}
+						{:else if g.mode === 'fade-in'}
+							Fade in {g.fadeIn.toFixed(1)} s
+						{:else if g.mode === 'fade-out'}
+							Fade out {g.fadeOut.toFixed(1)} s
+						{:else}
+							{formatClock(length)}
+						{/if}
+					</span>
+				{/if}
+			</div>
+		{/each}
+	{/if}
 </div>
 
 <style>
 	.lane-items {
 		position: relative;
+	}
+	.bar {
+		position: absolute;
+		top: 5px;
+		height: 10px;
+		border-radius: 3px;
+		/* Pictures dark, words lighter, sound in between; cards in their own colour. */
+		background: color-mix(in srgb, var(--color-ink) 55%, var(--color-bg));
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-ink) 20%, transparent);
+	}
+	.bar.text {
+		background: color-mix(in srgb, var(--color-muted) 45%, var(--color-bg));
+	}
+	.bar.sound {
+		background: color-mix(in srgb, var(--color-ink) 30%, var(--color-bg));
+	}
+	.bar.selected {
+		box-shadow: 0 0 0 1.5px var(--color-accent);
 	}
 	.dimmed .item-slot {
 		opacity: 0.4;
@@ -529,6 +604,22 @@
 		z-index: 2;
 		touch-action: none;
 		transition: opacity var(--dur-fast) var(--ease-out);
+	}
+	/* A wider invisible area outside the item, so the handle is easy to grab on slim tracks
+	   (not inward, where a press moves the item). */
+	.trim::before {
+		content: '';
+		position: absolute;
+		top: -4px;
+		bottom: -4px;
+	}
+	.trim.start::before {
+		left: -6px;
+		right: 0;
+	}
+	.trim.end::before {
+		left: 0;
+		right: -6px;
 	}
 	.trim::after {
 		content: '';

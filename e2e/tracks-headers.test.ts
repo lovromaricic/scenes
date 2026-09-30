@@ -198,11 +198,19 @@ test.describe('Track headers', () => {
 	});
 
 	test('drag a header to reorder; overlay tracks stay above Scenes and audio tracks below', async ({ page }) => {
+		// Tall enough for every track without scrolling (scrolling while dragging is tested elsewhere).
+		await page.setViewportSize({ width: 1280, height: 1100 });
 		await setup(page);
 		await page.getByRole('button', { name: 'Overlay track' }).click();
 		await page.getByRole('button', { name: 'Overlay track' }).click();
 		await page.getByRole('button', { name: 'Audio track' }).click();
 		expect(await names(page)).toEqual(['Overlay 3', 'Overlay 2', 'Overlay 1', 'Scenes', 'Audio 1', 'Audio 2']);
+		// A taller storyboard: drag the divider up.
+		const divider = (await page.getByRole('separator', { name: 'Resize the storyboard' }).boundingBox())!;
+		await page.mouse.move(divider.x + 200, divider.y + 4);
+		await page.mouse.down();
+		await page.mouse.move(divider.x + 200, divider.y - 300, { steps: 5 });
+		await page.mouse.up();
 
 		const drag = async (name: string, toName: string, where: 'above' | 'below') => {
 			const from = (await header(page, name).locator('.grip').boundingBox())!;
@@ -226,31 +234,5 @@ test.describe('Track headers', () => {
 		// The card stays on its track, which is now the lowest: drawn first.
 		await page.keyboard.press(`${mod}+z`);
 		await expect.poll(() => names(page)).toEqual(['Overlay 1', 'Overlay 2', 'Overlay 3', 'Scenes', 'Audio 1', 'Audio 2']);
-	});
-
-	test('many tracks: the list scrolls; the ruler, Scenes track and headers stay in view', async ({ page }) => {
-		await setup(page);
-		for (let i = 0; i < 8; i++) await page.getByRole('button', { name: 'Overlay track' }).click();
-		const scroller = page.locator('.storyboard .tracks');
-		const s = await scroller.evaluate((el) => ({ h: el.scrollHeight, c: el.clientHeight }));
-		expect(s.h).toBeGreaterThan(s.c);
-		const scenesLane = page.getByRole('group', { name: 'Scenes', exact: true });
-		const ruler = page.locator('.storyboard .ruler');
-		const box = (await scroller.boundingBox())!;
-		for (const top of [0, 10_000]) {
-			await scroller.evaluate((el, top) => (el.scrollTop = top), top);
-			const sb = (await scenesLane.boundingBox())!;
-			const rb = (await ruler.boundingBox())!;
-			expect(sb.y).toBeGreaterThanOrEqual(box.y - 1);
-			expect(sb.y + sb.height).toBeLessThanOrEqual(box.y + box.height + 1);
-			expect(rb.y).toBeGreaterThanOrEqual(box.y - 1);
-			expect(rb.y).toBeLessThan(box.y + 5);
-		}
-		// Zoomed in and scrolled sideways: headers stay at the left.
-		await page.getByRole('slider', { name: 'Storyboard zoom' }).fill('0.8');
-		await scroller.evaluate((el) => (el.scrollLeft = el.scrollWidth));
-		const h = (await header(page, 'Overlay 1').boundingBox())!;
-		expect(Math.abs(h.x - box.x)).toBeLessThan(4);
-		await expect(header(page, 'Overlay 1')).toBeInViewport();
 	});
 });

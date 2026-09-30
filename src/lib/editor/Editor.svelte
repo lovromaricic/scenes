@@ -17,6 +17,14 @@
 	import Inspector from './Inspector.svelte';
 	import Stage from './Stage.svelte';
 	import Storyboard from './Storyboard.svelte';
+	import StoryboardDivider from './StoryboardDivider.svelte';
+	import {
+		readStoryboardHeight,
+		storyboardHeight,
+		storyboardLimits,
+		TOPBAR_H,
+		writeStoryboardHeight
+	} from './layout';
 	import Toasts from './Toasts.svelte';
 	import SaveDialog from './SaveDialog.svelte';
 	import ShortcutsDialog from './ShortcutsDialog.svelte';
@@ -28,6 +36,15 @@
 	// The page keys the editor by project, so each project gets its own store.
 	// svelte-ignore state_referenced_locally
 	const editor = provideEditor(new EditorStore(projectId, fresh));
+
+	// The storyboard's height: chosen with the divider (remembered on this device) or the default,
+	// always leaving the preview at least 40% of the window.
+	let windowH = $state(typeof innerHeight === 'number' ? innerHeight : 800);
+	let chosenHeight = $state(readStoryboardHeight());
+	// The editor is never shorter than 640 px (it scrolls below that).
+	const pageH = $derived(Math.max(640, windowH));
+	const boardLimits = $derived(storyboardLimits(pageH, TOPBAR_H));
+	const boardHeight = $derived(storyboardHeight(chosenHeight, pageH, TOPBAR_H));
 
 	let saving = $state(false);
 	let watching = $state(false);
@@ -245,7 +262,7 @@
 	}
 </script>
 
-<svelte:window {ondragenter} {ondragover} {ondragleave} {ondrop} {onkeydown} />
+<svelte:window bind:innerHeight={windowH} {ondragenter} {ondragover} {ondragleave} {ondrop} {onkeydown} />
 
 <svelte:head>
 	<title>{editor.notFound ? 'Scenes' : `${editor.project.title} · Scenes`}</title>
@@ -276,7 +293,21 @@
 		<Inspector />
 	</main>
 
-	<Storyboard onaddscene={pick} />
+	<StoryboardDivider
+		height={boardHeight}
+		min={boardLimits.min}
+		max={boardLimits.max}
+		onresize={(h) => {
+			chosenHeight = h;
+			writeStoryboardHeight(h);
+		}}
+		onreset={() => {
+			chosenHeight = null;
+			writeStoryboardHeight(null);
+		}}
+	/>
+
+	<Storyboard onaddscene={pick} height={boardHeight} />
 </div>
 
 {#if dragDepth > 0}
@@ -328,7 +359,7 @@
 	}
 	.editor {
 		display: grid;
-		grid-template-rows: var(--topbar-h) minmax(0, 1fr) auto;
+		grid-template-rows: var(--topbar-h) minmax(0, 1fr) auto auto;
 		height: 100dvh;
 		min-height: 640px;
 		overflow: hidden;

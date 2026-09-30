@@ -13,6 +13,8 @@
 	import LockOpen from '@lucide/svelte/icons/lock-open';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { tick } from 'svelte';
 	import type { Track } from '$lib/model/tracks';
 	import { useEditor } from '$lib/state/context';
@@ -79,9 +81,23 @@
 	class="track-header {track.kind}"
 	class:dimmed={track.hidden || track.muted}
 	class:locked={track.locked}
+	class:collapsed={track.collapsed}
 	data-track-header={track.id}
 >
 	{#if !main}
+		<button
+			type="button"
+			class="fold"
+			aria-label="{track.collapsed ? 'Expand' : 'Collapse'} {track.name}"
+			aria-expanded={!track.collapsed}
+			title={track.collapsed ? 'Expand' : 'Collapse to a thin strip'}
+			onclick={() => editor.setTrackCollapsed(track.id, !track.collapsed)}
+		>
+			{#if track.collapsed}<ChevronRight size={12} aria-hidden="true" />{:else}<ChevronDown
+					size={12}
+					aria-hidden="true"
+				/>{/if}
+		</button>
 		<span
 			class="grip"
 			role="presentation"
@@ -110,7 +126,7 @@
 			onpointerdown={(e) => !main && e.detail < 2 && onreorder?.(e)}>{track.name}</span
 		>
 	{/if}
-	{#if !main && !editing}
+	{#if !main && !editing && !track.collapsed}
 		<span class="tools">
 			<button
 				type="button"
@@ -165,11 +181,34 @@
 	.main {
 		padding-left: var(--space-5);
 	}
+	.fold {
+		display: grid;
+		place-items: center;
+		flex: none;
+		width: 16px;
+		height: 18px;
+		padding: 0;
+		border: 0;
+		border-radius: 3px;
+		background: transparent;
+		color: var(--color-muted);
+		cursor: pointer;
+	}
+	.fold:hover {
+		background: var(--color-surface);
+		color: var(--color-ink);
+	}
+	.collapsed .grip {
+		height: 18px;
+	}
+	.collapsed .name {
+		font-size: 11px;
+	}
 	.grip {
 		display: grid;
 		place-items: center;
 		flex: none;
-		width: 14px;
+		width: 10px;
 		height: 24px;
 		color: var(--color-border);
 		cursor: grab;

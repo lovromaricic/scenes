@@ -560,7 +560,13 @@ export class EditorStore {
 	}
 
 	private restore(state: Project, message: string): void {
-		this.project = structuredClone(state);
+		// Collapsed tracks are a view setting: undo and redo keep them as they are now.
+		const collapsed = new Map(this.project.tracks.map((t) => [t.id, !!t.collapsed]));
+		const next = structuredClone(state);
+		next.tracks = next.tracks.map((t) =>
+			collapsed.has(t.id) && collapsed.get(t.id) !== !!t.collapsed ? { ...t, collapsed: collapsed.get(t.id) } : t
+		);
+		this.project = next;
 		if (this.selectedId && !this.findItem(this.selectedId)) this.selectedId = null;
 		toasts.show(message);
 		this.afterChange();
@@ -1107,6 +1113,18 @@ export class EditorStore {
 				else this.selectItems(keep);
 			}
 		}
+	}
+
+	/**
+	 * Collapse a track to a thin strip, or expand it. A view setting: saved with the project but
+	 * not an undo step (and undo leaves it as it is).
+	 */
+	setTrackCollapsed(id: string, collapsed: boolean): void {
+		const track = this.track(id);
+		if (!track || track.kind === 'main' || !!track.collapsed === collapsed) return;
+		this.project.tracks = this.project.tracks.map((t) => (t.id === id ? { ...t, collapsed } : t));
+		this.project.updatedAt = Date.now();
+		this.scheduleSave();
 	}
 
 	duplicateTrack(id: string): void {

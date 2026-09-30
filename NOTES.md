@@ -1390,6 +1390,74 @@ Overlays aren't linked to scenes any more.
     microphone). It passed 4/4 on its own, so it looks timing-sensitive under load rather than
     broken.
 
+## Keeping the preview large with many tracks
+
+- **Resizable divider** (`StoryboardDivider.svelte`, maths in `editor/layout.ts`):
+  - A line between the preview and the storyboard. Drag it up for a taller storyboard, down for a
+    bigger preview. On hover it shows an ns-resize cursor and a small grip.
+  - It's a focusable separator: arrow keys move it (Shift for bigger steps), Home and End go to
+    the limits, and Enter or a double-click resets it to the default.
+  - Limits: the preview's area keeps at least 40% of the window height (the editor is never
+    treated as shorter than its 640 px minimum). The storyboard never gets smaller than the ruler
+    plus the Scenes track.
+  - The chosen height is remembered in localStorage (`scenes.storyboardHeight`), per device and
+    not per project, and clamped again when the window changes size.
+  - The editor grid is now top bar, workspace (`minmax(0, 1fr)`), divider, storyboard. The
+    storyboard gets a fixed height, so extra tracks never push the preview smaller.
+- **Default height and scrolling.**
+  - By default the storyboard shows the ruler and about four tracks: Scenes, a picture track, two
+    slim tracks and the "+ Audio track" row.
+  - The tracks scroll inside it. The ruler (sticky) and the toolbar (Ripple, Fit, zoom, outside
+    the scroller) stay at the top. Headers scroll with their tracks.
+  - The Scenes track is no longer pinned while scrolling. A pinned 108 px row hid other tracks'
+    headers and ate most of a short storyboard; the new request only asks for the ruler and
+    toolbar to stay put.
+  - Wheel: plain scrolls up and down, Shift scrolls sideways, and Ctrl/Cmd zooms as before.
+  - **Auto-scroll:** while dragging an item, a scene card toward the overlay tracks, a track
+    header, or a selection box, being within 36 px of the top (under the ruler) or the bottom
+    edge scrolls the tracks, faster nearer the edge (`LaneServices.autoScroll`).
+    - Each scroll step re-runs the drag, so drop targets follow.
+    - The dragged item's vertical offset includes the scroll, so it stays under the pointer.
+  - A new track (from the buttons, a drop in a gap, a paste…) scrolls into view.
+  - Stacking inside the scroller, low to high: rows, headers (14), the ruler row (15, so rows'
+    headers scroll under its corner), the playhead and snap line (16), the gap line (17), the
+    selection box (18).
+    - The playhead and snap line hide while they are under the header column (scrolled sideways),
+      so they never draw over the headers.
+- **Slimmer tracks** (`trackHeight`):
+  - Scenes stays 104 px.
+  - Overlay tracks with pictures or cards are 62 px (60%), with thumbnails and names.
+  - Text tracks and audio tracks are 40 px. A text track is an overlay track holding only words,
+    or the empty "Text" track.
+  - Words show in their items; audio shows the waveform, fades and name.
+  - Headers are a little wider (172 px) so names like "Overlay 1" fit next to the controls.
+  - Trim handles got an invisible grab area 6 px outward. It is outward only: an inward one
+    turned presses near an item's edge into trims.
+- **Collapsing tracks:**
+  - An arrow in each overlay and audio track header collapses it to a 20 px strip with bars
+    where its items are. Pictures are dark, cards are in their colour, words and sound are
+    lighter, and a selected item is outlined.
+  - The header then shows just the arrow and the name.
+  - `Track.collapsed` is saved with the project. It's a view setting, so it's not an undo step,
+    and undo/redo keep the current collapsed state.
+  - The Scenes track doesn't collapse (it keeps its height).
+- **Tests.**
+  - Unit (`layout.test.ts`): limits, default, track heights.
+  - E2E (`storyboard-layout.test.ts`):
+    - 10 tracks: the preview and storyboard keep their size, and the ruler and toolbar stay put
+      while scrolled; headers move with their lanes.
+    - Wheel, Shift + wheel, Ctrl/Cmd + wheel.
+    - The divider: drag, both limits, reload, double-click reset, keyboard.
+    - The default shows four tracks.
+    - Slim heights and readable labels, waveform and handles.
+    - Collapse and expand, surviving undo/redo and a reload.
+    - Auto-scroll down and up while dragging a card onto a track that was off-screen, and a
+      time drag while scrolled.
+    - New tracks scroll into view.
+  - Updated: the reorder test drags the divider up first, and the old "Scenes stays pinned"
+    check was replaced by the tests above.
+  - Totals: 251 unit and 123 Playwright tests pass.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
