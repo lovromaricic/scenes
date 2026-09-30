@@ -131,3 +131,58 @@ export function splitAt(scenes: Scene[], t: number, newId: () => string): SplitR
 function clamp(v: number, lo: number, hi: number): number {
 	return Math.min(hi, Math.max(lo, v));
 }
+
+// ─── Words ──────────────────────────────────────────────────────────────────────────────────
+
+/** Shortest a text item can be on screen. */
+export const MIN_TEXT = 0.5;
+
+/**
+ * Keep a text item's timing inside the video: at least MIN_TEXT long, never starting before 0.
+ * If the video is shorter than the text, the text is clipped to the video.
+ */
+export function clampTextTiming<T extends { start: number; duration: number }>(
+	item: T,
+	videoLength: number
+): T {
+	const total = Math.max(videoLength, MIN_TEXT);
+	const duration = Math.min(Math.max(MIN_TEXT, item.duration), total);
+	const start = Math.min(Math.max(0, item.start), total - duration);
+	return { ...item, start, duration };
+}
+
+/** Move a text item's start or end edge by `delta` seconds, keeping the other edge fixed. */
+export function resizeText<T extends { start: number; duration: number }>(
+	item: T,
+	edge: 'start' | 'end',
+	delta: number,
+	videoLength: number
+): T {
+	const end = item.start + item.duration;
+	if (edge === 'end') {
+		const newEnd = Math.min(
+			Math.max(item.start + MIN_TEXT, end + delta),
+			Math.max(videoLength, item.start + MIN_TEXT)
+		);
+		return { ...item, duration: newEnd - item.start };
+	}
+	const newStart = Math.min(Math.max(0, item.start + delta), end - MIN_TEXT);
+	return { ...item, start: newStart, duration: end - newStart };
+}
+
+/**
+ * Assign each item a row so overlapping items don't cover each other in the Words lane.
+ * Returns row numbers in the same order as `items`.
+ */
+export function stackRows(items: { start: number; duration: number }[]): number[] {
+	const order = items.map((item, i) => ({ item, i })).sort((a, b) => a.item.start - b.item.start);
+	const rowEnds: number[] = [];
+	const rows = new Array<number>(items.length);
+	for (const { item, i } of order) {
+		let row = rowEnds.findIndex((end) => end <= item.start + 1e-6);
+		if (row === -1) row = rowEnds.length;
+		rowEnds[row] = item.start + item.duration;
+		rows[i] = row;
+	}
+	return rows;
+}

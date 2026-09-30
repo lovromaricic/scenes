@@ -8,6 +8,7 @@
 	import { MOODS } from '$lib/model/catalog';
 	import type { MoodId } from '$lib/model/types';
 	import type { AddKind } from './types';
+	import { useEditor } from '$lib/state/context';
 
 	interface Props {
 		kind: AddKind;
@@ -16,6 +17,13 @@
 	}
 
 	let { kind, onclose, onpick }: Props = $props();
+
+	const editor = useEditor();
+
+	function addText(which: 'title' | 'caption') {
+		onclose();
+		editor.addText(which);
+	}
 
 	let mood = $state<MoodId>('natural');
 	const moodOptions = MOODS.map((m) => ({
@@ -49,13 +57,13 @@
 		</div>
 	{:else if kind === 'words'}
 		<div class="options">
-			<button type="button" class="option">
+			<button type="button" class="option" onclick={() => addText('title')}>
 				<Heading size={20} strokeWidth={1.7} aria-hidden="true" />
-				<span><strong>Title</strong><small>Big words in the middle</small></span>
+				<span><strong>Title</strong><small>Big words in the middle, at the playhead</small></span>
 			</button>
-			<button type="button" class="option">
+			<button type="button" class="option" onclick={() => addText('caption')}>
 				<Captions size={20} strokeWidth={1.7} aria-hidden="true" />
-				<span><strong>Caption</strong><small>A line near the bottom</small></span>
+				<span><strong>Caption</strong><small>A line near the bottom, at the playhead</small></span>
 			</button>
 		</div>
 	{:else if kind === 'sound'}

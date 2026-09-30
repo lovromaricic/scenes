@@ -13,8 +13,10 @@ import {
 import { registerBlob } from '$lib/media/handles';
 import { MediaImportError, probeFile } from '$lib/media/probe';
 import {
+	clampTextTiming,
 	MAX_PHOTO,
 	moveScene,
+	resizeText,
 	removeScene,
 	setLength,
 	setSpeed,
@@ -24,7 +26,17 @@ import {
 } from '$lib/model/edits';
 import { History } from '$lib/model/history';
 import { placeScenes, totalDuration } from '$lib/model/timeline';
-import type { AspectRatio, MoodId, Project, Scene, Speed } from '$lib/model/types';
+import { TEXT_ENTER } from '$lib/model/textAnimation';
+import type {
+	AspectRatio,
+	MoodId,
+	Project,
+	Scene,
+	Speed,
+	TextAnimation,
+	TextItem,
+	TextStyleId
+} from '$lib/model/types';
 import { Player } from '$lib/playback/player';
 import { Autosaver, emergencyCopy, type SaveStatus } from './autosave';
 import { newId, newProject, sceneFromMedia } from './project';
@@ -59,16 +71,21 @@ export class EditorStore {
 	canUndo = $state(false);
 	canRedo = $state(false);
 	saveStatus = $state<SaveStatus>('idle');
+	/** The text currently being typed into on the preview. */
+	editingTextId = $state<string | null>(null);
 
 	readonly player = new Player();
 	private readonly history = new History<Project>();
 	private readonly autosaver = new Autosaver((s) => (this.saveStatus = s));
 	/** Snapshot taken when a drag gesture starts, recorded as one undo step when it ends. */
 	private gestureBefore: Project | null = null;
+	/** Resolves once the saved project has been restored (or there was none). */
+	private loaded: Promise<void> | null = null;
 
 	duration = $derived(totalDuration(this.project.scenes));
 	placed = $derived(placeScenes(this.project.scenes));
 	selectedScene = $derived(this.placed.find((p) => p.scene.id === this.selectedId) ?? null);
+	selectedText = $derived(this.project.texts.find((t) => t.id === this.selectedId) ?? null);
 
 	constructor() {
 		this.player.on({
@@ -80,7 +97,12 @@ export class EditorStore {
 	// ─── Loading and saving ──────────────────────────────────────────────────────────────────
 
 	/** Restore the most recent project from this device. */
-	async load(): Promise<void> {
+	load(): Promise<void> {
+		this.loaded ??= this.restoreSaved();
+		return this.loaded;
+	}
+
+	private async restoreSaved(): Promise<void> {
 		try {
 			let record = await loadLatestProject();
 			// A copy written while the page was closing may be newer than the last database save.
@@ -90,7 +112,8 @@ export class EditorStore {
 				await saveProject(copy);
 				emergencyCopy.clearIfSaved(copy.savedAt ?? 0);
 			}
-			if (record) {
+			// Never replace work the user has already started in this session.
+			if (record && !this.history.canUndo) {
 				const { view, savedAt: _savedAt, ...project } = record;
 				const ids = [...project.scenes, ...project.sounds]
 					.map((s) => s.mediaId)
@@ -172,16 +195,20 @@ export class EditorStore {
 		this.gestureBefore = this.snapshot();
 	}
 
-	endGesture(label: string, change: (project: Project) => Project): void {
+	/** During a gesture: change the project live (no undo step yet). */
+	live(change: (project: Project) => void): void {
+		change(this.project);
+		this.syncPlayer();
+	}
+
+	endGesture(label: string, change: (project: Project) => Project = (p) => p): void {
 		const before = this.gestureBefore ?? this.snapshot();
 		this.gestureBefore = null;
-		const after = { ...change(structuredClone(this.snapshot())), updatedAt: Date.now() };
-		if (
-			JSON.stringify(after.scenes) === JSON.stringify(before.scenes) &&
-			after.title === before.title
-		) {
-			return;
-		}
+		const after = change(structuredClone(this.snapshot()));
+		const unchanged =
+			JSON.stringify({ ...after, updatedAt: 0 }) === JSON.stringify({ ...before, updatedAt: 0 });
+		if (unchanged) return;
+		after.updatedAt = Date.now();
 		this.history.record(label, before, after);
 		this.project = after;
 		this.afterChange();
@@ -243,10 +270,16 @@ export class EditorStore {
 	}
 
 	select(id: string | null): void {
+		if (id !== this.editingTextId) this.stopEditingText();
 		this.selectedId = id;
-		// Selecting a scene shows it: jump there unless the playhead is already inside it.
+		// Selecting something shows it: jump there unless the playhead is already inside it.
 		const placed = this.placed.find((p) => p.scene.id === id);
 		if (placed && !(this.time >= placed.start && this.time < placed.end)) this.seek(placed.start);
+		const text = this.project.texts.find((t) => t.id === id);
+		if (text && !(this.time >= text.start && this.time < text.start + text.duration)) {
+			// Land just after the entrance animation so the words are fully visible.
+			this.seek(text.start + Math.min(TEXT_ENTER, text.duration / 2));
+		}
 		this.scheduleSave();
 	}
 
@@ -336,7 +369,109 @@ export class EditorStore {
 	/** Delete whatever is selected. */
 	deleteSelected(): void {
 		const id = this.selectedId;
-		if (id && this.project.scenes.some((s) => s.id === id)) this.deleteScene(id);
+		if (!id) return;
+		if (this.project.scenes.some((s) => s.id === id)) this.deleteScene(id);
+		else if (this.project.texts.some((t) => t.id === id)) this.deleteText(id);
+	}
+
+	// ─── Words ──────────────────────────────────────────────────────────────────────────────
+
+	/** Add a title (big, centred) or a caption (near the bottom) at the playhead, ready to type. */
+	addText(kind: 'title' | 'caption'): void {
+		if (!this.project.scenes.length) {
+			toasts.show('Add a photo or video first, then put words on it.');
+			return;
+		}
+		const item: TextItem = clampTextTiming(
+			{
+				id: newId(),
+				text: kind === 'title' ? 'Your title' : 'Your caption',
+				start: this.player.time >= this.duration - 0.5 ? 0 : this.player.time,
+				duration: 3,
+				x: 0.5,
+				y: kind === 'title' ? 0.5 : 0.84,
+				style: kind === 'title' ? 'title' : 'boxed',
+				animation: 'fade'
+			},
+			this.duration
+		);
+		this.edit(
+			kind === 'title' ? 'Add title' : 'Add caption',
+			(p) => ({ ...p, texts: [...p.texts, item] }),
+			{
+				select: item.id
+			}
+		);
+		this.seek(item.start + Math.min(TEXT_ENTER, item.duration / 2));
+		this.startEditingText(item.id);
+	}
+
+	private updateText(label: string, id: string, fn: (t: TextItem) => TextItem, key?: string): void {
+		if (!this.project.texts.some((t) => t.id === id)) return;
+		this.edit(label, (p) => ({ ...p, texts: p.texts.map((t) => (t.id === id ? fn(t) : t)) }), {
+			key
+		});
+	}
+
+	/** Change the words. Empty text removes the item. */
+	setTextWords(id: string, text: string, key?: string): void {
+		const current = this.project.texts.find((t) => t.id === id);
+		if (!current) return;
+		const clean = text
+			.replace(/\r/g, '')
+			.replace(/\n{3,}/g, '\n\n')
+			.trimEnd();
+		if (!clean.trim()) {
+			if (!key) this.deleteText(id);
+			return;
+		}
+		if (clean !== current.text)
+			this.updateText('Edit words', id, (t) => ({ ...t, text: clean }), key);
+	}
+
+	setTextStyle(id: string, style: TextStyleId): void {
+		this.updateText('Text style', id, (t) => ({ ...t, style }));
+	}
+
+	setTextAnimation(id: string, animation: TextAnimation): void {
+		this.updateText('Animation', id, (t) => ({ ...t, animation }));
+	}
+
+	setTextPosition(id: string, x: number, y: number): void {
+		this.updateText('Move words', id, (t) => ({ ...t, x, y }), `pos:${id}`);
+	}
+
+	setTextTiming(id: string, start: number, duration: number): void {
+		const d = this.duration;
+		this.updateText(
+			'Timing',
+			id,
+			(t) => clampTextTiming({ ...t, start, duration }, d),
+			`timing:${id}`
+		);
+	}
+
+	/** Move one edge of a text's timing (used by the Words lane). */
+	resizeTextTiming(item: TextItem, edge: 'start' | 'end', delta: number): TextItem {
+		return resizeText(item, edge, delta, this.duration);
+	}
+
+	deleteText(id: string): void {
+		if (this.editingTextId === id) this.stopEditingText();
+		this.edit('Remove words', (p) => ({ ...p, texts: p.texts.filter((t) => t.id !== id) }), {
+			select: this.selectedId === id ? null : this.selectedId
+		});
+	}
+
+	startEditingText(id: string): void {
+		this.editingTextId = id;
+		this.player.hideText(id);
+	}
+
+	stopEditingText(): void {
+		if (!this.editingTextId) return;
+		this.editingTextId = null;
+		this.player.hideText(null);
 	}
 
 	setAspect(aspect: AspectRatio): void {
@@ -354,6 +489,8 @@ export class EditorStore {
 	async importFiles(files: File[]): Promise<void> {
 		if (files.length === 0) return;
 		void requestPersistentStorage();
+		// Let the last project finish restoring first, so the new scenes join it.
+		await this.load();
 		this.importing += files.length;
 		let added = 0;
 		// Scenes appear one by one as files are read, but the whole import is one undo step.

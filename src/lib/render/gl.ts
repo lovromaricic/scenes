@@ -10,6 +10,8 @@ export function compileProgram(
 	const program = gl.createProgram()!;
 	gl.attachShader(program, vs);
 	gl.attachShader(program, fs);
+	// Every program shares one quad, so its position attribute always lives at location 0.
+	gl.bindAttribLocation(program, 0, 'aPos');
 	gl.linkProgram(program);
 	gl.deleteShader(vs);
 	gl.deleteShader(fs);

@@ -87,3 +87,35 @@ export function dominant([r, g, b]: [number, number, number]): string {
 export async function seekTo(page: Page, t: number) {
 	await page.evaluate((t) => (window as unknown as { __scenes: Scenes }).__scenes.seek(t), t);
 }
+
+/**
+ * Sample the preview pixels inside the on-screen box of the first `.text-box` (the words' area),
+ * after the compositor has drawn the current frame. Returns RGB triples.
+ */
+export async function textAreaPixels(page: Page, index = 0): Promise<[number, number, number][]> {
+	await page.evaluate(
+		() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+	);
+	return page.evaluate((index) => {
+		const canvas = document.querySelector('canvas[data-testid="preview"]') as HTMLCanvasElement;
+		const box = document.querySelectorAll('.text-box')[index] as HTMLElement;
+		const c = canvas.getBoundingClientRect();
+		const b = box.getBoundingClientRect();
+		const sx = canvas.width / c.width;
+		const sy = canvas.height / c.height;
+		const s = (window as unknown as { __scenes: Scenes }).__scenes;
+		const out: [number, number, number][] = [];
+		for (let i = 1; i < 12; i++) {
+			for (let j = 1; j < 6; j++) {
+				const x = Math.floor((b.left - c.left + (b.width * i) / 12) * sx);
+				const y = Math.floor((b.top - c.top + (b.height * j) / 6) * sy);
+				const p = s.player.readPixel(x, y)!;
+				out.push([p[0], p[1], p[2]]);
+			}
+		}
+		return out;
+	}, index);
+}
+
+export const isInkish = ([r, g, b]: [number, number, number]) => r < 70 && g < 70 && b < 70;
+export const isYellowish = ([r, g, b]: [number, number, number]) => r > 200 && g > 190 && b < 140;

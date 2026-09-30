@@ -8,6 +8,7 @@
 	import { formatClock } from '$lib/model/time';
 	import type { AspectRatio } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
+	import TextOverlay from './TextOverlay.svelte';
 
 	interface Props {
 		onpick: () => void;
@@ -18,7 +19,8 @@
 	const editor = useEditor();
 
 	let canvas: HTMLCanvasElement;
-	let preview: HTMLDivElement;
+	let previewW = $state(0);
+	let previewH = $state(0);
 
 	const ratio = $derived(aspectRatioValue(editor.project.aspect));
 	const aspectOptions = ASPECTS.map((a) => ({ value: a.id, label: a.label }));
@@ -54,24 +56,35 @@
 
 <section class="stage" aria-label="Preview">
 	<div class="viewport">
-		<div class="preview" class:empty bind:this={preview} style:--ar={ratio}>
-			<canvas bind:this={canvas} class="frame" aria-label="Video preview" data-testid="preview"
-			></canvas>
-			{#if empty}
-				<div class="empty-state">
-					<span class="glyph"><ImagePlus size={28} strokeWidth={1.5} aria-hidden="true" /></span>
-					{#if editor.importing > 0}
-						<p class="serif big">Adding your clips…</p>
-						<p class="muted">This only takes a moment.</p>
-					{:else}
-						<p class="serif big">Start with your photos & videos</p>
-						<p class="muted">
-							Drop them anywhere on this page, or choose them from your device. Each one becomes a
-							scene.
-						</p>
-						<Button variant="ink" onclick={onpick}>Choose photos & videos</Button>
-					{/if}
-				</div>
+		<div
+			class="preview"
+			class:empty
+			bind:clientWidth={previewW}
+			bind:clientHeight={previewH}
+			style:--ar={ratio}
+		>
+			<div class="clip">
+				<canvas bind:this={canvas} class="frame" aria-label="Video preview" data-testid="preview"
+				></canvas>
+				{#if empty}
+					<div class="empty-state">
+						<span class="glyph"><ImagePlus size={28} strokeWidth={1.5} aria-hidden="true" /></span>
+						{#if editor.importing > 0}
+							<p class="serif big">Adding your clips…</p>
+							<p class="muted">This only takes a moment.</p>
+						{:else}
+							<p class="serif big">Start with your photos & videos</p>
+							<p class="muted">
+								Drop them anywhere on this page, or choose them from your device. Each one becomes a
+								scene.
+							</p>
+							<Button variant="ink" onclick={onpick}>Choose photos & videos</Button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+			{#if !empty}
+				<TextOverlay width={previewW} height={previewH} />
 			{/if}
 		</div>
 	</div>
@@ -130,8 +143,13 @@
 		border-radius: var(--radius-preview);
 		box-shadow: var(--shadow-preview);
 		background: var(--color-ink);
-		overflow: hidden;
 		container-type: inline-size;
+	}
+	.clip {
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		overflow: hidden;
 	}
 	.frame {
 		position: absolute;

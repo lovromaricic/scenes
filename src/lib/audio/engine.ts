@@ -49,6 +49,11 @@ export class AudioEngine {
 		}
 	}
 
+	/** Whether sound is playing (the clock is only meaningful while it is). */
+	get isRunning(): boolean {
+		return this.running;
+	}
+
 	/** Current timeline time according to what is audible right now. */
 	now(): number {
 		if (!this.ctx || !this.running) return this.t0;

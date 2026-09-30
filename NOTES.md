@@ -129,6 +129,38 @@ npm run check        # svelte-check (TypeScript strict)
   are left out with a toast. Media no project uses any more is deleted at start-up.
 - **Project title** is editable in the top bar (click it; Enter saves, Esc cancels).
 
+### Phase 4
+
+- **Text is drawn by WebGL, not HTML.** Each text item is drawn with Canvas 2D into a sprite
+  (`src/lib/render/text.ts`), uploaded once as a texture and composited with its animation
+  (opacity/offset/scale) by the compositor. Export will use the exact same code, so words look
+  identical in the saved video. Sprites are cached by id + words + style + frame size.
+- **Sizes scale with the frame's short side**, so text looks the same in 16:9, 9:16 and 1:1 and
+  at any resolution. Lines wrap at 84% of the frame width; Shift+Enter adds a line break.
+- **Six styles** (Clean white, Bold box, Serif italic, Outlined, Highlighter, Big title) are defined
+  once as data (`TEXT_STYLE_SPECS`). The same spec generates CSS (`textCss`) for the style picker
+  tiles and for typing in place. The highlighter yellow and the white/ink text colours are part
+  of the rendered video (content), not interface colours.
+- **Typing in place.** Adding a title/caption, double-clicking the words, "Edit words" or Enter on
+  the selected words opens a `contenteditable="plaintext-only"` box over the video, styled with the
+  CSS mirror; the WebGL copy is hidden meanwhile. Enter saves, Esc cancels, clicking away saves;
+  empty words remove the item.
+- **Moving words** on the preview snaps to the centre lines (accent guides show when snapped).
+  Arrow keys nudge the selected words (Shift = 5%). The Inspector also has Top/Middle/Bottom presets.
+- **Animations:** fade, slide up, pop (0.5s entrance, shortened for very short text), plus an
+  automatic 0.25s fade out at the end for any animated text. "None" is a plain cut in and out.
+- **Words lane:** pills stack into rows when they overlap; drag to move in time, drag the ends to
+  change start/end; Alt+←/→ on a focused pill moves it by 0.1s (Shift 1s). While dragging, the
+  playhead follows so you can see the words.
+- **Selecting words** moves the playhead into their time (just after the entrance animation).
+- Text timing is kept inside the video when edited, but texts are not automatically moved if the
+  video later gets shorter (they simply stop at the end).
+- **Fixed a playback race** found by the e2e tests under load: for up to 400ms after pressing play
+  (waiting for the first frame) the render loop read a stale audio clock and jumped the playhead
+  back to where the _previous_ playback started. The clock is now only read once sound has
+  actually started. Also: imports wait for the saved project to finish restoring, and restoring
+  never replaces work already started in the session.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

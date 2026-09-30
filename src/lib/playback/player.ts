@@ -3,8 +3,10 @@ import { sceneAudioClips } from '$lib/audio/clips';
 import { getHandle } from '$lib/media/handles';
 import { PhotoFrameSource, VideoFrameSource, type FrameSource } from '$lib/media/frames';
 import { placeScenes, type PlacedScene } from '$lib/model/timeline';
-import type { Project, Scene } from '$lib/model/types';
-import { Compositor, type CompositeFrame } from '$lib/render/compositor';
+import { textFrameState } from '$lib/model/textAnimation';
+import type { Project, Scene, TextItem } from '$lib/model/types';
+import { Compositor, type CompositeFrame, type TextDraw } from '$lib/render/compositor';
+import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
 import { sourceTimeAt } from './time';
 
 /**
@@ -32,6 +34,10 @@ export class Player {
 	playing = false;
 
 	private scenes: Scene[] = [];
+	private texts: TextItem[] = [];
+	private readonly sprites = new TextSpriteCache();
+	/** A text being edited on the preview is drawn by the HTML editor instead. */
+	private hiddenTextId: string | null = null;
 	private placed: PlacedScene[] = [];
 	private duration = 0;
 	private hasAudio: (mediaId: string) => boolean = () => false;
@@ -56,6 +62,11 @@ export class Player {
 		this.canvas = canvas;
 		this.compositor = new Compositor(canvas);
 		this.dirty = true;
+		void loadTextFonts().then(() => {
+			// Anything drawn before the fonts arrived used a fallback font: draw it again.
+			this.sprites.clear();
+			this.dirty = true;
+		});
 		if (!this.raf) this.raf = requestAnimationFrame(this.tick);
 	}
 
@@ -77,6 +88,7 @@ export class Player {
 		const wasPlaying = this.playing;
 		const oldAudioKey = this.audioKey();
 		this.scenes = project.scenes;
+		this.texts = project.texts;
 		this.placed = placeScenes(project.scenes);
 		this.duration = this.placed.at(-1)?.end ?? 0;
 		this.hasAudio = hasAudio;
@@ -122,7 +134,8 @@ export class Player {
 	pause(): void {
 		if (!this.playing) return;
 		this.startToken++;
-		this.setTime(this.audio.now());
+		// Before the sound has started (still waiting for the first frame) the clock is stale.
+		if (this.audio.isRunning) this.setTime(Math.min(this.audio.now(), this.duration));
 		this.audio.stop();
 		this.setPlaying(false);
 		this.dirty = true;
@@ -138,6 +151,11 @@ export class Player {
 		this.setTime(t);
 		this.dirty = true;
 		if (this.playing) void this.startAudio();
+	}
+
+	hideText(id: string | null): void {
+		this.hiddenTextId = id;
+		this.dirty = true;
 	}
 
 	/** Show a specific frame of a scene without moving the playhead (used while trimming). */
@@ -220,6 +238,28 @@ export class Player {
 		return source.frameAt(srcT);
 	}
 
+	/** The text sprites showing at time `t`, with their animation applied. */
+	private textDraws(t: number, width: number, height: number): TextDraw[] {
+		const draws: TextDraw[] = [];
+		for (const item of this.texts) {
+			if (item.id === this.hiddenTextId) continue;
+			const state = textFrameState(item, t);
+			if (!state.visible) continue;
+			const { key, sprite } = this.sprites.get(item, width, height);
+			draws.push({
+				key,
+				image: sprite.canvas,
+				cx: sprite.layout.cx,
+				cy: sprite.layout.cy + state.dy * Math.min(width, height),
+				width: sprite.canvas.width,
+				height: sprite.canvas.height,
+				scale: state.scale,
+				opacity: state.opacity
+			});
+		}
+		return draws;
+	}
+
 	private peekFrame(target: { sceneId: string; sourceTime: number }) {
 		const scene = this.scenes.find((s) => s.id === target.sceneId);
 		const source = scene && this.sourceFor(scene);
@@ -255,7 +295,9 @@ export class Player {
 	private tick = () => {
 		this.raf = requestAnimationFrame(this.tick);
 		let t = this.time;
-		if (this.playing) {
+		// The audio clock drives time, but only once sound has actually started: while playback is
+		// warming up (waiting for the first frame), time holds still.
+		if (this.playing && this.audio.isRunning) {
 			t = Math.min(this.audio.now(), this.duration);
 			if (t !== this.time) this.setTime(t);
 			if (t >= this.duration) {
@@ -269,15 +311,20 @@ export class Player {
 		const frame = this.peekTarget
 			? this.peekFrame(this.peekTarget)
 			: this.frameForTime(t, this.playing);
-		const key = `${this.canvas.width}x${this.canvas.height}|${frame ? objectId(frame.image) : 'none'}`;
+		const texts = this.textDraws(t, this.canvas.width, this.canvas.height);
+		const key = `${this.canvas.width}x${this.canvas.height}|${frame ? objectId(frame.image) : 'none'}|${texts
+			.map((d) => `${d.key}:${d.opacity.toFixed(3)}:${d.scale.toFixed(3)}:${d.cy.toFixed(1)}`)
+			.join(',')}`;
 		if (!this.dirty && key === this.lastDrawnKey) return;
 		this.dirty = false;
 		this.lastDrawnKey = key;
 
 		const composite: CompositeFrame = {
-			layer: frame ? { image: frame.image, width: frame.width, height: frame.height } : null
+			layer: frame ? { image: frame.image, width: frame.width, height: frame.height } : null,
+			texts
 		};
 		this.compositor.render(composite);
+		this.sprites.endFrame();
 	};
 
 	/** For tests: the colour of a pixel in the preview. */

@@ -9,6 +9,8 @@
 	import SceneCard from './SceneCard.svelte';
 	import TransitionButton from './TransitionButton.svelte';
 	import Waveform from './Waveform.svelte';
+	import WordsLane from './WordsLane.svelte';
+	import { stackRows } from '$lib/model/edits';
 	import { fitPxPerSec, ticks } from './scale';
 
 	interface Props {
@@ -110,6 +112,10 @@
 		}
 		return { items, end: x };
 	});
+
+	const WORD_ROW_H = 28;
+	const wordRows = $derived(stackRows(editor.project.texts));
+	const wordsH = $derived(Math.max(1, Math.max(0, ...wordRows) + 1) * WORD_ROW_H + 4);
 
 	const loadingWidth = $derived(importing * (LOADING_CARD_W + CARD_GAP));
 	const contentWidth = $derived(
@@ -276,7 +282,7 @@
 	<div class="labels" aria-hidden="true">
 		<span class="label ruler-label"></span>
 		<span class="label scenes-label">Scenes</span>
-		<span class="label words-label">Words</span>
+		<span class="label words-label" style:height="{wordsH}px">Words</span>
 		<span class="label sound-label">Sound</span>
 	</div>
 
@@ -379,20 +385,8 @@
 			</div>
 
 			<!-- Words lane -->
-			<div class="row lane words-lane" role="group" aria-label="Words">
-				{#each editor.project.texts as text (text.id)}
-					<button
-						type="button"
-						class="caption"
-						class:selected={editor.selectedId === text.id}
-						style:left="{text.start * pps}px"
-						style:width="{Math.max(20, text.duration * pps - 4)}px"
-						title={text.text}
-						onclick={() => editor.select(text.id)}
-					>
-						<span>{text.text}</span>
-					</button>
-				{/each}
+			<div class="row lane words-lane" role="group" aria-label="Words" style:height="{wordsH}px">
+				<WordsLane {pps} rows={wordRows} rowHeight={WORD_ROW_H} />
 			</div>
 
 			<!-- Sound lane -->
@@ -656,33 +650,10 @@
 		background: var(--color-surface);
 	}
 	.words-lane {
-		height: var(--words-h);
+		transition: height var(--dur) var(--ease-out);
 	}
 	.sound-lane {
 		height: var(--sound-h);
-	}
-
-	.caption {
-		position: absolute;
-		top: 4px;
-		bottom: 4px;
-		display: flex;
-		align-items: center;
-		padding: 0 var(--space-3);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-pill);
-		background: var(--color-bg);
-		font-size: var(--text-sm);
-		font-weight: var(--weight-medium);
-		overflow: hidden;
-	}
-	.caption span {
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
-	}
-	.caption:hover {
-		border-color: var(--color-muted);
 	}
 
 	.sound {
@@ -710,7 +681,6 @@
 		font-weight: var(--weight-medium);
 	}
 
-	.caption.selected,
 	.sound.selected {
 		border-color: var(--color-accent);
 		box-shadow: 0 0 0 1px var(--color-accent);

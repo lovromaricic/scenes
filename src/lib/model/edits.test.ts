@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { maxLength, moveScene, removeScene, setLength, setSpeed, splitAt, trimEdge } from './edits';
+import {
+	clampTextTiming,
+	maxLength,
+	moveScene,
+	removeScene,
+	resizeText,
+	setLength,
+	setSpeed,
+	splitAt,
+	stackRows,
+	trimEdge
+} from './edits';
 import { placeScenes, sceneDuration, totalDuration } from './timeline';
 import type { Scene } from './types';
 
@@ -140,5 +151,43 @@ describe('splitAt', () => {
 		expect(splitAt(scenes, 4.1, id)).toBeNull();
 		expect(splitAt(scenes, 0, id)).toBeNull();
 		expect(splitAt([], 1, id)).toBeNull();
+	});
+});
+
+describe('text timing', () => {
+	it('keeps text inside the video', () => {
+		expect(clampTextTiming({ start: 9, duration: 3 }, 10)).toEqual({ start: 7, duration: 3 });
+		expect(clampTextTiming({ start: -2, duration: 3 }, 10)).toEqual({ start: 0, duration: 3 });
+		expect(clampTextTiming({ start: 0, duration: 30 }, 10)).toEqual({ start: 0, duration: 10 });
+		expect(clampTextTiming({ start: 1, duration: 0.1 }, 10)).toEqual({ start: 1, duration: 0.5 });
+	});
+	it('resizes from either edge', () => {
+		expect(resizeText({ start: 2, duration: 3 }, 'end', 1, 10)).toEqual({ start: 2, duration: 4 });
+		expect(resizeText({ start: 2, duration: 3 }, 'start', 1, 10)).toEqual({
+			start: 3,
+			duration: 2
+		});
+		expect(resizeText({ start: 2, duration: 3 }, 'start', -5, 10)).toEqual({
+			start: 0,
+			duration: 5
+		});
+	});
+	it('never makes text shorter than the minimum or longer than the video', () => {
+		expect(resizeText({ start: 2, duration: 3 }, 'end', -10, 10).duration).toBe(0.5);
+		expect(resizeText({ start: 2, duration: 3 }, 'start', 10, 10)).toEqual({
+			start: 4.5,
+			duration: 0.5
+		});
+		expect(resizeText({ start: 2, duration: 3 }, 'end', 100, 10).duration).toBe(8);
+	});
+	it('stacks overlapping items into rows', () => {
+		expect(
+			stackRows([
+				{ start: 0, duration: 3 },
+				{ start: 1, duration: 3 },
+				{ start: 3, duration: 1 },
+				{ start: 2, duration: 5 }
+			])
+		).toEqual([0, 1, 0, 2]);
 	});
 });

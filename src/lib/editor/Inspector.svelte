@@ -7,6 +7,7 @@
 	import { formatClock, formatSeconds } from '$lib/model/time';
 	import type { MoodId, Speed } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
+	import TextInspector from './TextInspector.svelte';
 
 	const editor = useEditor();
 
@@ -29,7 +30,11 @@
 </script>
 
 <aside class="inspector" aria-label="Settings">
-	{#if scene && placed}
+	{#if editor.selectedText}
+		{#key editor.selectedText.id}
+			<TextInspector item={editor.selectedText} />
+		{/key}
+	{:else if scene && placed}
 		{#key scene.id}
 			<div class="head">
 				<h2 class="serif title">Scene {placed.index + 1}</h2>
