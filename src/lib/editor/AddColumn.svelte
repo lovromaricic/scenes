@@ -2,7 +2,9 @@
 	import Clapperboard from '@lucide/svelte/icons/clapperboard';
 	import Type from '@lucide/svelte/icons/type';
 	import Music from '@lucide/svelte/icons/music';
-	import Palette from '@lucide/svelte/icons/palette';
+	import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
+	import { CARD_DRAG_TYPE } from '$lib/media/dragTypes';
+	import { useEditor } from '$lib/state/context';
 	import AddButton from './AddButton.svelte';
 	import AddPanel from './AddPanel.svelte';
 	import MediaLibrary from './MediaLibrary.svelte';
@@ -10,13 +12,21 @@
 
 	let { onpick }: { onpick: () => void } = $props();
 
+	const editor = useEditor();
+
 	let open = $state<AddKind | null>(null);
+
+	function onCardDragStart(event: DragEvent) {
+		event.dataTransfer?.setData(CARD_DRAG_TYPE, 'card');
+		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+		open = null;
+	}
 
 	const items = [
 		{ id: 'clips', label: 'Clips', hint: 'Photos & videos', icon: Clapperboard },
+		{ id: 'cards', label: 'Cards', hint: 'Blank & color screens', icon: RectangleHorizontal },
 		{ id: 'words', label: 'Words', hint: 'Titles & captions', icon: Type },
-		{ id: 'sound', label: 'Sound', hint: 'Music & voice', icon: Music },
-		{ id: 'looks', label: 'Looks', hint: 'Color moods', icon: Palette }
+		{ id: 'sound', label: 'Sound', hint: 'Music & voice', icon: Music }
 	] as const;
 
 	function toggle(kind: AddKind) {
@@ -36,13 +46,28 @@
 	<h2 class="serif heading">Add</h2>
 	<div class="buttons">
 		{#each items as item (item.id)}
-			<AddButton
-				icon={item.icon}
-				label={item.label}
-				hint={item.hint}
-				active={open === item.id}
-				onclick={() => toggle(item.id)}
-			/>
+			{#if item.id === 'cards'}
+				<!-- Cards is an action, not a panel: click adds one; drag it onto the storyboard. -->
+				<AddButton
+					icon={item.icon}
+					label={item.label}
+					hint={item.hint}
+					togglesPanel={false}
+					onclick={() => {
+						open = null;
+						editor.addCard();
+					}}
+					ondragstart={onCardDragStart}
+				/>
+			{:else}
+				<AddButton
+					icon={item.icon}
+					label={item.label}
+					hint={item.hint}
+					active={open === item.id}
+					onclick={() => toggle(item.id as AddKind)}
+				/>
+			{/if}
 		{/each}
 	</div>
 

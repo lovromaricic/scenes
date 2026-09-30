@@ -6,13 +6,33 @@
 		label: string;
 		hint: string;
 		active?: boolean;
+		/** Whether it opens a panel (announced to screen readers as expanded/collapsed). */
+		togglesPanel?: boolean;
 		onclick?: () => void;
+		/** When given, the button can be dragged (e.g. Cards onto the storyboard). */
+		ondragstart?: (event: DragEvent) => void;
 	}
 
-	let { icon: IconComponent, label, hint, active = false, onclick }: Props = $props();
+	let {
+		icon: IconComponent,
+		label,
+		hint,
+		active = false,
+		togglesPanel = true,
+		onclick,
+		ondragstart
+	}: Props = $props();
 </script>
 
-<button type="button" class="add" class:active aria-expanded={active} {onclick}>
+<button
+	type="button"
+	class="add"
+	class:active
+	aria-expanded={togglesPanel ? active : undefined}
+	draggable={ondragstart ? 'true' : undefined}
+	{onclick}
+	{ondragstart}
+>
 	<span class="glyph"><IconComponent size={22} strokeWidth={1.7} aria-hidden="true" /></span>
 	<span class="text">
 		<span class="label">{label}</span>

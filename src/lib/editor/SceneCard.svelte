@@ -58,6 +58,7 @@
 				{tileAspect}
 				frame={scene.frame}
 				crop={scene.crop}
+				card={scene.card}
 				{sourceSize}
 			/>
 		{/if}

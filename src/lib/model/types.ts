@@ -7,6 +7,7 @@
 import type { ProjectFormat } from './format';
 import type { SceneFrame } from './framing';
 import type { Crop } from './crop';
+import type { CardContent } from './card';
 
 /** Shapes offered by the design-page demo switch. Projects use `ProjectFormat`. */
 export type AspectRatio = '16:9' | '9:16' | '1:1';
@@ -31,7 +32,8 @@ export interface Scene {
 	id: string;
 	/** Key of the source file in the media store. */
 	mediaId: string;
-	kind: 'video' | 'photo';
+	/** A video, a still photo, or a card (a colour screen with no file; mediaId is ''). */
+	kind: 'video' | 'photo' | 'card';
 	name: string;
 	/** Part of the source used, in source seconds. For photos, sourceStart is 0. */
 	sourceStart: number;
@@ -47,6 +49,8 @@ export interface Scene {
 	frame?: SceneFrame;
 	/** Part of the source kept, in source pixels, applied before framing (missing = whole clip). */
 	crop?: Crop;
+	/** Cards only: what's drawn. */
+	card?: CardContent;
 }
 
 export interface TextItem {

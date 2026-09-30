@@ -407,6 +407,47 @@ npm run check        # svelte-check (TypeScript strict)
   Reset, Cancel, undo/redo, crop with Fit/Custom framing (and the enlargement note), applying to
   every scene from the clip, and reload.
 
+## Add column: Looks removed, Cards added
+
+### Looks removed
+
+- The Looks button and its panel are gone. Moods are set per scene in the scene settings (Mood
+  section), as before. The store actions that only served the panel (`setProjectMood`,
+  `clearSceneMoods`) were removed. `project.mood` stays as the default for scenes without their own
+  mood (Natural for new projects; older projects keep theirs); the scene setting's hint and button
+  now say "Default look" / "Use the default look".
+
+### Cards
+
+- **A card is a scene with no file** (`kind: 'card'`, `mediaId: ''`) holding
+  `card = { background, rect: { color, x, y, w, h, radius } | null }`. The rectangle is stored as
+  fractions of the frame (so changing the project format keeps its relative place and size) and
+  shown in project pixels; radius 0–1 means square to fully rounded (half the shorter side).
+  Pure helpers and tests are in `src/lib/model/card.ts`.
+- Cards behave like still photos everywhere timing is concerned (length set directly, speed
+  ignored; split, trim, reorder, delete, transitions, Words and Sound all work). Every
+  scene-level "is it a photo?" check became "is it not a video?".
+- **Rendering:** `drawCard()` (Canvas 2D) draws a card at an exact pixel size. The preview player
+  and export render it at the output size into a cached canvas that the compositor uses as the
+  scene's picture (cards are never graded, cropped or reframed); filmstrip tiles draw it at tile
+  size. So preview, Watch, thumbnails and the saved video all match (checked in the e2e test).
+- **Adding:** the Cards button (below Clips) adds a 3-second card after the selected scene (or at
+  the end) and selects it. Drag the button onto the storyboard to insert a card where the
+  insertion marker shows. New cards are ink (#141417) with no rectangle.
+- **Card settings** replace the scene settings: Length, Background (10 swatches: white, ink, the
+  accent, soft neutrals and colours, plus a colour picker and a hex field), Rectangle (Add; then
+  colour, Width/Height/X/Y in project pixels, Corners slider, Center, Fill frame, Remove
+  rectangle), Duplicate and Remove. Speed, Frame, Crop and Mood don't show for cards, and C
+  does nothing on a card. Duplicate works for any scene.
+- **Rectangle on the preview:** 8 handles and drag-to-move, reusing the crop tool's box logic
+  (`dragBox`, now shared: crops are bounded to the clip, card rectangles may overhang the frame,
+  minimum 8 × 8), snapping to the frame's edges and centre lines, Shift on a corner to keep
+  proportions, arrow keys to nudge, and a live "1200 × 400" label. One drag = one undo step.
+- **Fixed on the way:** move-snapping (crop box and card rectangle) could miss because of
+  floating-point noise (`snap(y + h) - h` ≠ `y`), so a box dragged right next to the centre didn't
+  snap. Snapping now compares distances. And restoring a project would have dropped cards, because
+  scenes whose file is missing are left out and a card has no file.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
@@ -417,6 +458,7 @@ npm run check        # svelte-check (TypeScript strict)
 - The reframe ghost uses the preview-quality frame (≤1280px); fine for positioning, soft when
   zoomed far in.
 - Crop ideas: rotate/straighten, crop presets remembered per clip, keyboard resizing of the crop box.
+- Card ideas: gradients, several shapes, images on cards, saving a card as a reusable style.
 - Only one project exists at a time (no project list). Ideas: a small "Your videos" page.
 - Undo history isn't persisted across reloads.
 

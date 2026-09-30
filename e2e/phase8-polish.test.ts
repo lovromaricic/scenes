@@ -33,12 +33,11 @@ test.describe('Phase 8: polish', () => {
 		// A transition and a look.
 		await page.getByRole('button', { name: /Transition between scene 1 and 2/ }).click();
 		await page.getByRole('radio', { name: /^Crossfade/ }).click();
-		await page.getByRole('button', { name: /^Looks/ }).click();
+		await page.getByRole('button', { name: /^Scene 1, / }).click();
 		await page
-			.getByRole('complementary', { name: 'Add' })
+			.getByRole('radiogroup', { name: 'Mood' })
 			.getByRole('radio', { name: 'Punchy' })
 			.click();
-		await page.keyboard.press('Escape');
 
 		// Music.
 		await page.getByRole('button', { name: /^Sound/ }).click();
@@ -106,7 +105,7 @@ test.describe('Phase 8: polish', () => {
 			}
 			await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeInViewport();
 			await expect(page.getByRole('group', { name: 'Sound' })).toBeInViewport();
-			await expect(page.getByRole('button', { name: /^Looks/ })).toBeInViewport();
+			await expect(page.getByRole('button', { name: /^Cards/ })).toBeInViewport();
 		}
 	});
 });

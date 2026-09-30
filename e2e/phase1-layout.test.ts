@@ -35,7 +35,7 @@ test.describe('Phase 1: design system and layout', () => {
 		await expect(page.getByRole('button', { name: 'Watch' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Save video' })).toBeVisible();
 		// Add column
-		for (const name of ['Clips', 'Words', 'Sound', 'Looks']) {
+		for (const name of ['Clips', 'Cards', 'Words', 'Sound']) {
 			await expect(page.getByRole('button', { name: new RegExp(`^${name}`) })).toBeVisible();
 		}
 		// Stage
@@ -61,10 +61,12 @@ test.describe('Phase 1: design system and layout', () => {
 
 	test('add panels open and close with Escape', async ({ page }) => {
 		await page.goto('/');
-		await page.getByRole('button', { name: /^Looks/ }).click();
-		await expect(page.getByRole('radiogroup', { name: 'Mood for the whole video' })).toBeVisible();
+		await page.getByRole('button', { name: /^Words/ }).click();
+		await expect(page.getByRole('button', { name: /^Title/ })).toBeVisible();
 		await page.keyboard.press('Escape');
-		await expect(page.getByRole('radiogroup', { name: 'Mood for the whole video' })).toHaveCount(0);
+		await expect(page.getByRole('button', { name: /^Title/ })).toHaveCount(0);
+		// Looks is gone from the Add column (moods live in each scene's settings).
+		await expect(page.getByRole('button', { name: /^Looks/ })).toHaveCount(0);
 	});
 
 	test('no horizontal page scroll at 1280 and tablet landscape', async ({ page }) => {

@@ -13,7 +13,7 @@
 	import WordsLane from './WordsLane.svelte';
 	import { stackRows } from '$lib/model/edits';
 	import { formatRatio } from '$lib/model/format';
-	import { dragHasMedia, MEDIA_DRAG_TYPE } from '$lib/media/dragTypes';
+	import { dragHasCard, dragHasMedia, MEDIA_DRAG_TYPE } from '$lib/media/dragTypes';
 	import { fitPxPerSec, ticks } from './scale';
 
 	interface Props {
@@ -239,13 +239,20 @@
 	}
 
 	function onMediaDragOver(event: DragEvent) {
-		if (!dragHasMedia(event)) return;
+		if (!dragHasMedia(event) && !dragHasCard(event)) return;
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
 		dropIndex = insertIndexAt(contentX(event.clientX));
 	}
 
 	function onMediaDrop(event: DragEvent) {
+		if (dragHasCard(event)) {
+			event.preventDefault();
+			const index = insertIndexAt(contentX(event.clientX));
+			dropIndex = null;
+			editor.addCard(index);
+			return;
+		}
 		if (!dragHasMedia(event)) return;
 		event.preventDefault();
 		const id = event.dataTransfer?.getData(MEDIA_DRAG_TYPE);
@@ -311,7 +318,7 @@
 
 	/** Show the frame at the edge being trimmed. */
 	function peekTrim(scene: Scene) {
-		if (!trim || scene.kind === 'photo') return;
+		if (!trim || scene.kind !== 'video') return;
 		const trimmed = trimEdge(scene, trim.edge, trim.delta, editor.bounds(scene));
 		editor.player.peek(
 			scene.id,

@@ -31,7 +31,7 @@ export function removeScene(scenes: Scene[], id: string): Scene[] {
 
 /** Longest this scene could be at its current speed. */
 export function maxLength(scene: Scene, bounds: SourceBounds): number {
-	if (scene.kind === 'photo') return MAX_PHOTO;
+	if (scene.kind !== 'video') return MAX_PHOTO;
 	return (bounds.end - bounds.start) / scene.speed;
 }
 
@@ -45,7 +45,7 @@ export function setLength(scene: Scene, length: number, bounds: SourceBounds): S
 		Math.min(MIN_SCENE, maxLength(scene, bounds)),
 		maxLength(scene, bounds)
 	);
-	if (scene.kind === 'photo') return { ...scene, sourceStart: 0, sourceEnd: len };
+	if (scene.kind !== 'video') return { ...scene, sourceStart: 0, sourceEnd: len };
 	const span = len * scene.speed;
 	let start = scene.sourceStart;
 	let end = start + span;
@@ -66,7 +66,7 @@ export function trimEdge(
 	delta: number,
 	bounds: SourceBounds
 ): Scene {
-	if (scene.kind === 'photo') {
+	if (scene.kind !== 'video') {
 		const length = sceneDuration(scene) + (edge === 'end' ? delta : -delta);
 		return setLength(scene, length, bounds);
 	}
@@ -84,7 +84,7 @@ export function trimEdge(
  * Change speed, keeping the same part of the clip (so the scene gets longer or shorter).
  */
 export function setSpeed(scene: Scene, speed: Speed): Scene {
-	if (scene.kind === 'photo') return scene;
+	if (scene.kind !== 'video') return scene;
 	const minSpan = MIN_SCENE * speed;
 	const sourceEnd = Math.max(scene.sourceEnd, scene.sourceStart + minSpan);
 	return { ...scene, speed, sourceEnd };
@@ -110,7 +110,7 @@ export function splitAt(scenes: Scene[], t: number, newId: () => string): SplitR
 	const local = t - hit.start;
 	let first: Scene;
 	let second: Scene;
-	if (scene.kind === 'photo') {
+	if (scene.kind !== 'video') {
 		first = {
 			...scene,
 			sourceStart: 0,

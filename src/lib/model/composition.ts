@@ -46,7 +46,7 @@ export function transitionLength(from: PlacedScene, to: PlacedScene): number {
 /** Source time for a scene at timeline time `t`, allowed to run into the clip's spare footage. */
 export function extendedSourceTime(p: PlacedScene, t: number, bounds: SourceBounds): number {
 	const { scene } = p;
-	if (scene.kind === 'photo') return 0;
+	if (scene.kind !== 'video') return 0;
 	const s = scene.sourceStart + (t - p.start) * scene.speed;
 	return Math.min(bounds.end - 1e-3, Math.max(bounds.start, s));
 }

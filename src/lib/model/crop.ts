@@ -43,9 +43,9 @@ const round = (c: Crop): Crop => ({
 });
 
 /** Keep a crop inside the clip and at least MIN_CROP in each direction (whole pixels). */
-export function clampCrop(crop: Crop, src: Size): Crop {
-	const minW = Math.min(MIN_CROP, src.width);
-	const minH = Math.min(MIN_CROP, src.height);
+export function clampCrop(crop: Crop, src: Size, min = MIN_CROP): Crop {
+	const minW = Math.min(min, src.width);
+	const minH = Math.min(min, src.height);
 	const w = Math.min(src.width, Math.max(minW, crop.w));
 	const h = Math.min(src.height, Math.max(minH, crop.h));
 	const x = Math.min(src.width - w, Math.max(0, crop.x));
@@ -109,55 +109,67 @@ function snap(v: number, targets: number[], threshold: number): number {
 export interface DragOptions {
 	/** Keep the box's shape (Shift on a corner, or a locked ratio). */
 	keepRatio?: number | null;
-	/** Snap to the clip's edges and centre lines within this many source pixels (0 = off). */
+	/** Snap to the area's edges and centre lines within this many pixels (0 = off). */
 	snapDistance?: number;
+	/** Keep the box inside the area (true for crops; card rectangles may overhang the frame). */
+	bounded?: boolean;
+	/** Smallest width and height. */
+	min?: number;
 }
 
 /**
- * The crop after dragging `handle` by (dx, dy) source pixels from `start`.
- * Edges move one side, corners two, and "move" slides the whole box.
+ * The box after dragging `handle` by (dx, dy) pixels from `start`, inside an area of `area` size.
+ * Edges move one side, corners two, and "move" slides the whole box. Used for crops and for the
+ * rectangle on cards.
  */
-export function dragCrop(
+export function dragBox(
 	start: Crop,
 	handle: CropHandle,
 	dx: number,
 	dy: number,
-	src: Size,
+	area: Size,
 	options: DragOptions = {}
 ): Crop {
-	const minW = Math.min(MIN_CROP, src.width);
-	const minH = Math.min(MIN_CROP, src.height);
-	const snapX = [0, src.width / 2, src.width];
-	const snapY = [0, src.height / 2, src.height];
+	const bounded = options.bounded ?? true;
+	const min = options.min ?? MIN_CROP;
+	const minW = bounded ? Math.min(min, area.width) : min;
+	const minH = bounded ? Math.min(min, area.height) : min;
+	const snapX = [0, area.width / 2, area.width];
+	const snapY = [0, area.height / 2, area.height];
 	const t = options.snapDistance ?? 0;
+	const lo = bounded ? 0 : -Infinity;
+	const hiX = bounded ? area.width : Infinity;
+	const hiY = bounded ? area.height : Infinity;
+	const finish = (c: Crop) =>
+		bounded
+			? clampCrop(c, area, min)
+			: round({ ...c, w: Math.max(minW, c.w), h: Math.max(minH, c.h) });
 
 	if (handle === 'move') {
-		let x = Math.min(src.width - start.w, Math.max(0, start.x + dx));
-		let y = Math.min(src.height - start.h, Math.max(0, start.y + dy));
-		if (t > 0) {
-			// Snap either edge or the centre of the box.
-			const sx = snap(x, snapX, t);
-			const sxr = snap(x + start.w, snapX, t) - start.w;
-			const sxc = snap(x + start.w / 2, snapX, t) - start.w / 2;
-			x = sx !== x ? sx : sxr !== x ? sxr : sxc;
-			const sy = snap(y, snapY, t);
-			const syb = snap(y + start.h, snapY, t) - start.h;
-			const syc = snap(y + start.h / 2, snapY, t) - start.h / 2;
-			y = sy !== y ? sy : syb !== y ? syb : syc;
+		let x = start.x + dx;
+		let y = start.y + dy;
+		if (bounded) {
+			x = Math.min(area.width - start.w, Math.max(0, x));
+			y = Math.min(area.height - start.h, Math.max(0, y));
 		}
-		return clampCrop({ ...start, x, y }, src);
+		if (t > 0) {
+			x = snapSpan(x, start.w, snapX, t);
+			y = snapSpan(y, start.h, snapY, t);
+		}
+		return finish({ ...start, x, y });
 	}
 
 	let left = start.x;
 	let right = start.x + start.w;
 	let top = start.y;
 	let bottom = start.y + start.h;
-	if (handle.includes('w')) left = Math.min(right - minW, Math.max(0, snapIf(left + dx, snapX, t)));
+	if (handle.includes('w'))
+		left = Math.min(right - minW, Math.max(lo, snapIf(left + dx, snapX, t)));
 	if (handle.includes('e'))
-		right = Math.max(left + minW, Math.min(src.width, snapIf(right + dx, snapX, t)));
-	if (handle.includes('n')) top = Math.min(bottom - minH, Math.max(0, snapIf(top + dy, snapY, t)));
+		right = Math.max(left + minW, Math.min(hiX, snapIf(right + dx, snapX, t)));
+	if (handle.includes('n')) top = Math.min(bottom - minH, Math.max(lo, snapIf(top + dy, snapY, t)));
 	if (handle.includes('s'))
-		bottom = Math.max(top + minH, Math.min(src.height, snapIf(bottom + dy, snapY, t)));
+		bottom = Math.max(top + minH, Math.min(hiY, snapIf(bottom + dy, snapY, t)));
 
 	const ratio = options.keepRatio;
 	if (ratio && handle.length === 2) {
@@ -168,17 +180,55 @@ export function dragCrop(
 		else w = h * ratio;
 		const anchorX = handle.includes('w') ? start.x + start.w : start.x;
 		const anchorY = handle.includes('n') ? start.y + start.h : start.y;
-		const maxW = handle.includes('w') ? anchorX : src.width - anchorX;
-		const maxH = handle.includes('n') ? anchorY : src.height - anchorY;
-		const scale = Math.min(1, maxW / w, maxH / h);
-		w = Math.max(minW, w * scale);
-		h = Math.max(minH, h * scale);
+		if (bounded) {
+			const maxW = handle.includes('w') ? anchorX : area.width - anchorX;
+			const maxH = handle.includes('n') ? anchorY : area.height - anchorY;
+			const scale = Math.min(1, maxW / w, maxH / h);
+			w *= scale;
+			h *= scale;
+		}
+		// Keep the shape at the minimum size too.
+		const grow = Math.max(1, minW / w, minH / h);
+		w *= grow;
+		h *= grow;
 		left = handle.includes('w') ? anchorX - w : anchorX;
 		top = handle.includes('n') ? anchorY - h : anchorY;
 		right = left + w;
 		bottom = top + h;
 	}
-	return clampCrop({ x: left, y: top, w: right - left, h: bottom - top }, src);
+	return finish({ x: left, y: top, w: right - left, h: bottom - top });
+}
+
+/** Drag the crop box (kept inside the clip, at least MIN_CROP). */
+export function dragCrop(
+	start: Crop,
+	handle: CropHandle,
+	dx: number,
+	dy: number,
+	src: Size,
+	options: DragOptions = {}
+): Crop {
+	return dragBox(start, handle, dx, dy, src, { ...options, bounded: true, min: MIN_CROP });
+}
+
+/**
+ * Snap a span (a box's position along one axis) so its start, end or centre lands on a target,
+ * whichever needs the smallest move within `threshold`. Compares distances rather than results,
+ * so floating-point noise can't make an unsnapped edge look "snapped".
+ */
+function snapSpan(pos: number, size: number, targets: number[], threshold: number): number {
+	let best = 0;
+	let bestDist = threshold + 1e-9;
+	for (const anchor of [0, size, size / 2]) {
+		for (const t of targets) {
+			const d = t - (pos + anchor);
+			if (Math.abs(d) < bestDist) {
+				best = d;
+				bestDist = Math.abs(d);
+			}
+		}
+	}
+	return pos + best;
 }
 
 function snapIf(v: number, targets: number[], t: number): number {

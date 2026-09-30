@@ -108,13 +108,12 @@ async function buildProject(page: Page) {
 		.getByRole('radio', { name: /^Crossfade/ })
 		.click();
 
-	// A golden look for the whole video.
-	await page.getByRole('button', { name: /^Looks/ }).click();
+	// A golden look on the first scene.
+	await page.getByRole('button', { name: /^Scene 1, / }).click();
 	await page
-		.getByRole('complementary', { name: 'Add' })
+		.getByRole('radiogroup', { name: 'Mood' })
 		.getByRole('radio', { name: 'Golden' })
 		.click();
-	await page.keyboard.press('Escape');
 
 	// A caption on the photo.
 	await seekTo(page, 20);

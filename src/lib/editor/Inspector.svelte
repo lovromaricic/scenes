@@ -11,6 +11,7 @@
 	import SoundInspector from './SoundInspector.svelte';
 	import FrameSettings from './FrameSettings.svelte';
 	import CropPanel from './CropPanel.svelte';
+	import CardSettings from './CardSettings.svelte';
 
 	const editor = useEditor();
 
@@ -42,6 +43,10 @@
 	{:else if editor.selectedText}
 		{#key editor.selectedText.id}
 			<TextInspector item={editor.selectedText} />
+		{/key}
+	{:else if scene && placed && scene.kind === 'card'}
+		{#key scene.id}
+			<CardSettings {placed} />
 		{/key}
 	{:else if scene && placed}
 		{#key scene.id}
@@ -80,10 +85,7 @@
 					</Field>
 				{/if}
 
-				<Field
-					label="Mood"
-					hint={scene.mood === null ? 'Same as the whole video' : 'This scene only'}
-				>
+				<Field label="Mood" hint={scene.mood === null ? 'Default look' : 'This scene only'}>
 					<SwatchPicker
 						label="Mood"
 						options={moodOptions}
@@ -92,7 +94,7 @@
 					/>
 					{#if scene.mood !== null}
 						<button type="button" class="link" onclick={() => editor.setSceneMood(scene.id, null)}>
-							Match the whole video
+							Use the default look
 						</button>
 					{/if}
 				</Field>

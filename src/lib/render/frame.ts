@@ -32,7 +32,8 @@ export function layerInput(
 		image: frame.image,
 		width: frame.width,
 		height: frame.height,
-		grade: MOOD_GRADES[scene.mood ?? projectMood],
+		// Cards are drawn in their exact colours: no mood.
+		grade: MOOD_GRADES[scene.kind === 'card' ? 'natural' : (scene.mood ?? projectMood)],
 		rect: frameRect(scene.frame, aspectW, aspectH, outW, outH),
 		bars: scene.frame?.bars ?? 'black',
 		uv: cropUv(scene.crop, source)

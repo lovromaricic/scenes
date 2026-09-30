@@ -13,7 +13,7 @@
 	import Clapperboard from '@lucide/svelte/icons/clapperboard';
 	import Type from '@lucide/svelte/icons/type';
 	import Music from '@lucide/svelte/icons/music';
-	import Palette from '@lucide/svelte/icons/palette';
+	import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal';
 	import {
 		Button,
 		ChipGroup,
@@ -229,7 +229,12 @@
 			<AddButton icon={Clapperboard} label="Clips" hint="Photos & videos" />
 			<AddButton icon={Type} label="Words" hint="Titles & captions" active />
 			<AddButton icon={Music} label="Sound" hint="Music & voice" />
-			<AddButton icon={Palette} label="Looks" hint="Color moods" />
+			<AddButton
+				icon={RectangleHorizontal}
+				label="Cards"
+				hint="Blank & color screens"
+				togglesPanel={false}
+			/>
 		</div>
 		<div class="cards">
 			<div class="card-wrap" style:width="200px">

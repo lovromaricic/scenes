@@ -1,1 +1,1 @@
-export type AddKind = 'clips' | 'words' | 'sound' | 'looks';
+export type AddKind = 'clips' | 'words' | 'sound';

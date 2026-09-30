@@ -19,6 +19,7 @@ import { placeScenes, type PlacedScene } from '$lib/model/timeline';
 import type { Project, Scene } from '$lib/model/types';
 import { Compositor, type CompositeFrame } from '$lib/render/compositor';
 import { layerInput, textDrawsAt } from '$lib/render/frame';
+import { CardCache } from '$lib/render/card';
 import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
 import { exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
 import { PhotoExportReader, VideoExportReader, type ExportFrameReader } from './reader';
@@ -193,8 +194,21 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 		}
 		return r;
 	};
+	const cards = new CardCache();
 	const layer = async (ref: { placed: PlacedScene; sourceTime: number } | null) => {
 		if (!ref) return null;
+		if (ref.placed.scene.kind === 'card') {
+			const card = ref.placed.scene.card;
+			return card
+				? layerInput(
+						cards.frame(card, width, height),
+						ref.placed.scene,
+						project.mood,
+						width,
+						height
+					)
+				: null;
+		}
 		const frame = await (await readerFor(ref.placed.scene)).frameAt(ref.sourceTime);
 		return frame
 			? layerInput(

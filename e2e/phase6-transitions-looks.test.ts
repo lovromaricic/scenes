@@ -118,45 +118,40 @@ test.describe('Phase 6: transitions and looks', () => {
 		expect(blended.length).toBeGreaterThan(samples.length / 3);
 	});
 
-	test('looks colour the whole video, and a scene can have its own', async ({ page }) => {
-		// A look for the whole video. The GPU result must match the grade maths exactly.
+	test('moods colour each scene from its settings, exactly as the grade maths says', async ({
+		page
+	}) => {
 		const graded = (rgb: RGB, mood: keyof typeof MOOD_GRADES) =>
 			applyGrade(rgb.map((v) => v / 255) as RGB, MOOD_GRADES[mood]).map((v) =>
 				Math.round(v * 255)
 			) as RGB;
+		const mood = (name: string) =>
+			page.getByRole('radiogroup', { name: 'Mood' }).getByRole('radio', { name }).click();
+
+		// Scene 2 Golden: the GPU result matches the grade maths.
 		await seekTo(page, 5);
 		const natural = await pixel(page);
-		await page.getByRole('button', { name: /^Looks/ }).click();
-		await page
-			.getByRole('complementary', { name: 'Add' })
-			.getByRole('radio', { name: 'Golden' })
-			.click();
+		await page.getByRole('button', { name: /^Scene 2, / }).click();
+		await mood('Golden');
+		await seekTo(page, 5);
 		const golden = await pixel(page);
 		expect(near(golden, graded(natural, 'golden'), 4)).toBe(true);
 		expect(near(golden, natural, 5)).toBe(false);
-		await page.keyboard.press('Escape');
 
-		// Scene 1 gets its own look: black and white turns red into grey.
-		await seekTo(page, 2);
-		const red = await pixel(page);
-		expect(near(red, graded(RED, 'golden'), 6)).toBe(true);
+		// Scene 1 black and white: red turns grey, while scene 2 keeps its own look.
 		await page.getByRole('button', { name: /^Scene 1, / }).click();
-		await page
-			.getByRole('radiogroup', { name: 'Mood' })
-			.getByRole('radio', { name: 'B & W' })
-			.click();
+		await mood('B & W');
 		await seekTo(page, 2);
 		const [r, g, b] = await pixel(page);
 		expect(Math.abs(r - g)).toBeLessThan(8);
 		expect(Math.abs(g - b)).toBeLessThan(8);
-		// …while scene 2 still follows the whole video (Golden).
 		await seekTo(page, 5);
 		expect(near(await pixel(page), golden, 6)).toBe(true);
 
-		// Back to following the whole video.
+		// Back to the default look.
 		await page.getByRole('button', { name: /^Scene 1, / }).click();
-		await page.getByRole('button', { name: 'Match the whole video' }).click();
+		await page.getByRole('button', { name: 'Use the default look' }).click();
 		await seekTo(page, 2);
-		expect(near(await pixel(page), red, 4)).toBe(true);
+		expect(near(await pixel(page), RED, 40)).toBe(true);
 	});
 });

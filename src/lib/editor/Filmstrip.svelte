@@ -7,6 +7,8 @@
 	import { requestFrames, sampleTimes, type StripFrame } from '$lib/media/filmstrip';
 	import { frameRect, showsBars, type SceneFrame } from '$lib/model/framing';
 	import type { Crop, Size } from '$lib/model/crop';
+	import type { CardContent } from '$lib/model/card';
+	import { drawCard } from '$lib/render/card';
 
 	interface Props {
 		mediaId: string;
@@ -19,9 +21,12 @@
 		/** The scene's crop, in source pixels, and the source's size. */
 		crop?: Crop;
 		sourceSize?: Size;
+		/** Cards have no file: each tile shows the card itself. */
+		card?: CardContent;
 	}
 
-	let { mediaId, sourceStart, sourceEnd, tileAspect, frame, crop, sourceSize }: Props = $props();
+	let { mediaId, sourceStart, sourceEnd, tileAspect, frame, crop, sourceSize, card }: Props =
+		$props();
 
 	let canvas: HTMLCanvasElement;
 	let width = $state(0);
@@ -79,6 +84,10 @@
 			ctx.restore();
 		};
 
+		if (card) {
+			for (let i = 0; i < list.length; i++) drawCard(ctx, card, i * tw, 0, tw, th);
+			return;
+		}
 		list.forEach((t, i) => requestFrames(mediaId, [t], (_t, frame) => draw(i, frame)));
 	});
 </script>

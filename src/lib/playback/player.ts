@@ -21,6 +21,7 @@ import {
 } from '$lib/render/compositor';
 import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
 import { layerInput, textDrawsAt } from '$lib/render/frame';
+import { CardCache } from '$lib/render/card';
 import { sourceTimeAt } from './time';
 
 /** What the player needs to know about imported files. */
@@ -60,6 +61,7 @@ export class Player {
 	private texts: TextItem[] = [];
 	private sounds: Project['sounds'] = [];
 	private readonly sprites = new TextSpriteCache();
+	private readonly cards = new CardCache();
 	/** A text being edited on the preview is drawn by the HTML editor instead. */
 	private hiddenTextId: string | null = null;
 	private placed: PlacedScene[] = [];
@@ -288,6 +290,7 @@ export class Player {
 	}
 
 	private sourceFor(scene: Scene): FrameSource | null {
+		if (scene.kind === 'card') return null;
 		let entry = this.sources.get(scene.id);
 		if (!entry) {
 			entry = { mediaId: scene.mediaId, source: null, pending: true };
@@ -318,6 +321,12 @@ export class Player {
 
 	/** The decoded frame for one layer of a composition (asking the decoder for it if needed). */
 	private layerFrame(ref: LayerRef, playing: boolean) {
+		const scene = ref.placed.scene;
+		if (scene.kind === 'card') {
+			return this.canvas && scene.card
+				? this.cards.frame(scene.card, this.canvas.width, this.canvas.height)
+				: null;
+		}
 		const source = this.sourceFor(ref.placed.scene);
 		if (!source) return null;
 		source.want(ref.sourceTime, playing);

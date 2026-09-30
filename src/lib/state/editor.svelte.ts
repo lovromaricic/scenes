@@ -36,6 +36,7 @@ import { TEXT_ENTER } from '$lib/model/textAnimation';
 import { TRANSITION_SECONDS } from '$lib/model/composition';
 import { formatFromClip, legacyFormat, type ProjectFormat } from '$lib/model/format';
 import { DEFAULT_FRAME, type SceneFrame } from '$lib/model/framing';
+import type { CardContent } from '$lib/model/card';
 import {
 	clampCrop,
 	cropRatioValue,
@@ -61,7 +62,7 @@ import { Player } from '$lib/playback/player';
 import { Autosaver, emergencyCopy, type SaveStatus } from './autosave';
 import { exportVideo, type ExportProgress, type ExportResult } from '$lib/export/exporter';
 import { presetById, type PresetId } from '$lib/export/presets';
-import { newId, newProject, sceneFromMedia } from './project';
+import { newCardScene, newId, newProject, sceneFromMedia } from './project';
 import { toasts } from './toasts.svelte';
 
 interface EditOptions {
@@ -157,19 +158,22 @@ export class EditorStore {
 				}
 				// Projects saved before "Your media" existed: rebuild the list from their scenes.
 				project.library ??= project.scenes
+					.filter((s) => s.kind !== 'card')
 					.map((s) => s.mediaId)
 					.filter((id, i, all) => all.indexOf(id) === i);
 				const ids = [
-					...project.scenes.map((s) => s.mediaId),
+					...project.scenes.filter((s) => s.kind !== 'card').map((s) => s.mediaId),
 					...project.sounds.map((s) => s.mediaId),
 					...project.library
 				].filter((id, i, all) => all.indexOf(id) === i);
 				const infos = await getMediaInfos(ids);
 				for (const info of infos) this.media[info.id] = info;
 				// Scenes whose file has gone missing (e.g. storage was cleared) can't play; drop them.
-				const missing = project.scenes.filter((s) => !this.media[s.mediaId]);
+				// Cards have no file, so they always stay.
+				const hasFile = (s: Scene) => s.kind === 'card' || !!this.media[s.mediaId];
+				const missing = project.scenes.filter((s) => !hasFile(s));
 				if (missing.length) {
-					project.scenes = project.scenes.filter((s) => this.media[s.mediaId]);
+					project.scenes = project.scenes.filter(hasFile);
 					toasts.show(
 						`${missing.length === 1 ? 'One clip was' : `${missing.length} clips were`} missing from this device and has been left out.`,
 						'error'
@@ -368,7 +372,7 @@ export class EditorStore {
 	// ─── Scene edits ────────────────────────────────────────────────────────────────────────
 
 	bounds(scene: Scene): SourceBounds {
-		if (scene.kind === 'photo') return { start: 0, end: MAX_PHOTO };
+		if (scene.kind !== 'video') return { start: 0, end: MAX_PHOTO };
 		const info = this.media[scene.mediaId];
 		return info
 			? { start: info.startTime, end: info.duration }
@@ -413,7 +417,8 @@ export class EditorStore {
 			this.placed.find((p) => this.time >= p.start && this.time < p.end)?.scene.id;
 		const placed = this.placed.find((p) => p.scene.id === id);
 		const size = placed && this.sourceSize(placed.scene);
-		if (!placed || !size) return;
+		// Cards have nothing to crop.
+		if (!placed || !size || placed.scene.kind === 'card') return;
 		this.stopEditingText();
 		this.player.pause();
 		this.selectedId = placed.scene.id;
@@ -495,20 +500,6 @@ export class EditorStore {
 		this.updateScene('Look', id, (s) => ({ ...s, mood }));
 	}
 
-	/** The look for the whole video (scenes with their own look keep it). */
-	setProjectMood(mood: MoodId): void {
-		if (mood !== this.project.mood) this.edit('Look', (p) => ({ ...p, mood }));
-	}
-
-	/** Make every scene follow the whole video's look. */
-	clearSceneMoods(): void {
-		if (!this.project.scenes.some((s) => s.mood !== null)) return;
-		this.edit('Look for every scene', (p) => ({
-			...p,
-			scenes: p.scenes.map((s) => ({ ...s, mood: null }))
-		}));
-	}
-
 	/** The transition from a scene into the next one. */
 	setTransition(id: string, kind: TransitionKind): void {
 		this.updateScene('Transition', id, (s) => ({
@@ -555,6 +546,50 @@ export class EditorStore {
 			return;
 		}
 		this.edit('Split', (p) => ({ ...p, scenes: result.scenes }), { select: result.secondId });
+	}
+
+	// ─── Cards ──────────────────────────────────────────────────────────────────────────────
+
+	/** Add a card after the selected scene (or at the end), or at `index`, and select it. */
+	addCard(index?: number): void {
+		const selected = this.project.scenes.findIndex((s) => s.id === this.selectedId);
+		const at = index ?? (selected >= 0 ? selected + 1 : this.project.scenes.length);
+		const card = newCardScene();
+		this.edit(
+			'Add card',
+			(p) => {
+				const scenes = p.scenes.slice();
+				scenes.splice(Math.max(0, Math.min(at, scenes.length)), 0, card);
+				return { ...p, scenes };
+			},
+			{ select: card.id }
+		);
+		const placed = this.placed.find((p) => p.scene.id === card.id);
+		if (placed) this.seek(placed.start + Math.min(0.5, placed.duration / 2));
+	}
+
+	/** Change what a card shows. `key` merges quick repeats (typing, sliders). */
+	setCard(id: string, card: CardContent, key?: string): void {
+		this.updateScene('Card', id, (s) => ({ ...s, card: structuredClone(card) }), key);
+	}
+
+	/** A copy of a scene right after it. */
+	duplicateScene(id: string): void {
+		const index = this.project.scenes.findIndex((s) => s.id === id);
+		if (index === -1) return;
+		const copy = {
+			...structuredClone($state.snapshot(this.project.scenes[index]) as Scene),
+			id: newId()
+		};
+		this.edit(
+			'Duplicate',
+			(p) => {
+				const scenes = p.scenes.slice();
+				scenes.splice(index + 1, 0, copy);
+				return { ...p, scenes };
+			},
+			{ select: copy.id }
+		);
 	}
 
 	/** Add something from "Your media" as a new scene, at `index` (default: the end). */

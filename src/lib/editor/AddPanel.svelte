@@ -4,9 +4,7 @@
 	import Captions from '@lucide/svelte/icons/captions';
 	import Music from '@lucide/svelte/icons/music';
 	import Mic from '@lucide/svelte/icons/mic';
-	import { Button, Panel, SwatchPicker } from '$lib/ui';
-	import { MOODS } from '$lib/model/catalog';
-	import type { MoodId } from '$lib/model/types';
+	import { Button, Panel } from '$lib/ui';
 	import type { AddKind } from './types';
 	import { useEditor } from '$lib/state/context';
 	import { pickFiles } from '$lib/media/picker';
@@ -39,19 +37,10 @@
 		editor.addText(which);
 	}
 
-	const ownLooks = $derived(editor.project.scenes.filter((s) => s.mood !== null).length);
-	const moodOptions = MOODS.map((m) => ({
-		value: m.id,
-		label: m.label,
-		description: m.description,
-		background: m.swatch
-	}));
-
 	const titles: Record<AddKind, { title: string; subtitle: string }> = {
 		clips: { title: 'Clips', subtitle: 'Each photo or video becomes a scene.' },
 		words: { title: 'Words', subtitle: 'Put text on your video.' },
-		sound: { title: 'Sound', subtitle: 'Add music or record your voice.' },
-		looks: { title: 'Looks', subtitle: 'A colour mood for the whole video.' }
+		sound: { title: 'Sound', subtitle: 'Add music or record your voice.' }
 	};
 </script>
 
@@ -91,23 +80,6 @@
 				<span><strong>Voiceover</strong><small>Record your voice from the playhead</small></span>
 			</button>
 		</div>
-	{:else}
-		<SwatchPicker
-			label="Mood for the whole video"
-			options={moodOptions}
-			value={editor.project.mood}
-			onchange={(m: MoodId) => editor.setProjectMood(m)}
-		/>
-		{#if ownLooks > 0}
-			<div class="own-looks">
-				<p class="muted">
-					{ownLooks === 1 ? '1 scene has' : `${ownLooks} scenes have`} its own look and won’t change.
-				</p>
-				<Button variant="soft" size="sm" onclick={() => editor.clearSceneMoods()}>
-					Use this look for every scene
-				</Button>
-			</div>
-		{/if}
 	{/if}
 </Panel>
 
@@ -129,12 +101,6 @@
 	.muted {
 		color: var(--color-muted);
 		font-size: var(--text-sm);
-	}
-	.own-looks {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: var(--space-2);
 	}
 	.options {
 		display: flex;

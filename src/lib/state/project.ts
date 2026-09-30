@@ -2,6 +2,7 @@ import type { MediaInfo } from '$lib/media/db';
 import type { Project, Scene } from '$lib/model/types';
 import { DEFAULT_FORMAT } from '$lib/model/format';
 import { DEFAULT_FRAME } from '$lib/model/framing';
+import { CARD_SECONDS, defaultCard } from '$lib/model/card';
 import { nameFromFile } from '$lib/media/kinds';
 
 export const PHOTO_SECONDS = 3;
@@ -42,5 +43,23 @@ export function sceneFromMedia(info: MediaInfo): Scene {
 		mood: null,
 		transition: { kind: 'cut', duration: 0 },
 		frame: { ...DEFAULT_FRAME }
+	};
+}
+
+/** A new card scene: 3 seconds of a plain colour. */
+export function newCardScene(): Scene {
+	return {
+		id: newId(),
+		mediaId: '',
+		kind: 'card',
+		name: 'Card',
+		sourceStart: 0,
+		sourceEnd: CARD_SECONDS,
+		speed: 1,
+		volume: 1,
+		mood: null,
+		transition: { kind: 'cut', duration: 0 },
+		frame: { ...DEFAULT_FRAME },
+		card: defaultCard()
 	};
 }

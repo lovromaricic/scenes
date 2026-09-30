@@ -11,7 +11,7 @@ export function sceneDuration(
 	scene: Pick<Scene, 'sourceStart' | 'sourceEnd' | 'speed' | 'kind'>
 ): number {
 	const sourceLength = Math.max(0, scene.sourceEnd - scene.sourceStart);
-	return scene.kind === 'photo' ? sourceLength : sourceLength / scene.speed;
+	return scene.kind !== 'video' ? sourceLength : sourceLength / scene.speed;
 }
 
 export interface PlacedScene {

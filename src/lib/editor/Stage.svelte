@@ -11,6 +11,7 @@
 	import RecordingOverlay from './RecordingOverlay.svelte';
 	import FramingOverlay from './FramingOverlay.svelte';
 	import CropOverlay from './CropOverlay.svelte';
+	import CardRectOverlay from './CardRectOverlay.svelte';
 
 	interface Props {
 		onpick: () => void;
@@ -114,6 +115,7 @@
 				<CropOverlay width={previewW} height={previewH} />
 			{:else if !empty}
 				<FramingOverlay width={previewW} height={previewH} />
+				<CardRectOverlay width={previewW} height={previewH} />
 				<TextOverlay width={previewW} height={previewH} />
 			{/if}
 			<RecordingOverlay />
