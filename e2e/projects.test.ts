@@ -283,9 +283,9 @@ test.describe('Projects', () => {
 		await menuButton.focus();
 		await page.keyboard.press('Enter');
 		const menu = page.getByRole('menu', { name: 'Video' });
-		await expect(menu.getByRole('menuitem')).toHaveText(['New video', 'Back to projects']);
+		await expect(menu.getByRole('menuitem')).toHaveCount(5);
 		await expect(menu.getByRole('menuitem', { name: 'New video' })).toBeFocused();
-		await page.keyboard.press('ArrowDown');
+		await page.keyboard.press('ArrowUp');
 		await expect(menu.getByRole('menuitem', { name: 'Back to projects' })).toBeFocused();
 		await page.keyboard.press('Escape');
 		await expect(menu).toHaveCount(0);

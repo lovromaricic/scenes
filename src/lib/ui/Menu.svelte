@@ -105,7 +105,7 @@
 	.menu {
 		position: fixed;
 		z-index: 60;
-		min-width: 200px;
+		min-width: 236px;
 		padding: var(--space-1);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-md);
@@ -144,6 +144,7 @@
 		flex: 1;
 	}
 	kbd {
+		margin-left: var(--space-4);
 		color: var(--color-muted);
 		font-size: var(--text-xs);
 	}

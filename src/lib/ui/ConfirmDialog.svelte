@@ -49,7 +49,11 @@
 	<h2 id="confirm-title" class="serif">{title}</h2>
 	<p id="confirm-message">{message}</p>
 	<div class="actions">
-		<Button variant="ghost" onclick={() => pick(oncancel)}>{cancelLabel}</Button>
+		<Button
+			variant={actions.length ? 'ghost' : 'ink'}
+			autofocus={!actions.length}
+			onclick={() => pick(oncancel)}>{cancelLabel}</Button
+		>
 		{#each actions as action, i (action.label)}
 			<Button
 				variant={i === actions.length - 1 ? 'ink' : 'outline'}

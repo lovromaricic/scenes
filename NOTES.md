@@ -603,6 +603,79 @@ npm run check        # svelte-check (TypeScript strict)
   Esc (focus returns to the button, playback untouched); New video from the menu; Back to
   projects shows only the kept project.
 
+### 4. Project files (`.scenes`)
+
+- **Format** (`files/format.ts`, `files/zip.ts`, written with `@zip.js/zip.js`, no web workers):
+  - `manifest.json` comes first and is stored uncompressed, so any zip tool shows what the file
+    is: app, format version, name, created and saved dates.
+  - `project.json` (compressed) holds the project, the view, and info about each media file and
+    font, with their paths in the archive.
+  - `thumbnail.jpg`, then `thumbnails/<media>.jpg` (each clip's picture, so opening doesn't
+    decode anything), then `fonts/`, then `media/`.
+  - Media is stored uncompressed and read in slices while writing, so a big project never sits
+    in memory.
+  - Only media the project uses or keeps in "Your media" goes in, plus uploaded and computer
+    fonts the words use. Built-in fonts come with the app.
+- **Versions.** `FILE_FORMAT_VERSION = 1`. On open, `checkManifest` rejects other apps and
+  newer versions, and `migrateProjectJson` runs each version's step, then `migrateProject`
+  (the same one used for storage).
+- **Opening is zero-copy for media.** For stored entries, the local header is read and the
+  media is sliced straight out of the File (`file.slice`), then put into IndexedDB. Small entries
+  go through zip.js with checksum verification.
+- **Damaged files.** Every open is checked, and each problem gets a plain message: not a zip or
+  no manifest ("isn't a Scenes project"), a bad checksum, cut short or missing entries
+  ("damaged"), or a newer format ("saved by a newer version").
+  - Media sliced from the file is checked by size, not checksum. Hashing gigabytes would slow
+    every open. This is a known trade-off.
+- **Saving** (`files/save.ts`):
+  - In Chrome and Edge, `showSaveFilePicker` is used and the handle is kept in the `files`
+    store with the project's `updatedAt`, so Ctrl/Cmd+S writes to the same file with no dialog.
+    Permission is checked and re-asked if needed. "Save as…" always asks.
+  - The file is chosen before gathering the project, while the key press still counts as the
+    user's action.
+  - Other browsers get a download. The file is written to private storage (OPFS) first, so it
+    isn't built in memory.
+  - Saving runs in the background: editing continues, and the top bar shows
+    "Saving to file… 45%".
+  - The home screen's card menu also has Save to file, with a progress card.
+- **Save status** is derived: "Saved to summer-trip.scenes" when the project's `updatedAt`
+  equals the one saved in the file, "Unsaved changes in file" otherwise, and "Saved on this
+  device" when there's no file. Undoing back to the saved state shows "Saved to …" again,
+  which is accurate because the content matches the file.
+- **Opening** (`files/opener.svelte.ts`, with dialogs in the layout so every page shares them):
+  - Ways to open: the "Open project file" button on home, Ctrl/Cmd+O on either page, the video
+    menu, or dropping a `.scenes` file on the home screen or the editor. On the editor, other
+    dropped files are still added as media.
+  - `showOpenFilePicker` and dropped-file handles (`getAsFileSystemHandle`) keep the handle, so
+    Save goes back to the opened file.
+  - If the project id is already in the app, the user chooses "Replace the one in the app" or
+    "Keep both". Keep both stores a copy with a new id and " (copy)" in its name, with no file
+    link since it's a new project.
+  - Replace deletes media only the old version used.
+  - If the project being replaced is the one open in the editor, that editor is frozen first,
+    so its last autosave can't overwrite the file's version. The route re-keys on `?opened=`,
+    so the editor reopens fresh.
+  - Media already in the app (same id, or same fingerprint) isn't stored again.
+- **Shortcuts.** Ctrl/Cmd+S, Ctrl/Cmd+Shift+S and Ctrl/Cmd+O always prevent the browser's own
+  save and open. Any typing in progress (a title or words) is committed first. The shortcuts
+  dialog lists them.
+- Tests:
+  - Unit, in Node: round trip; entry order and stored media; progress; not-a-project, damaged
+    (cut short, bad checksum, missing project data) and newer-version files; safe file names.
+  - e2e, where the Chrome pickers are stand-ins returning real OPFS file handles:
+    - A project with clips, a crop, a card, words in an uploaded font with custom colours, and
+      music is saved; the file's entries and manifest are checked.
+    - An edit shows "Unsaved changes in file"; Cmd+S saves with no dialog; undo and redo flip
+      the status.
+    - The project is deleted (its media and font go too), then opened again from home. It is
+      deep-equal to before, with the same media and font, still linked to the file, and the
+      card renders.
+    - Keep both, then Replace.
+    - A text file named `.scenes` and a cut-short project file each show a clear message.
+    - Without pickers: the download from the home card menu, then opening via the file
+      chooser, gives an identical project.
+  - axe: the video menu and the error dialog.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
@@ -617,6 +690,9 @@ npm run check        # svelte-check (TypeScript strict)
 - Font ideas: letter spacing and line height controls, text alignment, per-word colours, more
   subsets (Cyrillic/Greek) for the built-in fonts, cleaning up stored fonts nobody uses.
 - Undo history isn't persisted across reloads.
+- Project files: media sliced from a file is checked by size, not checksum (to keep opening
+  fast). Deleting a project leaves uploaded fonts that another project uses; fonts no project
+  uses are only removed with the last project that used them.
 
 ## Summary
 
@@ -638,7 +714,9 @@ What you can do:
   the whole video or per scene — all WebGL shaders.
 - Save an MP4 (H.264/AAC; WebM fallback) in three presets, rendered through the same compositor
   as the preview, streamed to disk with progress, time left and cancel.
-- Undo/redo everything; the project autosaves continuously and comes back on reload.
+- Undo/redo everything; projects autosave continuously on the device.
+- Keep any number of projects: a home screen with pictures, rename, duplicate, delete, and
+  `.scenes` project files to save, move and reopen a whole project (media and fonts included).
 
 How to run: see "How to run" at the top (`npm install`, `npm run dev`; `npm test` and
 `npm run test:e2e` for the tests — the e2e suite uses installed Google Chrome, and the save-video

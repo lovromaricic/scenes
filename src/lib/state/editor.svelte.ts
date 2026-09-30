@@ -11,10 +11,13 @@ import {
 	putThumbnail,
 	requestPersistentStorage,
 	backfillMediaHashes,
+	getFileLink,
+	type FileLink,
 	type MediaInfo,
 	type ProjectRecord
 } from '$lib/media/db';
 import { getHandle, registerBlob } from '$lib/media/handles';
+import { saveProjectToFile } from '$lib/files/save';
 import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
 import { computePeaks, PEAKS_PER_SECOND } from '$lib/media/waveform';
 import { mixdown } from '$lib/audio/mixdown';
@@ -162,6 +165,20 @@ export class EditorStore {
 	private stored = false;
 	/** Set if the project to open doesn't exist (e.g. deleted in another tab). */
 	notFound = $state(false);
+	/** Set when this project is being replaced from a file: nothing more is saved from here. */
+	private frozen = false;
+
+	/** The file this project was last saved to or opened from, if any. */
+	fileLink = $state<FileLink | null>(null);
+	/** While saving to a file: 0–1. */
+	fileSaving = $state<number | null>(null);
+	private savingFile = false;
+
+	/** Save status for the top bar, including the project file's. */
+	get fileStatus(): 'saved' | 'changed' | null {
+		if (!this.fileLink) return null;
+		return this.project.updatedAt === this.fileLink.savedUpdatedAt ? 'saved' : 'changed';
+	}
 
 	private async restoreSaved(): Promise<void> {
 		void this.fonts.init();
@@ -187,6 +204,7 @@ export class EditorStore {
 				return;
 			}
 			this.stored = true;
+			this.fileLink = (await getFileLink(this.projectId)) ?? null;
 			// Never replace work the user has already started in this session.
 			if (this.history.canUndo) return;
 			const { view, savedAt: _savedAt, ...saved } = record;
@@ -234,7 +252,7 @@ export class EditorStore {
 	 * project is only saved once something has actually been changed in it.
 	 */
 	scheduleSave(): void {
-		if (!this.ready || this.notFound || (!this.stored && !this.history.canUndo)) return;
+		if (!this.ready || this.notFound || this.frozen || (!this.stored && !this.history.canUndo)) return;
 		this.stored = true;
 		this.autosaver.schedule(this.record());
 		this.updateThumbnail();
@@ -242,7 +260,7 @@ export class EditorStore {
 
 	/** Save right away (page hidden or closing). */
 	flushSave(): Promise<void> {
-		if (!this.ready || this.notFound || !this.stored) return Promise.resolve();
+		if (!this.ready || this.notFound || this.frozen || !this.stored) return Promise.resolve();
 		const record = this.record();
 		emergencyCopy.write(record);
 		this.autosaver.schedule(record);
@@ -270,6 +288,40 @@ export class EditorStore {
 			return null;
 		});
 		if (blob) await putProjectThumbnail(project.id, blob, key);
+	}
+
+	/** Stop saving: this project is about to be replaced by the one in a file. */
+	freeze(): void {
+		this.frozen = true;
+		clearTimeout(this.thumbTimer);
+	}
+
+	/**
+	 * Save the project to a `.scenes` file: the same file as last time when possible, or (with
+	 * `saveAs`, or the first time) a file the user picks. Editing carries on while it saves.
+	 */
+	async saveToFile(saveAs = false): Promise<void> {
+		if (!this.ready || this.notFound || this.savingFile) return;
+		this.savingFile = true;
+		// A new video that's still empty is stored first, so there's something to save.
+		this.stored = true;
+		await this.flushSave();
+		try {
+			const saved = await saveProjectToFile(this.projectId, {
+				saveAs,
+				// Starts once the file is chosen (not while the save dialog is open).
+				onProgress: (fraction) => (this.fileSaving = fraction)
+			});
+			if (!saved) return;
+			this.fileLink = { projectId: this.projectId, name: saved.name, savedUpdatedAt: saved.savedUpdatedAt };
+			if (saved.downloaded) toasts.show(`“${saved.name}” is in your downloads.`);
+		} catch (error) {
+			console.error('Could not save the project file', error);
+			toasts.show('The project couldn’t be saved to a file. Please try again.', 'error');
+		} finally {
+			this.fileSaving = null;
+			this.savingFile = false;
+		}
 	}
 
 	/** Leaving this project (for the home screen or another one): store the latest changes now. */

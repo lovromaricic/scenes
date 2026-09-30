@@ -2,6 +2,7 @@
 	import '$lib/styles/global.css';
 	import Unsupported from '$lib/editor/Unsupported.svelte';
 	import { missingFeatures } from '$lib/media/support';
+	import ProjectFileDialogs from '$lib/files/ProjectFileDialogs.svelte';
 
 	let { children } = $props();
 
@@ -16,4 +17,5 @@
 	<Unsupported {missing} />
 {:else}
 	{@render children()}
+	<ProjectFileDialogs />
 {/if}

@@ -62,6 +62,23 @@ test.describe('Accessibility', () => {
 		await check(page);
 	});
 
+	test('editor video menu, and the dialog for a file that can’t be opened', async ({ page }) => {
+		await openNewVideo(page);
+		await page.getByRole('button', { name: 'Video menu' }).click();
+		await expect(page.getByRole('menu')).toBeVisible();
+		await check(page);
+		await page.keyboard.press('Escape');
+		await page.evaluate(() => {
+			const dt = new DataTransfer();
+			dt.items.add(new File(['not a project'], 'notes.scenes'));
+			for (const type of ['dragenter', 'dragover', 'drop']) {
+				document.body.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
+			}
+		});
+		await expect(page.getByRole('dialog', { name: /Couldn’t open/ })).toBeVisible();
+		await check(page);
+	});
+
 	test('design page', async ({ page }) => {
 		await page.goto('/design');
 		await check(page);

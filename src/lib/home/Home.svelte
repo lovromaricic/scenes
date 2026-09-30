@@ -10,7 +10,13 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-	import { ConfirmDialog, Logo, type MenuItem } from '$lib/ui';
+	import FolderOpen from '@lucide/svelte/icons/folder-open';
+	import Save from '@lucide/svelte/icons/save';
+	import { Button, ConfirmDialog, Logo, type MenuItem } from '$lib/ui';
+	import { dragHasFiles } from '$lib/media/picker';
+	import FileProgress from '$lib/files/FileProgress.svelte';
+	import { droppedHandles, isProjectFile, projectOpener } from '$lib/files/opener.svelte';
+	import { saveProjectToFile } from '$lib/files/save';
 	import { projectThumbnail, requestPersistentStorage, storageEstimate } from '$lib/media/db';
 	import { totalDuration } from '$lib/model/timeline';
 	import { formatBytes } from '$lib/export/presets';
@@ -22,16 +28,6 @@
 	import ProjectCard from './ProjectCard.svelte';
 	import type { ProjectSummary } from './types';
 
-	interface Props {
-		/** Extra per-project menu items (Save to file), added by the page. */
-		extraItems?: (project: ProjectSummary) => MenuItem[];
-		/** Rendered in the header, next to the title (e.g. "Open project file"). */
-		actions?: import('svelte').Snippet;
-		/** Bumped by the page to reload the list (e.g. after opening a file). */
-		version?: number;
-	}
-
-	let { extraItems, actions, version = 0 }: Props = $props();
 
 	let projects = $state<ProjectSummary[] | null>(null);
 	let now = $state(Date.now());
@@ -75,10 +71,64 @@
 	// Ask the browser once to keep our data (and remember the answer).
 	const persisted = requestPersistentStorage();
 
-	$effect(() => {
-		void version;
-		void refresh();
-	});
+	onMount(() => void refresh());
+
+	// ─── Project files ─────────────────────────────────────────────────────────────────────
+	let fileSave = $state<{ title: string; fraction: number } | null>(null);
+
+	async function saveToFile(project: ProjectSummary) {
+		if (fileSave) return;
+		fileSave = { title: project.title, fraction: 0 };
+		try {
+			const saved = await saveProjectToFile(project.id, {
+				onProgress: (fraction) => fileSave && (fileSave.fraction = fraction)
+			});
+			if (saved) {
+				toasts.show(
+					saved.downloaded ? `“${saved.name}” is in your downloads.` : `Saved to ${saved.name}.`
+				);
+			}
+		} catch (error) {
+			console.error('Could not save the project file', error);
+			toasts.show('The project couldn’t be saved to a file. Please try again.', 'error');
+		} finally {
+			fileSave = null;
+		}
+	}
+
+	const fileItems = (project: ProjectSummary): MenuItem[] => [
+		{ label: 'Save to file', icon: Save, onselect: () => void saveToFile(project) }
+	];
+
+	function onkeydown(event: KeyboardEvent) {
+		if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'o') {
+			event.preventDefault();
+			void projectOpener.pickAndOpen();
+		}
+	}
+
+	let dragging = $state(0);
+	function ondragover(event: DragEvent) {
+		if (!dragHasFiles(event)) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+	}
+	function ondrop(event: DragEvent) {
+		if (!dragHasFiles(event)) return;
+		event.preventDefault();
+		dragging = 0;
+		const files = Array.from(event.dataTransfer?.files ?? []);
+		const index = files.findIndex(isProjectFile);
+		if (index < 0) {
+			toasts.show(
+				'Drop a Scenes project file (.scenes) here to open it. To add photos and videos, start a New video.',
+				'error'
+			);
+			return;
+		}
+		const handles = droppedHandles(event);
+		void handles.then((all) => projectOpener.open(files[index], all[index] ?? undefined));
+	}
 
 	onMount(() => {
 		// Tips and messages from the editor don't belong here.
@@ -119,7 +169,11 @@
 			<Logo />
 			<span class="wordmark serif">Scenes</span>
 		</a>
-		<div class="actions">{@render actions?.()}</div>
+		<div class="actions">
+			<Button variant="outline" icon={FolderOpen} onclick={() => void projectOpener.pickAndOpen()}
+				>Open project file</Button
+			>
+		</div>
 	</header>
 
 	<main class="content">
@@ -149,7 +203,7 @@
 							await refresh();
 						}}
 						ondelete={() => (deleting = project)}
-						extra={extraItems?.(project)}
+						extra={fileItems(project)}
 					/>
 				</li>
 			{/each}
@@ -175,6 +229,26 @@
 		{/if}
 	</main>
 </div>
+
+<svelte:window
+	{onkeydown}
+	{ondragover}
+	{ondrop}
+	ondragenter={(e) => dragHasFiles(e) && dragging++}
+	ondragleave={(e) => dragHasFiles(e) && (dragging = Math.max(0, dragging - 1))}
+/>
+
+{#if dragging > 0}
+	<div class="drop" aria-hidden="true">
+		<p class="serif">Drop a project file to open it</p>
+	</div>
+{/if}
+
+{#if fileSave}
+	<FileProgress label="Saving progress" fraction={fileSave.fraction}>
+		Saving <strong>{fileSave.title}</strong> to a file…
+	</FileProgress>
+{/if}
 
 {#if deleting}
 	{@const project = deleting}
@@ -308,6 +382,20 @@
 	.storage strong {
 		color: var(--color-ink);
 		font-weight: var(--weight-medium);
+	}
+	.drop {
+		position: fixed;
+		inset: var(--space-3);
+		z-index: 50;
+		display: grid;
+		place-items: center;
+		border: 2px dashed var(--color-ink);
+		border-radius: var(--radius-card-lg);
+		background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+		pointer-events: none;
+	}
+	.drop p {
+		font-size: var(--text-display);
 	}
 	@media (max-width: 640px) {
 		.content {

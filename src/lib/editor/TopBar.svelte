@@ -76,13 +76,26 @@
 		if (save) editor.setTitle(draft);
 	}
 
-	const saveLabel = $derived(
+	const autosaveLabel = $derived(
 		{
 			idle: '',
 			saving: 'Saving…',
 			saved: 'Saved on this device',
 			error: 'Couldn’t save — retrying'
 		}[editor.saveStatus]
+	);
+	// The project file's status comes first once there is one (the device copy is always kept).
+	const saveLabel = $derived.by(() => {
+		if (editor.saveStatus === 'error') return autosaveLabel;
+		if (editor.fileSaving !== null) return `Saving to file… ${Math.round(editor.fileSaving * 100)}%`;
+		if (editor.fileStatus === 'saved') return `Saved to ${editor.fileLink!.name}`;
+		if (editor.fileStatus === 'changed') return 'Unsaved changes in file';
+		return autosaveLabel;
+	});
+	const saved = $derived(
+		editor.saveStatus !== 'error' &&
+			editor.fileSaving === null &&
+			(editor.fileStatus === 'saved' || (!editor.fileStatus && editor.saveStatus === 'saved'))
 	);
 </script>
 
@@ -147,12 +160,12 @@
 		</button>
 		{#if saveLabel}
 			<p class="save" class:error={editor.saveStatus === 'error'} role="status">
-				{#if editor.saveStatus === 'saved'}<Check
+				{#if saved}<Check
 						size={13}
 						strokeWidth={2}
 						aria-hidden="true"
 					/>{/if}
-				{saveLabel}
+				<span class="save-text">{saveLabel}</span>
 			</p>
 		{/if}
 	</div>
@@ -303,6 +316,11 @@
 		font-size: var(--text-sm);
 		white-space: nowrap;
 		animation: fade-in var(--dur) var(--ease-out);
+	}
+	.save-text {
+		max-width: 30ch;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.save.error {
 		color: var(--color-ink);

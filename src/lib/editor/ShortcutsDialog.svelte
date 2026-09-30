@@ -47,6 +47,9 @@
 			items: [
 				[[mod, 'Z'], 'Undo'],
 				[[mod, 'Shift', 'Z'], 'Redo'],
+				[[mod, 'S'], 'Save to file'],
+				[[mod, 'Shift', 'S'], 'Save to a new file'],
+				[[mod, 'O'], 'Open a project file'],
 				[['?'], 'Show these shortcuts']
 			]
 		}

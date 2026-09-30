@@ -7,6 +7,11 @@
 	import { EditorStore } from '$lib/state/editor.svelte';
 	import { provideEditor } from '$lib/state/context';
 	import { trackPendingSave } from '$lib/state/library';
+	import { droppedHandles, isProjectFile, projectOpener } from '$lib/files/opener.svelte';
+	import FolderOpen from '@lucide/svelte/icons/folder-open';
+	import Save from '@lucide/svelte/icons/save';
+	import SaveAll from '@lucide/svelte/icons/save-all';
+	import type { MenuItem } from '$lib/ui';
 	import AddColumn from './AddColumn.svelte';
 	import DropOverlay from './DropOverlay.svelte';
 	import Inspector from './Inspector.svelte';
@@ -32,7 +37,33 @@
 	// card) before the next page reads it.
 	beforeNavigate(() => trackPendingSave(editor.close()));
 
+	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+	const fileItems: MenuItem[] = [
+		{
+			label: 'Open project file…',
+			icon: FolderOpen,
+			shortcut: isMac ? '⌘O' : 'Ctrl+O',
+			onselect: () => void projectOpener.pickAndOpen()
+		},
+		{
+			label: 'Save to file',
+			icon: Save,
+			shortcut: isMac ? '⌘S' : 'Ctrl+S',
+			separator: true,
+			onselect: () => void editor.saveToFile()
+		},
+		{
+			label: 'Save as…',
+			icon: SaveAll,
+			shortcut: isMac ? '⇧⌘S' : 'Ctrl+Shift+S',
+			onselect: () => void editor.saveToFile(true)
+		}
+	];
+
 	onMount(() => {
+		// Opening a file that replaces this very project: stop saving it, or it would win.
+		const beforeReplace = (id: string) => id === editor.projectId && editor.freeze();
+		projectOpener.beforeReplace = beforeReplace;
 		// Handy for tests and debugging in the console.
 		(window as unknown as { __scenes: unknown }).__scenes = editor;
 		void editor.load();
@@ -43,6 +74,7 @@
 		return () => {
 			window.removeEventListener('pagehide', save);
 			document.removeEventListener('visibilitychange', onVisibility);
+			if (projectOpener.beforeReplace === beforeReplace) projectOpener.beforeReplace = null;
 			// Leaving this project (e.g. for the home screen): store the latest changes and picture.
 			trackPendingSave(editor.close());
 			editor.player.dispose();
@@ -75,7 +107,15 @@
 		if (!dragHasFiles(event)) return;
 		event.preventDefault();
 		dragDepth = 0;
-		void editor.importFiles(Array.from(event.dataTransfer?.files ?? []));
+		const files = Array.from(event.dataTransfer?.files ?? []);
+		// A project file opens that project; photos, videos and sounds are added to this one.
+		const index = files.findIndex(isProjectFile);
+		if (index >= 0) {
+			const handles = droppedHandles(event);
+			void handles.then((all) => projectOpener.open(files[index], all[index] ?? undefined));
+			return;
+		}
+		void editor.importFiles(files);
 	}
 
 	function isTyping(target: EventTarget | null): boolean {
@@ -84,6 +124,19 @@
 	}
 
 	function onkeydown(event: KeyboardEvent) {
+		// Project files: Ctrl/Cmd+S saves, Ctrl/Cmd+Shift+S saves as, Ctrl/Cmd+O opens. The
+		// browser's own "Save page" and "Open file" never appear.
+		const fileKey = event.key.toLowerCase();
+		if ((event.metaKey || event.ctrlKey) && !event.altKey && (fileKey === 's' || fileKey === 'o')) {
+			event.preventDefault();
+			if (watching || saving || showShortcuts || editor.recording) return;
+			// Finish typing (a title or words) first, so it's in what gets saved.
+			if (isTyping(document.activeElement)) (document.activeElement as HTMLElement).blur();
+			if (fileKey === 's') void editor.saveToFile(event.shiftKey);
+			else void projectOpener.pickAndOpen();
+			return;
+		}
+
 		// Full-screen watching and dialogs handle their own keys.
 		if (watching || saving || showShortcuts) return;
 
@@ -202,6 +255,7 @@
 			watching = true;
 		}}
 		onshortcuts={() => (showShortcuts = true)}
+		{fileItems}
 	/>
 
 	<main class="workspace">
