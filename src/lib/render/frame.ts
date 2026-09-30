@@ -1,5 +1,6 @@
 import type { FrameResult } from '$lib/media/frames';
 import { MOOD_GRADES } from '$lib/model/moods';
+import { frameRect } from '$lib/model/framing';
 import { textFrameState } from '$lib/model/textAnimation';
 import type { MoodId, Scene, TextItem } from '$lib/model/types';
 import type { LayerInput, TextDraw } from './compositor';
@@ -10,12 +11,21 @@ import type { TextSpriteCache } from './text';
  * same way (moods, text placement and animation).
  */
 
-export function layerInput(frame: FrameResult, scene: Scene, projectMood: MoodId): LayerInput {
+/** One scene's picture for an output frame of outW × outH: its mood and its framing. */
+export function layerInput(
+	frame: FrameResult,
+	scene: Scene,
+	projectMood: MoodId,
+	outW: number,
+	outH: number
+): LayerInput {
 	return {
 		image: frame.image,
 		width: frame.width,
 		height: frame.height,
-		grade: MOOD_GRADES[scene.mood ?? projectMood]
+		grade: MOOD_GRADES[scene.mood ?? projectMood],
+		rect: frameRect(scene.frame, frame.width, frame.height, outW, outH),
+		bars: scene.frame?.bars ?? 'black'
 	};
 }
 

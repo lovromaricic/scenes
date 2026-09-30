@@ -1,7 +1,8 @@
 import type { FrameImage } from '$lib/media/frames';
 import type { GradeParams } from '$lib/model/moods';
+import { frameRect, showsBars, type FrameBars, type Rect } from '$lib/model/framing';
 import type { TransitionKind } from '$lib/model/types';
-import { compileProgram, coverScale, createTexture } from './gl';
+import { compileProgram, createTexture } from './gl';
 
 /**
  * The WebGL2 compositor draws one output frame. The same code renders the live preview and,
@@ -19,6 +20,10 @@ export interface LayerInput {
 	width: number;
 	height: number;
 	grade: GradeParams;
+	/** Where the picture goes, in output pixels (top-left origin). See `frameRect`. */
+	rect: Rect;
+	/** What fills the frame around the picture if it doesn't cover it. */
+	bars: FrameBars;
 }
 
 /** A text sprite placed on the frame. Positions are in output pixels (y down). */
@@ -52,13 +57,35 @@ export const TRANSITION_IDS: Record<TransitionKind, number> = {
 	zoom: 4
 };
 
-const QUAD_VS = /* glsl */ `#version 300 es
+/** A textured rectangle: uRect = x, y (bottom-left, clip space), width, height (clip units). */
+const RECT_VS = /* glsl */ `#version 300 es
 in vec2 aPos;
-uniform vec2 uScale;
+uniform vec4 uRect;
 out vec2 vUv;
 void main() {
-	vUv = aPos * 0.5 + 0.5;
-	gl_Position = vec4(aPos * uScale, 0.0, 1.0);
+	vec2 p = aPos * 0.5 + 0.5;
+	vUv = p;
+	gl_Position = vec4(uRect.xy + p * uRect.zw, 0.0, 1.0);
+}`;
+
+/** Soft blur for "blurred bars": a 9-tap tent filter over a heavily downscaled copy. */
+const BLUR_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uImage;
+uniform vec2 uTexel;
+out vec4 outColor;
+void main() {
+	vec3 c = vec3(0.0);
+	float total = 0.0;
+	for (int i = -1; i <= 1; i++) {
+		for (int j = -1; j <= 1; j++) {
+			float w = (2.0 - abs(float(i))) * (2.0 - abs(float(j)));
+			c += texture(uImage, vUv + vec2(float(i), float(j)) * uTexel * 1.5).rgb * w;
+			total += w;
+		}
+	}
+	outColor = vec4(c / total * 0.85, 1.0);
 }`;
 
 const GRADE_FS = /* glsl */ `#version 300 es
@@ -154,12 +181,13 @@ export class Compositor {
 	private quad!: WebGLVertexArrayObject;
 	private grade!: {
 		program: WebGLProgram;
-		u: Uniforms<'scale' | 'image' | 'gain' | 'lift' | 'contrast' | 'saturation'>;
+		u: Uniforms<'rect' | 'image' | 'gain' | 'lift' | 'contrast' | 'saturation'>;
 	};
 	private transition!: {
 		program: WebGLProgram;
-		u: Uniforms<'scale' | 'a' | 'b' | 'kind' | 'progress'>;
+		u: Uniforms<'rect' | 'a' | 'b' | 'kind' | 'progress'>;
 	};
+	private blur!: { program: WebGLProgram; u: Uniforms<'rect' | 'image' | 'texel'> };
 	private sprite!: { program: WebGLProgram; u: Uniforms<'rect' | 'opacity' | 'image'> };
 	private slots: TextureSlot[] = [];
 	private targets: Target[] = [];
@@ -205,21 +233,22 @@ export class Compositor {
 
 	private init() {
 		const gl = this.gl;
-		this.grade = this.program(QUAD_VS, GRADE_FS, {
-			scale: 'uScale',
+		this.grade = this.program(RECT_VS, GRADE_FS, {
+			rect: 'uRect',
 			image: 'uImage',
 			gain: 'uGain',
 			lift: 'uLift',
 			contrast: 'uContrast',
 			saturation: 'uSaturation'
 		});
-		this.transition = this.program(QUAD_VS, TRANSITION_FS, {
-			scale: 'uScale',
+		this.transition = this.program(RECT_VS, TRANSITION_FS, {
+			rect: 'uRect',
 			a: 'uA',
 			b: 'uB',
 			kind: 'uKind',
 			progress: 'uProgress'
 		});
+		this.blur = this.program(RECT_VS, BLUR_FS, { rect: 'uRect', image: 'uImage', texel: 'uTexel' });
 		this.sprite = this.program(SPRITE_VS, SPRITE_FS, {
 			rect: 'uRect',
 			opacity: 'uOpacity',
@@ -254,10 +283,9 @@ export class Compositor {
 		}
 	}
 
-	/** An offscreen framebuffer the size of the output, reused between frames. */
-	private target(index: number): Target {
+	/** An offscreen framebuffer (the size of the output unless given), reused between frames. */
+	private target(index: number, width = this.canvas.width, height = this.canvas.height): Target {
 		const gl = this.gl;
-		const { width, height } = this.canvas;
 		let t = this.targets[index];
 		if (t && t.width === width && t.height === height) return t;
 		if (t) {
@@ -307,7 +335,7 @@ export class Compositor {
 			gl.uniform1i(u.b, 1);
 			gl.uniform1i(u.kind, TRANSITION_IDS[kind]);
 			gl.uniform1f(u.progress, frame.transition!.progress);
-			gl.uniform2f(u.scale, 1, 1);
+			gl.uniform4f(u.rect, -1, -1, 2, 2);
 			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 			gl.activeTexture(gl.TEXTURE0);
 		} else if (frame.a) {
@@ -322,25 +350,60 @@ export class Compositor {
 		gl.bindVertexArray(null);
 	}
 
-	/** Draw one scene frame, cover-fitted and colour graded, into `fbo` (null = the screen). */
-	private drawLayer(layer: LayerInput, slot: number, fbo: WebGLFramebuffer | null) {
+	/** A pixel rectangle (top-left origin) as uRect in clip space for a W × H target. */
+	private static clipRect(r: Rect, W: number, H: number): [number, number, number, number] {
+		return [(r.x / W) * 2 - 1, 1 - ((r.y + r.h) / H) * 2, (r.w / W) * 2, (r.h / H) * 2];
+	}
+
+	private drawGraded(layer: LayerInput, rect: Rect, W: number, H: number) {
 		const gl = this.gl;
-		const { width, height } = this.canvas;
-		gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-		gl.clearColor(0, 0, 0, 1);
-		gl.clear(gl.COLOR_BUFFER_BIT);
-		const { program, u } = this.grade;
-		gl.useProgram(program);
-		this.bindImage(slot, layer.image);
+		const { u } = this.grade;
+		gl.useProgram(this.grade.program);
 		gl.uniform1i(u.image, 0);
-		const [sx, sy] = coverScale(layer.width / layer.height, width / height);
-		gl.uniform2f(u.scale, sx, sy);
+		gl.uniform4f(u.rect, ...Compositor.clipRect(rect, W, H));
 		const g = layer.grade;
 		gl.uniform3f(u.gain, g.gain[0], g.gain[1], g.gain[2]);
 		gl.uniform3f(u.lift, g.lift[0], g.lift[1], g.lift[2]);
 		gl.uniform1f(u.contrast, g.contrast);
 		gl.uniform1f(u.saturation, g.saturation);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+	}
+
+	/**
+	 * Draw one scene frame into `fbo` (null = the screen): the bars (black, white or a blurred
+	 * copy of the picture) and then the picture at its framing rectangle, colour graded.
+	 */
+	private drawLayer(layer: LayerInput, slot: number, fbo: WebGLFramebuffer | null) {
+		const gl = this.gl;
+		const { width: W, height: H } = this.canvas;
+		this.bindImage(slot, layer.image);
+		const bars = showsBars(layer.rect, W, H);
+
+		if (bars && layer.bars === 'blur') {
+			// A small cover-fitted copy, then scaled up through a blur.
+			const sw = Math.max(16, Math.round(W / 12));
+			const sh = Math.max(16, Math.round(H / 12));
+			const small = this.target(2 + slot, sw, sh);
+			gl.bindFramebuffer(gl.FRAMEBUFFER, small.fbo);
+			gl.viewport(0, 0, sw, sh);
+			this.drawGraded(layer, frameRect(undefined, layer.width, layer.height, sw, sh), sw, sh);
+			gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+			gl.viewport(0, 0, W, H);
+			gl.useProgram(this.blur.program);
+			gl.bindTexture(gl.TEXTURE_2D, small.texture);
+			gl.uniform1i(this.blur.u.image, 0);
+			gl.uniform2f(this.blur.u.texel, 1 / sw, 1 / sh);
+			gl.uniform4f(this.blur.u.rect, -1, -1, 2, 2);
+			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+			this.bindImage(slot, layer.image);
+		} else {
+			gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+			gl.viewport(0, 0, W, H);
+			const white = bars && layer.bars === 'white' ? 1 : 0;
+			gl.clearColor(white, white, white, 1);
+			gl.clear(gl.COLOR_BUFFER_BIT);
+		}
+		this.drawGraded(layer, layer.rect, W, H);
 	}
 
 	private spriteTexture(key: string, image: TexImageSource): WebGLTexture {
@@ -406,8 +469,10 @@ export class Compositor {
 
 	dispose(): void {
 		const gl = this.gl;
-		for (const slot of this.slots) gl.deleteTexture(slot.texture);
+		// Both lists can have gaps (e.g. only the small blur buffers exist).
+		for (const slot of this.slots) if (slot) gl.deleteTexture(slot.texture);
 		for (const t of this.targets) {
+			if (!t) continue;
 			gl.deleteFramebuffer(t.fbo);
 			gl.deleteTexture(t.texture);
 		}
@@ -417,6 +482,7 @@ export class Compositor {
 		this.spriteTextures.clear();
 		gl.deleteProgram(this.grade.program);
 		gl.deleteProgram(this.transition.program);
+		gl.deleteProgram(this.blur.program);
 		gl.deleteProgram(this.sprite.program);
 	}
 }

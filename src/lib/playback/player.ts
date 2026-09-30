@@ -1,7 +1,12 @@
 import { AudioEngine } from '$lib/audio/engine';
 import { projectAudioClips, type AudioClip } from '$lib/audio/clips';
 import { getHandle } from '$lib/media/handles';
-import { PhotoFrameSource, VideoFrameSource, type FrameSource } from '$lib/media/frames';
+import {
+	PhotoFrameSource,
+	VideoFrameSource,
+	type FrameImage,
+	type FrameSource
+} from '$lib/media/frames';
 import { placeScenes, type PlacedScene } from '$lib/model/timeline';
 import { compose, type Composition, type LayerRef } from '$lib/model/composition';
 import type { SourceBounds } from '$lib/model/edits';
@@ -125,7 +130,12 @@ export class Player {
 		if (!surface) return;
 		surface.width = Math.max(2, Math.round(width));
 		surface.height = Math.max(2, Math.round(height));
-		if (canvas === this.canvas) this.compositor?.resize(surface.width, surface.height);
+		if (canvas === this.canvas && this.compositor) {
+			this.compositor.resize(surface.width, surface.height);
+			// Resizing clears the canvas: redraw straight away so it never flashes black.
+			this.dirty = true;
+			this.draw(this.time);
+		}
 		this.dirty = true;
 	}
 
@@ -303,7 +313,9 @@ export class Player {
 
 	private layerInput(ref: LayerRef, playing: boolean): LayerInput | null {
 		const frame = this.layerFrame(ref, playing);
-		return frame ? layerInput(frame, ref.placed.scene, this.mood) : null;
+		return frame && this.canvas
+			? layerInput(frame, ref.placed.scene, this.mood, this.canvas.width, this.canvas.height)
+			: null;
 	}
 
 	/** Whether every frame needed at time `t` is decoded exactly. */
@@ -364,6 +376,11 @@ export class Player {
 				this.setTime(this.duration);
 			}
 		}
+		this.draw(t);
+	};
+
+	/** Draw the frame for time `t` if anything changed since the last draw. */
+	private draw(t: number) {
 		if (!this.compositor || !this.canvas) return;
 
 		this.manageSources(t);
@@ -371,7 +388,12 @@ export class Player {
 		if (this.peekTarget) {
 			const frame = this.peekFrame(this.peekTarget);
 			const scene = this.scenes.find((s) => s.id === this.peekTarget!.sceneId);
-			composite = { a: frame && scene ? layerInput(frame, scene, this.mood) : null };
+			composite = {
+				a:
+					frame && scene
+						? layerInput(frame, scene, this.mood, this.canvas.width, this.canvas.height)
+						: null
+			};
 		} else {
 			const c = this.composition(t);
 			composite = {
@@ -383,7 +405,9 @@ export class Player {
 		const texts = this.textDraws(t, this.canvas.width, this.canvas.height);
 		composite.texts = texts;
 		const layerKey = (l: LayerInput | null | undefined) =>
-			l ? `${objectId(l.image)}:${JSON.stringify(l.grade)}` : 'none';
+			l
+				? `${objectId(l.image)}:${JSON.stringify(l.grade)}:${JSON.stringify(l.rect)}:${l.bars}`
+				: 'none';
 		const key = [
 			`${this.canvas.width}x${this.canvas.height}`,
 			layerKey(composite.a),
@@ -404,11 +428,20 @@ export class Player {
 
 		this.compositor.render(composite);
 		this.sprites.endFrame();
-	};
+	}
 
 	/** For tests: the colour of a pixel in the preview. */
 	readPixel(x: number, y: number) {
 		return this.compositor?.readPixel(x, y) ?? null;
+	}
+
+	/** The decoded picture of a scene at a source time, if it's ready (used by the reframe view). */
+	frameImage(sceneId: string, sourceTime: number): FrameImage | null {
+		const scene = this.scenes.find((s) => s.id === sceneId);
+		const source = scene && this.sourceFor(scene);
+		if (!source) return null;
+		source.want(sourceTime, false);
+		return source.frameAt(sourceTime)?.image ?? null;
 	}
 
 	/** For tests: audio context state and how many sound buffers are queued. */

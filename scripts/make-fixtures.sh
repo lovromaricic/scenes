@@ -30,6 +30,13 @@ ffmpeg -y -loglevel error \
 	-filter_complex "[0:v][1:v]overlay=16:16,format=yuv420p[v]" -map "[v]" -map 2:a -shortest \
 	-c:v libx264 -preset veryfast -g 25 -crf 28 -c:a aac -b:a 64k portrait.mp4
 
+# Red | green | blue vertical thirds (640×360), for framing tests.
+ffmpeg -y -loglevel error \
+	-f lavfi -i "color=c=red:s=213x360:r=30:d=3" -f lavfi -i "color=c=0x00ff00:s=214x360:r=30:d=3" \
+	-f lavfi -i "color=c=blue:s=213x360:r=30:d=3" \
+	-filter_complex "[0:v][1:v][2:v]hstack=inputs=3,format=yuv420p[v]" -map "[v]" \
+	-c:v libx264 -preset veryfast -g 30 -crf 23 bands.mp4
+
 # A longer clip whose colour changes every second (for scrubbing accuracy), with sparse keyframes.
 ffmpeg -y -loglevel error \
 	-f lavfi -i "color=c=red:s=640x360:r=30:d=1" -f lavfi -i "color=c=0x00ff00:s=640x360:r=30:d=1" \

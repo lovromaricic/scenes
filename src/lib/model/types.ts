@@ -5,6 +5,7 @@
  */
 
 import type { ProjectFormat } from './format';
+import type { SceneFrame } from './framing';
 
 /** Shapes offered by the design-page demo switch. Projects use `ProjectFormat`. */
 export type AspectRatio = '16:9' | '9:16' | '1:1';
@@ -41,6 +42,8 @@ export interface Scene {
 	mood: MoodId | null;
 	/** Transition into the next scene. */
 	transition: Transition;
+	/** How the picture fits the video's shape (missing = Fill). */
+	frame?: SceneFrame;
 }
 
 export interface TextItem {

@@ -331,6 +331,32 @@ npm run check        # svelte-check (TypeScript strict)
   applies immediately and is one undo step.
 - Export sizes now come from the format (section 6 finishes the dialog).
 
+### 5. Framing each scene
+
+- `scene.frame = { mode: 'fill' | 'fit' | 'custom', bars: 'black' | 'white' | 'blur', zoom, x, y }`
+  (missing on old projects = Fill). One pure function, `frameRect()` in `src/lib/model/framing.ts`,
+  decides where the picture goes for any output size; the compositor, the filmstrip tiles and export
+  all use it, so they can't disagree. It's relative, so preview and export match at any resolution.
+- **Fill** covers the frame (crops). **Fit** shows everything with bars. **Custom**: zoom is relative
+  to Fill (1 = Fill; minimum = Fit's size; maximum 4×) and x/y move the picture's centre as a
+  fraction of the frame, clamped so the centre stays inside the frame. Choosing Custom starts from
+  what you saw (Fill, or Fit's size when coming from Fit).
+- **Bars** show whenever the picture doesn't cover the frame (Fit, or zoomed-out Custom): black,
+  white, or a blurred copy. The blur is drawn by rendering a cover-fitted copy into a framebuffer
+  1/12 the size, then scaling it up through a 9-tap tent filter (slightly darkened); cheap at any
+  resolution. Thumbnails use Canvas 2D `filter: blur()` for the same look.
+- **Reframing on the preview (Custom):** when a Custom scene is selected and the playhead is in it,
+  the whole picture shows as a faded "ghost" around the frame (the area outside is dimmed), with the
+  frame outlined. Drag to move, scroll or pinch to zoom, arrow keys / + / − from the keyboard; the
+  zoom slider and Reset are in the Frame section. A drag or pinch is one undo step; wheel and slider
+  changes merge. The ghost is clipped to the preview area only while reframing, so it never covers
+  the play controls (and text popovers aren't clipped otherwise).
+- **Apply to all scenes** copies the whole framing (mode, bars, zoom, position) to every scene.
+- Fixed along the way: resizing the preview (window or format change) cleared the WebGL canvas until
+  the next frame, a brief black flash; the player now redraws immediately on resize. And
+  `Compositor.dispose()` crashed on gaps in its buffer lists (only blur buffers allocated), which
+  turned a successful export into an error.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

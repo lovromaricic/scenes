@@ -308,6 +308,7 @@
 <style>
 	.overlay {
 		position: absolute;
+		z-index: 5;
 		inset: 0;
 		pointer-events: none;
 	}

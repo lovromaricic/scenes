@@ -193,7 +193,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	const layer = async (ref: { placed: PlacedScene; sourceTime: number } | null) => {
 		if (!ref) return null;
 		const frame = await (await readerFor(ref.placed.scene)).frameAt(ref.sourceTime);
-		return frame ? layerInput(frame, ref.placed.scene, project.mood) : null;
+		return frame ? layerInput(frame, ref.placed.scene, project.mood, width, height) : null;
 	};
 
 	const clips = projectAudioClips(project, request.hasAudio);

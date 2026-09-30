@@ -9,6 +9,7 @@
 	import { useEditor } from '$lib/state/context';
 	import TextOverlay from './TextOverlay.svelte';
 	import RecordingOverlay from './RecordingOverlay.svelte';
+	import FramingOverlay from './FramingOverlay.svelte';
 
 	interface Props {
 		onpick: () => void;
@@ -20,6 +21,7 @@
 
 	let canvas: HTMLCanvasElement;
 	let previewW = $state(0);
+	const framing = $derived(editor.selectedScene?.scene.frame?.mode === 'custom');
 	let reshaping = $state(false);
 	let lastRatio = 0;
 	let reshapeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -63,7 +65,7 @@
 </script>
 
 <section class="stage" aria-label="Preview">
-	<div class="viewport">
+	<div class="viewport" class:framing>
 		<div
 			class="preview"
 			class:empty
@@ -102,6 +104,7 @@
 				{/if}
 			</div>
 			{#if !empty}
+				<FramingOverlay width={previewW} height={previewH} />
 				<TextOverlay width={previewW} height={previewH} />
 			{/if}
 			<RecordingOverlay />
@@ -142,6 +145,10 @@
 		}
 	}
 	/* The preview grows to fill this area in the project's shape, with a margin all round. */
+	/* The reframe view's faded picture may extend past the preview, but not past this area. */
+	.viewport.framing {
+		overflow: clip;
+	}
 	.viewport {
 		flex: 1;
 		min-height: 0;
@@ -167,6 +174,7 @@
 	}
 	.clip {
 		position: absolute;
+		z-index: 1;
 		inset: 0;
 		border-radius: inherit;
 		overflow: hidden;

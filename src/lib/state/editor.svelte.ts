@@ -35,6 +35,7 @@ import { placeScenes, totalDuration } from '$lib/model/timeline';
 import { TEXT_ENTER } from '$lib/model/textAnimation';
 import { TRANSITION_SECONDS } from '$lib/model/composition';
 import { formatFromClip, legacyFormat, type ProjectFormat } from '$lib/model/format';
+import { DEFAULT_FRAME, type SceneFrame } from '$lib/model/framing';
 import type {
 	MoodId,
 	Project,
@@ -376,6 +377,20 @@ export class EditorStore {
 
 	setSceneSpeed(id: string, speed: Speed): void {
 		this.updateScene('Speed', id, (s) => setSpeed(s, speed));
+	}
+
+	/** How a scene's picture fits the video's shape. `key` merges quick repeats (sliders). */
+	setSceneFrame(id: string, frame: SceneFrame, key?: string): void {
+		this.updateScene('Framing', id, (s) => ({ ...s, frame: { ...frame } }), key);
+	}
+
+	/** Give every scene the same framing as this one. */
+	applyFrameToAll(id: string): void {
+		const frame = this.project.scenes.find((s) => s.id === id)?.frame ?? DEFAULT_FRAME;
+		this.edit('Framing for every scene', (p) => ({
+			...p,
+			scenes: p.scenes.map((s) => ({ ...s, frame: { ...frame } }))
+		}));
 	}
 
 	/** A scene's own look, or `null` to follow the whole video's look. */

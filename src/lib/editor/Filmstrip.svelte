@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 	import { requestFrames, sampleTimes, type StripFrame } from '$lib/media/filmstrip';
+	import { frameRect, showsBars, type SceneFrame } from '$lib/model/framing';
 
 	interface Props {
 		mediaId: string;
@@ -12,9 +13,11 @@
 		sourceEnd: number;
 		/** Width ÷ height of a tile (the project's shape). */
 		tileAspect: number;
+		/** The scene's framing, drawn the same way as the preview and export. */
+		frame?: SceneFrame;
 	}
 
-	let { mediaId, sourceStart, sourceEnd, tileAspect }: Props = $props();
+	let { mediaId, sourceStart, sourceEnd, tileAspect, frame }: Props = $props();
 
 	let canvas: HTMLCanvasElement;
 	let width = $state(0);
@@ -38,19 +41,30 @@
 		const tw = tileWidth;
 		const th = height;
 		const list = times;
+		const framing = frame;
 
-		const draw = (i: number, frame: StripFrame) => {
+		const draw = (i: number, img: StripFrame) => {
 			if (gen !== generation) return;
 			const x = i * tw;
 			ctx.save();
 			ctx.beginPath();
 			ctx.rect(x, 0, tw, th);
 			ctx.clip();
-			// Cover the tile, like "Fill" framing.
-			const scale = Math.max(tw / frame.width, th / frame.height);
-			const w = frame.width * scale;
-			const h = frame.height * scale;
-			ctx.drawImage(frame.image, x + (tw - w) / 2, (th - h) / 2, w, h);
+			// The same framing as the preview: bars first, then the picture at its rectangle.
+			const r = frameRect(framing, img.width, img.height, tw, th);
+			if (showsBars(r, tw, th)) {
+				const bars = framing?.bars ?? 'black';
+				if (bars === 'blur') {
+					const c = frameRect(undefined, img.width, img.height, tw, th);
+					ctx.filter = `blur(${Math.max(2, th / 14)}px) brightness(0.85)`;
+					ctx.drawImage(img.image, x + c.x, c.y, c.w, c.h);
+					ctx.filter = 'none';
+				} else {
+					ctx.fillStyle = bars === 'white' ? '#ffffff' : '#000000';
+					ctx.fillRect(x, 0, tw, th);
+				}
+			}
+			ctx.drawImage(img.image, x + r.x, r.y, r.w, r.h);
 			ctx.restore();
 		};
 

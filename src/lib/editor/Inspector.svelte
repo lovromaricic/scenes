@@ -9,6 +9,7 @@
 	import { useEditor } from '$lib/state/context';
 	import TextInspector from './TextInspector.svelte';
 	import SoundInspector from './SoundInspector.svelte';
+	import FrameSettings from './FrameSettings.svelte';
 
 	const editor = useEditor();
 
@@ -62,6 +63,8 @@
 						onchange={(v) => editor.setSceneLength(scene.id, v)}
 					/>
 				</Field>
+
+				<FrameSettings {scene} />
 
 				{#if scene.kind === 'video'}
 					<Field label="Speed">

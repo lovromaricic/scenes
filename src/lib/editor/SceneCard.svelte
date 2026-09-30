@@ -53,6 +53,7 @@
 				sourceStart={scene.sourceStart}
 				sourceEnd={scene.sourceEnd}
 				{tileAspect}
+				frame={scene.frame}
 			/>
 		{/if}
 	</span>
