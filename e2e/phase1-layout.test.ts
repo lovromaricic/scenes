@@ -41,7 +41,13 @@ test.describe('Phase 1: design system and layout', () => {
 		// Stage
 		await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
 		await expect(page.getByText(/0:\d\d\s*of\s*0:\d\d/)).toBeVisible();
-		await expect(page.getByRole('radiogroup', { name: 'Video shape' })).toBeVisible();
+		// Play and time sit together, centred under the preview.
+		const preview = (await page.getByTestId('preview').boundingBox())!;
+		const play = (await page.getByRole('button', { name: 'Play', exact: true }).boundingBox())!;
+		const clock = (await page.getByTestId('clock').boundingBox())!;
+		const groupCentre = (play.x + clock.x + clock.width) / 2;
+		expect(Math.abs(groupCentre - (preview.x + preview.width / 2))).toBeLessThan(4);
+		expect(await page.getByRole('radiogroup', { name: 'Video shape' }).count()).toBe(0);
 		// Storyboard
 		await expect(page.getByRole('region', { name: 'Storyboard' })).toBeVisible();
 		await expect(page.getByRole('button', { name: /^Scene 1,/ })).toBeVisible();

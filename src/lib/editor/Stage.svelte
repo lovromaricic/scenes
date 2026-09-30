@@ -3,10 +3,9 @@
 	import Pause from '@lucide/svelte/icons/pause';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import { onMount } from 'svelte';
-	import { Button, ChipGroup, IconButton } from '$lib/ui';
-	import { ASPECTS, aspectRatioValue } from '$lib/model/catalog';
+	import { Button, IconButton } from '$lib/ui';
+	import { aspectRatioValue } from '$lib/model/catalog';
 	import { formatClock } from '$lib/model/time';
-	import type { AspectRatio } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
 	import TextOverlay from './TextOverlay.svelte';
 	import RecordingOverlay from './RecordingOverlay.svelte';
@@ -24,7 +23,6 @@
 	let previewH = $state(0);
 
 	const ratio = $derived(aspectRatioValue(editor.project.aspect));
-	const aspectOptions = ASPECTS.map((a) => ({ value: a.id, label: a.label }));
 	const empty = $derived(editor.ready && editor.project.scenes.length === 0);
 
 	/** Drawing-buffer size cap, to keep the preview fast on large screens. */
@@ -49,10 +47,6 @@
 			editor.player.detach(canvas);
 		};
 	});
-
-	function setAspect(aspect: AspectRatio) {
-		editor.setAspect(aspect);
-	}
 </script>
 
 <section class="stage" aria-label="Preview">
@@ -101,33 +95,20 @@
 	</div>
 
 	<div class="controls">
-		<div class="left"></div>
-		<div class="transport">
-			<IconButton
-				label={editor.playing ? 'Pause' : 'Play'}
-				shortcut="Space"
-				icon={editor.playing ? Pause : Play}
-				variant="ink"
-				size="lg"
-				disabled={empty}
-				onclick={() => editor.togglePlay()}
-			/>
-			<p class="clock mono" data-testid="clock">
-				<span class="now">{formatClock(editor.time)}</span>
-				<span class="of">of</span>
-				<span class="total">{formatClock(editor.duration)}</span>
-			</p>
-		</div>
-		<div class="right">
-			<ChipGroup
-				label="Video shape"
-				variant="segmented"
-				size="sm"
-				options={aspectOptions}
-				value={editor.project.aspect}
-				onchange={setAspect}
-			/>
-		</div>
+		<IconButton
+			label={editor.playing ? 'Pause' : 'Play'}
+			shortcut="Space"
+			icon={editor.playing ? Pause : Play}
+			variant="ink"
+			size="lg"
+			disabled={empty}
+			onclick={() => editor.togglePlay()}
+		/>
+		<p class="clock mono" data-testid="clock">
+			<span class="now">{formatClock(editor.time)}</span>
+			<span class="of">of</span>
+			<span class="total">{formatClock(editor.duration)}</span>
+		</p>
 	</div>
 </section>
 
@@ -243,30 +224,21 @@
 		color: var(--color-muted);
 	}
 
+	/* Play and time, centred under the preview. */
 	.controls {
-		display: grid;
-		grid-template-columns: 1fr auto 1fr;
-		align-items: center;
-		gap: var(--space-4);
-	}
-	.transport {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		gap: var(--space-3);
 	}
 	.clock {
 		display: flex;
 		gap: 0.5ch;
-		min-width: 13ch;
 		font-size: var(--text-md);
 	}
 	.of,
 	.total {
 		color: var(--color-muted);
-	}
-	.right {
-		display: flex;
-		justify-content: flex-end;
 	}
 	@keyframes fade-in {
 		from {

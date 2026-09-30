@@ -120,7 +120,9 @@ test.describe('Phase 3: editing scenes', () => {
 		await page.getByRole('button', { name: /, rename$/ }).click();
 		await page.getByRole('textbox', { name: 'Video title' }).fill('Summer holiday');
 		await page.keyboard.press('Enter');
-		await page.getByRole('radio', { name: '9:16' }).click();
+		await page.evaluate(() =>
+			(window as unknown as { __scenes: { setAspect(a: string): void } }).__scenes.setAspect('9:16')
+		);
 		await seekTo(page, 5);
 		const before = await projectJson(page);
 

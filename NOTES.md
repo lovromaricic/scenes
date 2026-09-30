@@ -288,6 +288,12 @@ npm run check        # svelte-check (TypeScript strict)
   tiles show five-plus different colours in order, then trims to 2s and checks only red and green
   remain.
 
+### 2. Aspect switch removed from the stage
+
+- The 16:9 / 9:16 / 1:1 switch that floated on the right under the preview is gone (the project
+  format control in the top bar replaces it, section 4). The row under the preview holds only the
+  play button and the time, centred under the preview (checked by the layout test).
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
