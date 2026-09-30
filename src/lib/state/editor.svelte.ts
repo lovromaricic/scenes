@@ -135,6 +135,15 @@ export class EditorStore {
 	selectedScene = $derived(this.placed.find((p) => p.scene.id === this.selectedId) ?? null);
 	selectedText = $derived(this.project.texts.find((t) => t.id === this.selectedId) ?? null);
 	selectedSound = $derived(this.project.sounds.find((s) => s.id === this.selectedId) ?? null);
+	/** The scene under the playhead (the last one at the very end). */
+	sceneAtPlayhead = $derived(
+		this.placed.find((p) => this.time >= p.start && this.time < p.end) ?? this.placed.at(-1) ?? null
+	);
+	/**
+	 * The scene whose settings the right column shows: the selected one, or with nothing selected,
+	 * the one under the playhead.
+	 */
+	inspectedScene = $derived(this.selectedId ? this.selectedScene : this.sceneAtPlayhead);
 
 	/**
 	 * @param projectId the project to open
@@ -461,6 +470,11 @@ export class EditorStore {
 	/** Nudge the playhead by `delta` seconds. */
 	nudge(delta: number): void {
 		this.player.seek(this.player.time + delta);
+	}
+
+	/** Deselect everything (the right column then shows the scene under the playhead). */
+	deselect(): void {
+		this.select(null);
 	}
 
 	select(id: string | null): void {

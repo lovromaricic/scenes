@@ -23,7 +23,8 @@
 	}));
 	const speedOptions = SPEEDS.map((s) => ({ ...s, value: s.value as Speed }));
 
-	const placed = $derived(editor.selectedScene);
+	// The selected scene, or with nothing selected, the one under the playhead.
+	const placed = $derived(editor.inspectedScene);
 	const scene = $derived(placed?.scene ?? null);
 	const max = $derived(scene ? maxLength(scene, editor.bounds(scene)) : 60);
 	const playheadInside = $derived(
@@ -33,7 +34,15 @@
 	);
 </script>
 
-<aside class="inspector" aria-label="Settings">
+<!-- Changing the settings of the scene under the playhead selects it (so its outline, framing and
+	rectangle handles show while you work on it). -->
+<aside
+	class="inspector"
+	aria-label="Settings"
+	onpointerdowncapture={() => {
+		if (!editor.selectedId && placed && !editor.cropping) editor.select(placed.scene.id);
+	}}
+>
 	{#if editor.cropping}
 		<CropPanel />
 	{:else if editor.selectedSound}
@@ -131,11 +140,7 @@
 	{:else}
 		<div class="head">
 			<h2 class="serif title">Nothing selected</h2>
-			<p class="subtitle">
-				{editor.project.scenes.length
-					? 'Pick a scene below to change its length, speed or mood.'
-					: 'Add photos or videos to get started.'}
-			</p>
+			<p class="subtitle">Add photos or videos to get started.</p>
 		</div>
 	{/if}
 </aside>

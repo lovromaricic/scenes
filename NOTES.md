@@ -676,6 +676,46 @@ npm run check        # svelte-check (TypeScript strict)
       chooser, gives an identical project.
   - axe: the video menu and the error dialog.
 
+## Selection on the video
+
+- **Nothing selected means "the scene under the playhead".** The store has `sceneAtPlayhead`
+  and `inspectedScene`: the selected scene, or with nothing selected, the one under the
+  playhead. The right column shows `inspectedScene`, so deselecting words switches it to that
+  scene's settings. "Nothing selected" now only appears in an empty project. Pressing on the
+  settings of that scene selects it (capture listener on the column), so its outline, framing
+  overlay and rectangle handles appear while you work on it.
+- **Deselecting.**
+  - A press on the picture that isn't on an on-video item (`data-on-video`: words, a card's
+    rectangle, the reframe handle) deselects.
+  - So does a press on the empty stage around the preview (the stage, its viewport, or the
+    controls row itself, but not the play button).
+  - So does a press on empty storyboard space: between or after scenes, and empty Words or
+    Sound lane space. Presses on the ruler, playhead, cards, pills and transition buttons don't.
+  - Esc deselects. While typing, the typing box handles the first Esc (stops typing), and the
+    second one deselects.
+- **Not deselecting.**
+  - Only those explicit presses deselect: nothing listens for "click outside" on the window.
+    So the right column, the floating toolbar and its popovers, and the font and colour
+    pickers and dialogs never deselect.
+  - Drags start on the item itself (with pointer capture), so releasing anywhere keeps the
+    selection.
+  - Esc in an open picker closes the picker only.
+- **Card rectangles are now on-video items.** When a card is under the playhead, its rectangle
+  can be pressed to select the card and dragged straight away. Handles, the accent outline and
+  the size label show only while the card is selected; otherwise there's a dashed outline on
+  hover.
+- Tests (`e2e/selection.test.ts`):
+  - Empty picture, stage background, and Esc (including the Esc while typing) deselect, and the
+    toolbar disappears.
+  - Colour fields, opacity, the font picker (and Esc in it) and the toolbar's Style popover keep
+    the words selected.
+  - Dragging words and releasing over the storyboard keeps them selected.
+  - Other words take the selection; a scene card selects the scene; empty scene-row and
+    Words-lane space deselect, and the settings follow the playhead.
+  - Rectangle: resizing and releasing outside the preview keeps it selected; empty picture and
+    Esc hide the handles (the card's settings stay); clicking the rectangle selects it; changing
+    the card's settings selects it.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

@@ -243,6 +243,7 @@
 		<div
 			class="text-box"
 			class:selected={isSelected}
+			data-on-video
 			style:left="{b.left}px"
 			style:top="{b.top}px"
 			style:width="{b.width}px"

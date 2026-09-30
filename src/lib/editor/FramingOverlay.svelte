@@ -180,6 +180,7 @@
 	<button
 		type="button"
 		class="handle"
+		data-on-video
 		aria-label="Reframe: drag to move the picture, scroll or pinch to zoom, or use the arrow keys and + / −"
 		style:left="{Math.min(0, rect.x)}px"
 		style:top="{Math.min(0, rect.y)}px"

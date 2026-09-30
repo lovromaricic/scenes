@@ -45,6 +45,23 @@
 	/** Drawing-buffer size cap, to keep the preview fast on large screens. */
 	const MAX_PREVIEW_WIDTH = 1920;
 
+	/**
+	 * A click on the picture that isn't on words, a card's rectangle or the reframe handle, or a
+	 * click on the empty stage around it, deselects. (Drags of an item start on the item itself,
+	 * so releasing the mouse anywhere never deselects.)
+	 */
+	function onpreviewpointerdown(event: PointerEvent) {
+		if (event.button !== 0 || editor.cropping) return;
+		if ((event.target as Element).closest('[data-on-video], button, [role="dialog"], [role="menu"]')) return;
+		editor.deselect();
+	}
+
+	function onstagepointerdown(event: PointerEvent) {
+		if (event.button !== 0 || editor.cropping) return;
+		const target = event.target as Element;
+		if (target === event.currentTarget || target.matches('.viewport, .controls, .clock')) editor.deselect();
+	}
+
 	onMount(() => {
 		editor.player.attach(canvas);
 		const observer = new ResizeObserver((entries) => {
@@ -69,7 +86,8 @@
 	});
 </script>
 
-<section class="stage" aria-label="Preview">
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc deselects from the keyboard) -->
+<section class="stage" aria-label="Preview" onpointerdown={onstagepointerdown}>
 	<div class="viewport" class:framing>
 		<div
 			class="preview"
@@ -77,6 +95,7 @@
 			class:reshaping
 			class:cropping={!!editor.cropping}
 			role="presentation"
+			onpointerdown={onpreviewpointerdown}
 			ondblclick={() => {
 				// Double-click the picture to crop the scene under the playhead.
 				if (!editor.cropping && !empty) editor.enterCrop();

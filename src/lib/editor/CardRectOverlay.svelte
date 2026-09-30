@@ -18,7 +18,8 @@
 
 	const editor = useEditor();
 
-	const placed = $derived(editor.selectedScene);
+	// The card under the playhead (or the selected one): its rectangle can be clicked to select it.
+	const placed = $derived(editor.inspectedScene);
 	const scene = $derived(placed?.scene.kind === 'card' ? placed.scene : null);
 	const rect = $derived(scene?.card?.rect ?? null);
 	const format = $derived(editor.project.format);
@@ -30,6 +31,8 @@
 			editor.time >= placed.start &&
 			editor.time < placed.end
 	);
+	/** Handles and the size label show only while the card is selected. */
+	const selected = $derived(!!scene && editor.selectedId === scene.id);
 	const px = $derived(rect ? rectToPixels(rect, format) : null);
 	/** Preview pixels per project pixel. */
 	const scale = $derived(width / format.width);
@@ -54,9 +57,11 @@
 	}
 
 	function onpointerdown(event: PointerEvent, handle: CropHandle) {
-		if (event.button !== 0 || !px) return;
+		if (event.button !== 0 || !px || !scene) return;
 		event.preventDefault();
 		event.stopPropagation();
+		// Clicking the rectangle selects its card; it can be dragged straight away.
+		if (!selected) editor.select(scene.id);
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		editor.beginGesture();
 		dragging = {
@@ -124,6 +129,8 @@
 	{@const h = px.h * scale}
 	<div
 		class="box"
+		class:selected
+		data-on-video
 		style:left="{left}px"
 		style:top="{top}px"
 		style:width="{w}px"
@@ -132,6 +139,7 @@
 		<button
 			type="button"
 			class="move"
+			aria-pressed={selected}
 			aria-label="Rectangle, {px.w} by {px.h}. Drag to move, arrow keys to nudge."
 			onpointerdown={(e) => onpointerdown(e, 'move')}
 			{onpointermove}
@@ -139,7 +147,7 @@
 			onpointercancel={onpointerup}
 			{onkeydown}
 		></button>
-		{#each HANDLES as handle (handle)}
+		{#each selected ? HANDLES : [] as handle (handle)}
 			<span
 				class="handle {handle}"
 				data-rect-handle={handle}
@@ -151,6 +159,7 @@
 			></span>
 		{/each}
 	</div>
+	{#if selected}
 	<span
 		class="size mono"
 		data-testid="rect-size"
@@ -159,13 +168,19 @@
 	>
 		{px.w} × {px.h}
 	</span>
+	{/if}
 {/if}
 
 <style>
 	.box {
 		position: absolute;
 		z-index: 4;
+	}
+	.box.selected {
 		outline: 1.5px solid var(--color-accent);
+	}
+	.box:not(.selected):hover {
+		outline: 1.5px dashed color-mix(in srgb, var(--color-bg) 80%, transparent);
 	}
 	.move {
 		position: absolute;

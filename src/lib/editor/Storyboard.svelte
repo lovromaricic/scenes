@@ -352,6 +352,19 @@
 		else return;
 		event.preventDefault();
 	}
+
+	/**
+	 * Clicking empty space in the storyboard (between or after the scenes, or in the Words and
+	 * Sound lanes) deselects everything; the settings show the scene under the playhead.
+	 */
+	function onEmptyPointerDown(event: PointerEvent) {
+		if (event.button !== 0 || editor.cropping) return;
+		const target = event.target as Element;
+		const onItem = target.closest(
+			'button, [role="button"], .card-slot, .pill-slot, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
+		);
+		if (!onItem) editor.deselect();
+	}
 </script>
 
 {#if picker && pickerScene}
@@ -371,7 +384,8 @@
 	/>
 {/if}
 
-<section class="storyboard" aria-label="Storyboard">
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc deselects from the keyboard) -->
+<section class="storyboard" aria-label="Storyboard" onpointerdown={onEmptyPointerDown}>
 	<div class="labels" aria-hidden="true">
 		<span class="label ruler-label"></span>
 		<span class="label scenes-label">Scenes</span>
