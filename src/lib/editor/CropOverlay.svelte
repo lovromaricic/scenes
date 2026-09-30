@@ -17,12 +17,8 @@
 
 	const editor = useEditor();
 
-	const scene = $derived(
-		editor.cropping
-			? (editor.project.scenes.find((s) => s.id === editor.cropping!.sceneId) ?? null)
-			: null
-	);
-	const source = $derived(scene ? editor.sourceSize(scene) : null);
+	// What's being cropped: a scene or a layer (its source picture's size).
+	const source = $derived(editor.croppingSource);
 	// The player shows the whole clip fitted into the preview; the box sits over that.
 	const clip = $derived(
 		source

@@ -868,6 +868,51 @@ npm run check        # svelte-check (TypeScript strict)
   dragged down with the marker showing becomes a scene at that position with the whole
   clip, and one undo restores it. Stress-tested with 4 workers.
 
+### 5. Overlay settings and editing
+
+- **On the preview** (`OverlayBoxOverlay.svelte`, under the words and over the scenes). Layers
+  showing at the playhead are on-video items (`data-on-video`), so the deselect rules from the
+  selection round apply as they are.
+  - Pressing a layer selects it and can drag it straight away; higher rows sit on top here too.
+  - Selected: accent outline, 8 handles, and a live size label in project pixels (hidden while
+    a popover is open).
+  - Resizing uses the same `dragBox` as crop and card rectangles: unbounded, snapping to the
+    frame's edges and centre lines.
+  - Corners keep a photo's or video's proportions unless Shift is held (cards: Shift keeps them).
+    Edges change the shape, and the picture fills the box without stretching (cover).
+  - Arrow keys nudge (Shift ×10). Each drag is one undo step.
+- **Floating toolbar**: Crop (not for cards), Style, Animate, Remove. Style and Animate open
+  popovers with the same controls as the right column (`OverlayStyleFields`,
+  `OverlayAnimationFields`).
+- **Right column** (`OverlayInspector.svelte`):
+  - Position and size: X, Y, W, H in pixels, plus corner and centre placement (4% margin of the
+    shorter side).
+  - Crop / Change crop / Remove crop.
+  - Style: corners, border thickness and colour, shadow off/soft/strong, opacity.
+  - Timing: start and length steppers. Length is capped by the clip and by the end of the video.
+  - Animation: comes in / goes out.
+  - Sound, for videos: a switch, then volume.
+  - Layer order: Bring forward, Send back.
+  - For card layers: background and rectangle, through `CardContentFields`. It's extracted from
+    the card scene settings, which use it too; the rectangle is measured in the layer's box.
+- **Crop** reuses the crop tool: `cropping.sceneId` can be a layer id. `croppingSource` gives the
+  source size for either, and the player shows the layer's whole source (section 6). Applying
+  a crop gives the box the cropped picture's shape around the same centre (`fitShape`).
+  - Found by the e2e test: a tall crop was first capped at the frame's height without narrowing
+    the width, which distorted the shape. `fitShape` now keeps proportions and makes the box
+    narrower if it would be taller than 90% of the frame.
+- Tests (e2e):
+  - Toolbar contents; deselect and reselect; move with snapping to the exact centre (toolbar
+    hidden while dragging); corner resize keeps 16:9 with a live size label, Shift frees it;
+    undo; Esc.
+  - Crop to the blue third: preview pixel and shape; Remove crop.
+  - Every right-column section: fields, bottom-right placement, style values, the layer stays
+    selected while editing, timing (the clip-length cap disables Longer), in/out animation,
+    sound switch and volume, Bring forward / Send back against another layer.
+  - A card layer: Card section, no Crop or Sound, background colour on the preview, Add
+    rectangle.
+  - axe on the layer panel, toolbar and Style popover.
+
 ### 6. Rendering (done before section 5)
 
 Built before the settings panel because the panel's crop, corners, border and shadow can only be

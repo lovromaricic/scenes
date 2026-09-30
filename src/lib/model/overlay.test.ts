@@ -6,6 +6,7 @@ import {
 	assignRow,
 	compactRows,
 	defaultBox,
+	fitShape,
 	linkAt,
 	maxOverlayDuration,
 	overlayAnimation,
@@ -129,6 +130,17 @@ describe('overlay limits and layout', () => {
 		const tall = defaultBox({ width: 360, height: 640 }, { width: 1920, height: 1080 });
 		expect(tall.h).toBeLessThanOrEqual(0.9);
 		expect((tall.w * 1920) / (tall.h * 1080)).toBeCloseTo(360 / 640);
+	});
+	it('takes a picture’s shape, keeping its centre (narrower if it would be too tall)', () => {
+		const frame = { width: 1280, height: 720 };
+		const wide = fitShape({ x: 0.3, y: 0.3, w: 0.4, h: 0.4 }, { width: 640, height: 360 }, frame);
+		expect(wide.w).toBeCloseTo(0.4);
+		expect((wide.w * 1280) / (wide.h * 720)).toBeCloseTo(16 / 9);
+		expect(wide.y + wide.h / 2).toBeCloseTo(0.5);
+		const tall = fitShape({ x: 0.3, y: 0.3, w: 0.4, h: 0.4 }, { width: 213, height: 360 }, frame);
+		expect(tall.h).toBeCloseTo(0.9);
+		expect((tall.w * 1280) / (tall.h * 720)).toBeCloseTo(213 / 360);
+		expect(tall.x + tall.w / 2).toBeCloseTo(0.5);
 	});
 	it('places boxes in corners with a margin', () => {
 		const box = { x: 0.3, y: 0.3, w: 0.4, h: 0.4 };

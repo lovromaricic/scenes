@@ -35,6 +35,7 @@ import {
 	placeOverlays,
 	relinkByTime,
 	sendBack,
+	fitShape,
 	type Overlay,
 	type OverlayBox,
 	type OverlayStyle
@@ -558,7 +559,7 @@ export class EditorStore {
 	// ─── Crop ───────────────────────────────────────────────────────────────────────────────
 
 	/** A scene's source picture size, in pixels. */
-	sourceSize(scene: Scene): Size | null {
+	sourceSize(scene: Pick<Scene, 'mediaId'>): Size | null {
 		const info = this.media[scene.mediaId];
 		return info ? { width: info.width, height: info.height } : null;
 	}
@@ -570,8 +571,23 @@ export class EditorStore {
 	enterCrop(sceneId?: string): void {
 		const id =
 			sceneId ??
+			this.selectedOverlay?.overlay.id ??
 			this.selectedScene?.scene.id ??
 			this.placed.find((p) => this.time >= p.start && this.time < p.end)?.scene.id;
+		// A layer: its own picture is cropped the same way.
+		const layer = this.placedOverlays.find((p) => p.overlay.id === id);
+		if (layer) {
+			const o = layer.overlay;
+			const size = this.sourceSize(o);
+			if (o.kind === 'card' || !size) return;
+			this.stopEditingText();
+			this.player.pause();
+			this.selectedId = o.id;
+			if (!(this.time >= layer.start && this.time < layer.end)) this.seek(layer.start);
+			this.cropping = { sceneId: o.id, draft: o.crop ? { ...o.crop } : fullCrop(size), ratio: 'free' };
+			this.player.setCropView(o.id);
+			return;
+		}
 		const placed = this.placed.find((p) => p.scene.id === id);
 		const size = placed && this.sourceSize(placed.scene);
 		// Cards have nothing to crop.
@@ -588,11 +604,18 @@ export class EditorStore {
 		this.player.setCropView(placed.scene.id);
 	}
 
+	/** The source size of what's being cropped (a scene or a layer). */
+	croppingSource = $derived.by(() => {
+		const id = this.cropping?.sceneId;
+		if (!id) return null;
+		const item = this.project.scenes.find((s) => s.id === id) ?? this.project.overlays.find((o) => o.id === id);
+		return item ? this.sourceSize(item) : null;
+	});
+
 	/** Change the crop being edited (not an undo step until Done). */
 	setCropDraft(crop: Crop): void {
 		if (!this.cropping) return;
-		const scene = this.project.scenes.find((s) => s.id === this.cropping!.sceneId);
-		const size = scene && this.sourceSize(scene);
+		const size = this.croppingSource;
 		if (!size) return;
 		this.cropping = { ...this.cropping, draft: clampCrop(crop, size) };
 	}
@@ -601,8 +624,7 @@ export class EditorStore {
 	setCropRatio(ratio: CropRatio): void {
 		const c = this.cropping;
 		if (!c) return;
-		const scene = this.project.scenes.find((s) => s.id === c.sceneId);
-		const size = scene && this.sourceSize(scene);
+		const size = this.croppingSource;
 		if (!size) return;
 		const value = cropRatioValue(ratio, size, this.project.format);
 		this.cropping = { ...c, ratio, draft: value ? cropToRatio(c.draft, value, size) : c.draft };
@@ -618,6 +640,19 @@ export class EditorStore {
 	applyCrop(): void {
 		const c = this.cropping;
 		if (!c) return;
+		const layer = this.project.overlays.find((o) => o.id === c.sceneId);
+		if (layer) {
+			const size = this.croppingSource;
+			this.cancelCrop();
+			if (!size) return;
+			const crop = isFull(c.draft, size) ? undefined : { ...c.draft };
+			if (JSON.stringify(crop) === JSON.stringify(layer.crop)) return;
+			// The box keeps its centre (and width, if it fits) and takes the cropped picture's shape.
+			const picture = crop ? { width: crop.w, height: crop.h } : size;
+			const box = fitShape(layer.box, picture, this.project.format);
+			this.updateOverlay(crop ? 'Crop' : 'Remove crop', layer.id, (o) => ({ ...o, crop, box }));
+			return;
+		}
 		const scene = this.project.scenes.find((s) => s.id === c.sceneId);
 		const size = scene && this.sourceSize(scene);
 		this.cancelCrop();
@@ -1104,6 +1139,15 @@ export class EditorStore {
 		// $state.snapshot, not structuredClone: the card may contain reactive proxies.
 		const copy = $state.snapshot(card) as CardContent;
 		this.updateOverlay('Card', id, (o) => ({ ...o, card: copy }), key);
+	}
+
+	/** Remove a layer's crop (its box takes the whole picture's shape, keeping its width). */
+	removeOverlayCrop(id: string): void {
+		const o = this.project.overlays.find((x) => x.id === id);
+		const size = o && this.sourceSize(o);
+		if (!o?.crop || !size) return;
+		const box = fitShape(o.box, size, this.project.format);
+		this.updateOverlay('Remove crop', id, (x) => ({ ...x, crop: undefined, box }));
 	}
 
 	/** Move a layer up a row (drawn over more), or down (drawn under more). */

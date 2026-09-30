@@ -91,6 +91,27 @@ export function defaultBox(
 	return { x: (1 - fitW) / 2, y: (1 - h) / 2, w: fitW, h };
 }
 
+/**
+ * The same box with a picture's proportions: it keeps its centre and width, unless that would be
+ * taller than 90% of the frame, then it's narrower instead.
+ */
+export function fitShape(
+	box: OverlayBox,
+	picture: { width: number; height: number },
+	frame: { width: number; height: number }
+): OverlayBox {
+	const ratio = (picture.width / picture.height) * (frame.height / frame.width); // w / h in fractions
+	let w = box.w;
+	let h = w / ratio;
+	if (h > 0.9) {
+		h = 0.9;
+		w = h * ratio;
+	}
+	const cx = box.x + box.w / 2;
+	const cy = box.y + box.h / 2;
+	return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+
 /** When an overlay starts on the timeline. */
 export function overlayStart(o: Pick<Overlay, 'sceneId' | 'offset'>, placed: PlacedScene[]): number {
 	const scene = o.sceneId ? placed.find((p) => p.scene.id === o.sceneId) : undefined;

@@ -79,6 +79,22 @@ test.describe('Accessibility', () => {
 		await check(page);
 	});
 
+	test('a selected layer: its panel, toolbar and style popover, and the Layers track', async ({ page }) => {
+		await openNewVideo(page);
+		await importViaPicker(page, ['red.mp4', 'blue.webm'], 'Choose photos & videos');
+		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
+		await page.evaluate(() => {
+			const s = (window as unknown as { __scenes: { media: Record<string, { id: string; name: string }>; addOverlayFromMedia(id: string, t: number): string } }).__scenes;
+			s.addOverlayFromMedia(Object.values(s.media).find((m) => m.name === 'blue.webm')!.id, 0.5);
+		});
+		await expect(page.getByRole('toolbar', { name: 'Layer options' })).toBeVisible();
+		await page.waitForTimeout(4000); // let toasts settle
+		await check(page);
+		await page.getByRole('toolbar', { name: 'Layer options' }).getByRole('button', { name: 'Style' }).click();
+		await expect(page.getByRole('dialog', { name: 'Layer style' })).toBeVisible();
+		await check(page);
+	});
+
 	test('design page', async ({ page }) => {
 		await page.goto('/design');
 		await check(page);

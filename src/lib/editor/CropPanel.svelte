@@ -11,12 +11,8 @@
 
 	const editor = useEditor();
 
-	const scene = $derived(
-		editor.cropping
-			? (editor.project.scenes.find((s) => s.id === editor.cropping!.sceneId) ?? null)
-			: null
-	);
-	const source = $derived(scene ? editor.sourceSize(scene) : null);
+	// What's being cropped: a scene or a layer (its source picture's size).
+	const source = $derived(editor.croppingSource);
 	const draft = $derived(editor.cropping?.draft ?? null);
 	const sides = $derived(draft && source ? sidesOf(draft, source) : null);
 
@@ -35,7 +31,7 @@
 	}
 </script>
 
-{#if scene && source && draft && sides}
+{#if source && draft && sides}
 	<div class="head">
 		<h2 class="serif title">Crop</h2>
 		<p class="subtitle">Drag the box on the preview, or type how much to cut from each side.</p>
