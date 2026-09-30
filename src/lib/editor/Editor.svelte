@@ -73,6 +73,29 @@
 	function onkeydown(event: KeyboardEvent) {
 		// Full-screen watching and dialogs handle their own keys.
 		if (watching || saving || showShortcuts) return;
+
+		// Crop mode: Enter applies, Esc cancels; editing shortcuts wait until it's done.
+		if (editor.cropping) {
+			if (event.key === 'Enter') {
+				// Enter on a focused button in the crop panel presses it (e.g. Cancel), not Done.
+				if ((event.target as HTMLElement).closest('.inspector button')) return;
+				event.preventDefault();
+				editor.applyCrop();
+			} else if (event.key === 'Escape') {
+				event.preventDefault();
+				editor.cancelCrop();
+			} else if (event.key === ' ') {
+				event.preventDefault();
+			} else if (
+				!isTyping(event.target) &&
+				(event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+			) {
+				// Scrubbing still works, to check other moments of the clip.
+				event.preventDefault();
+				editor.nudge((event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 1 : 1 / 30));
+			}
+			return;
+		}
 		const mod = event.metaKey || event.ctrlKey;
 		const key = event.key.toLowerCase();
 
@@ -104,6 +127,11 @@
 				// Space always plays/pauses, even when a button has focus (Enter still presses buttons).
 				event.preventDefault();
 				if (editor.project.scenes.length) editor.togglePlay();
+				break;
+			case 'c':
+			case 'C':
+				event.preventDefault();
+				editor.enterCrop();
 				break;
 			case 's':
 			case 'S':

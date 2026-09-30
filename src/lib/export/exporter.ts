@@ -91,6 +91,8 @@ export interface ExportRequest {
 	project: Project;
 	preset: ExportPreset;
 	bounds: (scene: Scene) => SourceBounds;
+	/** A file's own picture size (crops are measured in it). */
+	sourceSize: (mediaId: string) => { width: number; height: number } | null;
 	hasAudio: (mediaId: string) => boolean;
 	onProgress?: (p: ExportProgress) => void;
 	signal?: AbortSignal;
@@ -194,7 +196,16 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	const layer = async (ref: { placed: PlacedScene; sourceTime: number } | null) => {
 		if (!ref) return null;
 		const frame = await (await readerFor(ref.placed.scene)).frameAt(ref.sourceTime);
-		return frame ? layerInput(frame, ref.placed.scene, project.mood, width, height) : null;
+		return frame
+			? layerInput(
+					frame,
+					ref.placed.scene,
+					project.mood,
+					width,
+					height,
+					request.sourceSize(ref.placed.scene.mediaId) ?? undefined
+				)
+			: null;
 	};
 
 	const clips = projectAudioClips(project, request.hasAudio);

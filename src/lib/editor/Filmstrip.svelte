@@ -6,6 +6,7 @@
 <script lang="ts">
 	import { requestFrames, sampleTimes, type StripFrame } from '$lib/media/filmstrip';
 	import { frameRect, showsBars, type SceneFrame } from '$lib/model/framing';
+	import type { Crop, Size } from '$lib/model/crop';
 
 	interface Props {
 		mediaId: string;
@@ -15,9 +16,12 @@
 		tileAspect: number;
 		/** The scene's framing, drawn the same way as the preview and export. */
 		frame?: SceneFrame;
+		/** The scene's crop, in source pixels, and the source's size. */
+		crop?: Crop;
+		sourceSize?: Size;
 	}
 
-	let { mediaId, sourceStart, sourceEnd, tileAspect, frame }: Props = $props();
+	let { mediaId, sourceStart, sourceEnd, tileAspect, frame, crop, sourceSize }: Props = $props();
 
 	let canvas: HTMLCanvasElement;
 	let width = $state(0);
@@ -42,6 +46,8 @@
 		const th = height;
 		const list = times;
 		const framing = frame;
+		const cropBox = crop;
+		const srcSize = sourceSize;
 
 		const draw = (i: number, img: StripFrame) => {
 			if (gen !== generation) return;
@@ -50,21 +56,26 @@
 			ctx.beginPath();
 			ctx.rect(x, 0, tw, th);
 			ctx.clip();
-			// The same framing as the preview: bars first, then the picture at its rectangle.
-			const r = frameRect(framing, img.width, img.height, tw, th);
+			// The crop first (scaled to this small frame), then the same framing as the preview.
+			const k = srcSize ? img.width / srcSize.width : 1;
+			const sx = cropBox ? cropBox.x * k : 0;
+			const sy = cropBox ? cropBox.y * k : 0;
+			const sw = cropBox ? cropBox.w * k : img.width;
+			const sh = cropBox ? cropBox.h * k : img.height;
+			const r = frameRect(framing, sw, sh, tw, th);
 			if (showsBars(r, tw, th)) {
 				const bars = framing?.bars ?? 'black';
 				if (bars === 'blur') {
-					const c = frameRect(undefined, img.width, img.height, tw, th);
+					const c = frameRect(undefined, sw, sh, tw, th);
 					ctx.filter = `blur(${Math.max(2, th / 14)}px) brightness(0.85)`;
-					ctx.drawImage(img.image, x + c.x, c.y, c.w, c.h);
+					ctx.drawImage(img.image, sx, sy, sw, sh, x + c.x, c.y, c.w, c.h);
 					ctx.filter = 'none';
 				} else {
 					ctx.fillStyle = bars === 'white' ? '#ffffff' : '#000000';
 					ctx.fillRect(x, 0, tw, th);
 				}
 			}
-			ctx.drawImage(img.image, x + r.x, r.y, r.w, r.h);
+			ctx.drawImage(img.image, sx, sy, sw, sh, x + r.x, r.y, r.w, r.h);
 			ctx.restore();
 		};
 

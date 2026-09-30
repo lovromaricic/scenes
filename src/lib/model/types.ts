@@ -6,6 +6,7 @@
 
 import type { ProjectFormat } from './format';
 import type { SceneFrame } from './framing';
+import type { Crop } from './crop';
 
 /** Shapes offered by the design-page demo switch. Projects use `ProjectFormat`. */
 export type AspectRatio = '16:9' | '9:16' | '1:1';
@@ -44,6 +45,8 @@ export interface Scene {
 	transition: Transition;
 	/** How the picture fits the video's shape (missing = Fill). */
 	frame?: SceneFrame;
+	/** Part of the source kept, in source pixels, applied before framing (missing = whole clip). */
+	crop?: Crop;
 }
 
 export interface TextItem {

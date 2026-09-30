@@ -271,7 +271,10 @@
 					{onpointermove}
 					{onpointerup}
 					onpointercancel={onpointerup}
-					ondblclick={() => startEditing(item.id)}
+					ondblclick={(e) => {
+						e.stopPropagation();
+						startEditing(item.id);
+					}}
 					onkeydown={(e) => onkeydown(e, item)}
 				></button>
 			{/if}

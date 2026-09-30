@@ -8,6 +8,7 @@
 	import { onMount } from 'svelte';
 	import { clampFrame, DEFAULT_FRAME, frameRect, type SceneFrame } from '$lib/model/framing';
 	import { sourceTimeAt } from '$lib/playback/time';
+	import { croppedSize } from '$lib/model/crop';
 	import { useEditor } from '$lib/state/context';
 
 	interface Props {
@@ -22,17 +23,20 @@
 	const placed = $derived(editor.selectedScene);
 	const scene = $derived(placed?.scene ?? null);
 	const info = $derived(scene ? editor.media[scene.mediaId] : null);
+	/** What framing works with: the cropped part of the clip. */
+	const size = $derived(info && scene ? croppedSize(scene.crop, info) : null);
 	const frame = $derived(scene?.frame ?? DEFAULT_FRAME);
 	const active = $derived(
 		!!placed &&
 			!!info &&
 			frame.mode === 'custom' &&
+			!editor.cropping &&
 			!editor.playing &&
 			editor.time >= placed.start &&
 			editor.time < placed.end
 	);
 	const rect = $derived(
-		info && active ? frameRect(frame, info.width, info.height, width, height) : null
+		size && active ? frameRect(frame, size.width, size.height, width, height) : null
 	);
 
 	// The ghost picture: the decoded frame at the playhead, drawn into a canvas the size of `rect`.
@@ -52,7 +56,11 @@
 			lastImage = image;
 			ghost.width = w;
 			ghost.height = h;
-			ghost.getContext('2d')?.drawImage(image as CanvasImageSource, 0, 0, w, h);
+			// Only the cropped part of the picture, like the preview.
+			const img = image as HTMLCanvasElement | ImageBitmap;
+			const k = info ? img.width / info.width : 1;
+			const c = scene?.crop ?? { x: 0, y: 0, w: img.width / k, h: img.height / k };
+			ghost.getContext('2d')?.drawImage(img, c.x * k, c.y * k, c.w * k, c.h * k, 0, 0, w, h);
 		};
 		raf = requestAnimationFrame(tick);
 		return () => cancelAnimationFrame(raf);
@@ -65,11 +73,11 @@
 	let start: { frame: SceneFrame; x: number; y: number; distance: number } | null = null;
 
 	function clamped(f: SceneFrame): SceneFrame {
-		return info
+		return size
 			? clampFrame(
 					f,
-					info.width,
-					info.height,
+					size.width,
+					size.height,
 					editor.project.format.width,
 					editor.project.format.height
 				)

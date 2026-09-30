@@ -10,6 +10,7 @@
 	import TextInspector from './TextInspector.svelte';
 	import SoundInspector from './SoundInspector.svelte';
 	import FrameSettings from './FrameSettings.svelte';
+	import CropPanel from './CropPanel.svelte';
 
 	const editor = useEditor();
 
@@ -32,7 +33,9 @@
 </script>
 
 <aside class="inspector" aria-label="Settings">
-	{#if editor.selectedSound}
+	{#if editor.cropping}
+		<CropPanel />
+	{:else if editor.selectedSound}
 		{#key editor.selectedSound.id}
 			<SoundInspector sound={editor.selectedSound} />
 		{/key}

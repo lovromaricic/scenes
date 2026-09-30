@@ -15,6 +15,8 @@
 		scene?: Scene;
 		/** Width ÷ height of the video, for filmstrip tiles. */
 		tileAspect?: number;
+		/** The source file's picture size (for the crop). */
+		sourceSize?: { width: number; height: number };
 		selected?: boolean;
 		onselect?: () => void;
 		onkeydown?: (event: KeyboardEvent) => void;
@@ -28,6 +30,7 @@
 		thumbnail,
 		scene,
 		tileAspect = 16 / 9,
+		sourceSize,
 		selected = false,
 		onselect,
 		onkeydown
@@ -54,6 +57,8 @@
 				sourceEnd={scene.sourceEnd}
 				{tileAspect}
 				frame={scene.frame}
+				crop={scene.crop}
+				{sourceSize}
 			/>
 		{/if}
 	</span>

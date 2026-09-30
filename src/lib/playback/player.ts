@@ -10,6 +10,8 @@ import {
 import { placeScenes, type PlacedScene } from '$lib/model/timeline';
 import { compose, type Composition, type LayerRef } from '$lib/model/composition';
 import type { SourceBounds } from '$lib/model/edits';
+import type { Size } from '$lib/model/crop';
+import { DEFAULT_FRAME } from '$lib/model/framing';
 import type { MoodId, Project, Scene, TextItem } from '$lib/model/types';
 import {
 	Compositor,
@@ -26,6 +28,8 @@ export interface MediaLookup {
 	hasAudio(mediaId: string): boolean;
 	/** The usable source range of a scene's file. */
 	bounds(scene: Scene): SourceBounds;
+	/** The file's own picture size in pixels (crops are measured in it). */
+	sourceSize(mediaId: string): Size | null;
 }
 
 /**
@@ -63,7 +67,8 @@ export class Player {
 	private mood: MoodId = 'natural';
 	private lookup: MediaLookup = {
 		hasAudio: () => false,
-		bounds: (s) => ({ start: s.sourceStart, end: s.sourceEnd })
+		bounds: (s) => ({ start: s.sourceStart, end: s.sourceEnd }),
+		sourceSize: () => null
 	};
 	private hasAudio = (mediaId: string) => this.lookup.hasAudio(mediaId);
 
@@ -76,6 +81,8 @@ export class Player {
 	private lastDrawnKey = '';
 	private events: PlayerEvents = {};
 	private startToken = 0;
+	/** While cropping, show this scene's whole source picture (no crop, fitted, no words). */
+	private cropViewId: string | null = null;
 	/** While trimming, show this scene's frame at this source time instead of the playhead's. */
 	private peekTarget: { sceneId: string; sourceTime: number } | null = null;
 
@@ -225,6 +232,12 @@ export class Player {
 		if (this.playing) void this.startAudio();
 	}
 
+	/** Show a scene's whole, uncropped source (crop mode), or `null` to go back to normal. */
+	setCropView(sceneId: string | null): void {
+		this.cropViewId = sceneId;
+		this.dirty = true;
+	}
+
 	hideText(id: string | null): void {
 		this.hiddenTextId = id;
 		this.dirty = true;
@@ -314,7 +327,14 @@ export class Player {
 	private layerInput(ref: LayerRef, playing: boolean): LayerInput | null {
 		const frame = this.layerFrame(ref, playing);
 		return frame && this.canvas
-			? layerInput(frame, ref.placed.scene, this.mood, this.canvas.width, this.canvas.height)
+			? layerInput(
+					frame,
+					ref.placed.scene,
+					this.mood,
+					this.canvas.width,
+					this.canvas.height,
+					this.lookup.sourceSize(ref.placed.scene.mediaId) ?? undefined
+				)
 			: null;
 	}
 
@@ -385,13 +405,46 @@ export class Player {
 
 		this.manageSources(t);
 		let composite: CompositeFrame;
-		if (this.peekTarget) {
+		const cropPlaced = this.cropViewId
+			? this.placed.find((p) => p.scene.id === this.cropViewId)
+			: null;
+		if (cropPlaced) {
+			const whole: Scene = {
+				...cropPlaced.scene,
+				crop: undefined,
+				frame: { ...DEFAULT_FRAME, mode: 'fit' }
+			};
+			const ref = {
+				placed: { ...cropPlaced, scene: whole },
+				sourceTime: sourceTimeAt(cropPlaced, t)
+			};
+			const frame = this.layerFrame(ref, false);
+			composite = {
+				a: frame
+					? layerInput(
+							frame,
+							whole,
+							this.mood,
+							this.canvas.width,
+							this.canvas.height,
+							this.lookup.sourceSize(whole.mediaId) ?? undefined
+						)
+					: null
+			};
+		} else if (this.peekTarget) {
 			const frame = this.peekFrame(this.peekTarget);
 			const scene = this.scenes.find((s) => s.id === this.peekTarget!.sceneId);
 			composite = {
 				a:
 					frame && scene
-						? layerInput(frame, scene, this.mood, this.canvas.width, this.canvas.height)
+						? layerInput(
+								frame,
+								scene,
+								this.mood,
+								this.canvas.width,
+								this.canvas.height,
+								this.lookup.sourceSize(scene.mediaId) ?? undefined
+							)
 						: null
 			};
 		} else {
@@ -402,7 +455,7 @@ export class Player {
 				transition: c.transition
 			};
 		}
-		const texts = this.textDraws(t, this.canvas.width, this.canvas.height);
+		const texts = cropPlaced ? [] : this.textDraws(t, this.canvas.width, this.canvas.height);
 		composite.texts = texts;
 		const layerKey = (l: LayerInput | null | undefined) =>
 			l

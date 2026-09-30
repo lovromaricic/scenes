@@ -36,6 +36,16 @@ import { TEXT_ENTER } from '$lib/model/textAnimation';
 import { TRANSITION_SECONDS } from '$lib/model/composition';
 import { formatFromClip, legacyFormat, type ProjectFormat } from '$lib/model/format';
 import { DEFAULT_FRAME, type SceneFrame } from '$lib/model/framing';
+import {
+	clampCrop,
+	cropRatioValue,
+	cropToRatio,
+	fullCrop,
+	isFull,
+	type Crop,
+	type CropRatio,
+	type Size
+} from '$lib/model/crop';
 import type {
 	MoodId,
 	Project,
@@ -83,6 +93,8 @@ export class EditorStore {
 	canUndo = $state(false);
 	canRedo = $state(false);
 	saveStatus = $state<SaveStatus>('idle');
+	/** Crop mode: which scene, and the crop being edited (applied on Done). */
+	cropping = $state<{ sceneId: string; draft: Crop; ratio: CropRatio } | null>(null);
 	/** The text currently being typed into on the preview. */
 	editingTextId = $state<string | null>(null);
 	/** Waveform peaks by media id (not deeply reactive: arrays are replaced, never mutated). */
@@ -313,11 +325,14 @@ export class EditorStore {
 		const media = this.media;
 		this.player.setProject(this.snapshot(), {
 			hasAudio: (id) => !!media[id]?.hasAudio,
-			bounds: (scene) => this.bounds(scene)
+			bounds: (scene) => this.bounds(scene),
+			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null)
 		});
 	}
 
 	togglePlay(): void {
+		// Playback pauses while cropping (scrubbing still works).
+		if (this.cropping) return;
 		this.player.unlockAudio();
 		this.player.toggle();
 		if (!this.player.playing) this.scheduleSave();
@@ -377,6 +392,88 @@ export class EditorStore {
 
 	setSceneSpeed(id: string, speed: Speed): void {
 		this.updateScene('Speed', id, (s) => setSpeed(s, speed));
+	}
+
+	// ─── Crop ───────────────────────────────────────────────────────────────────────────────
+
+	/** A scene's source picture size, in pixels. */
+	sourceSize(scene: Scene): Size | null {
+		const info = this.media[scene.mediaId];
+		return info ? { width: info.width, height: info.height } : null;
+	}
+
+	/**
+	 * Start cropping a scene (default: the selected one, or the one under the playhead). Playback
+	 * pauses, the preview shows the whole source clip, and the playhead moves into the scene.
+	 */
+	enterCrop(sceneId?: string): void {
+		const id =
+			sceneId ??
+			this.selectedScene?.scene.id ??
+			this.placed.find((p) => this.time >= p.start && this.time < p.end)?.scene.id;
+		const placed = this.placed.find((p) => p.scene.id === id);
+		const size = placed && this.sourceSize(placed.scene);
+		if (!placed || !size) return;
+		this.stopEditingText();
+		this.player.pause();
+		this.selectedId = placed.scene.id;
+		if (!(this.time >= placed.start && this.time < placed.end)) this.seek(placed.start);
+		this.cropping = {
+			sceneId: placed.scene.id,
+			draft: placed.scene.crop ? { ...placed.scene.crop } : fullCrop(size),
+			ratio: 'free'
+		};
+		this.player.setCropView(placed.scene.id);
+	}
+
+	/** Change the crop being edited (not an undo step until Done). */
+	setCropDraft(crop: Crop): void {
+		if (!this.cropping) return;
+		const scene = this.project.scenes.find((s) => s.id === this.cropping!.sceneId);
+		const size = scene && this.sourceSize(scene);
+		if (!size) return;
+		this.cropping = { ...this.cropping, draft: clampCrop(crop, size) };
+	}
+
+	/** Lock the crop box to a shape; picking one resizes the box to the largest of that shape. */
+	setCropRatio(ratio: CropRatio): void {
+		const c = this.cropping;
+		if (!c) return;
+		const scene = this.project.scenes.find((s) => s.id === c.sceneId);
+		const size = scene && this.sourceSize(scene);
+		if (!size) return;
+		const value = cropRatioValue(ratio, size, this.project.format);
+		this.cropping = { ...c, ratio, draft: value ? cropToRatio(c.draft, value, size) : c.draft };
+	}
+
+	/** Leave crop mode without changing anything. */
+	cancelCrop(): void {
+		this.cropping = null;
+		this.player.setCropView(null);
+	}
+
+	/** Apply the crop being edited: one undo step. */
+	applyCrop(): void {
+		const c = this.cropping;
+		if (!c) return;
+		const scene = this.project.scenes.find((s) => s.id === c.sceneId);
+		const size = scene && this.sourceSize(scene);
+		this.cancelCrop();
+		if (!scene || !size) return;
+		const crop = isFull(c.draft, size) ? undefined : { ...c.draft };
+		if (JSON.stringify(crop) === JSON.stringify(scene.crop)) return;
+		this.updateScene(crop ? 'Crop' : 'Remove crop', scene.id, (s) => ({ ...s, crop }));
+	}
+
+	/** Give every scene made from the same file this scene's crop. */
+	applyCropToClip(sceneId: string): void {
+		const scene = this.project.scenes.find((s) => s.id === sceneId);
+		if (!scene) return;
+		const crop = scene.crop ? { ...scene.crop } : undefined;
+		this.edit('Crop for every scene from this clip', (p) => ({
+			...p,
+			scenes: p.scenes.map((s) => (s.mediaId === scene.mediaId ? { ...s, crop } : s))
+		}));
 	}
 
 	/** How a scene's picture fits the video's shape. `key` merges quick repeats (sliders). */
@@ -619,6 +716,7 @@ export class EditorStore {
 			project: this.snapshot(),
 			preset: presetById(presetId),
 			bounds: (scene) => this.bounds(scene),
+			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null),
 			hasAudio: (id) => !!media[id]?.hasAudio,
 			onProgress,
 			signal

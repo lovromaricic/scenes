@@ -37,6 +37,14 @@ ffmpeg -y -loglevel error \
 	-filter_complex "[0:v][1:v][2:v]hstack=inputs=3,format=yuv420p[v]" -map "[v]" \
 	-c:v libx264 -preset veryfast -g 30 -crf 23 bands.mp4
 
+# A "screen recording": 1280×800 light blue page, a magenta "browser toolbar" across the top
+# 80 pixels, and a dark block in the middle. For crop tests.
+ffmpeg -y -loglevel error \
+	-f lavfi -i "color=c=0xa0c8ff:s=1280x800:r=30:d=3" -f lavfi -i "color=c=magenta:s=1280x80:r=30:d=3" \
+	-f lavfi -i "color=c=0x202020:s=400x240:r=30:d=3" \
+	-filter_complex "[0:v][1:v]overlay=0:0[a];[a][2:v]overlay=440:360,format=yuv420p[v]" -map "[v]" \
+	-c:v libx264 -preset veryfast -g 30 -crf 23 screen.mp4
+
 # A longer clip whose colour changes every second (for scrubbing accuracy), with sparse keyframes.
 ffmpeg -y -loglevel error \
 	-f lavfi -i "color=c=red:s=640x360:r=30:d=1" -f lavfi -i "color=c=0x00ff00:s=640x360:r=30:d=1" \

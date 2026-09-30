@@ -24,6 +24,8 @@ export interface LayerInput {
 	rect: Rect;
 	/** What fills the frame around the picture if it doesn't cover it. */
 	bars: FrameBars;
+	/** Part of the image to use (crop), as u, v (bottom-left), width, height in 0–1. */
+	uv: [number, number, number, number];
 }
 
 /** A text sprite placed on the frame. Positions are in output pixels (y down). */
@@ -65,6 +67,18 @@ out vec2 vUv;
 void main() {
 	vec2 p = aPos * 0.5 + 0.5;
 	vUv = p;
+	gl_Position = vec4(uRect.xy + p * uRect.zw, 0.0, 1.0);
+}`;
+
+/** A scene's picture: like RECT_VS, but samples only the cropped part of the texture. */
+const LAYER_VS = /* glsl */ `#version 300 es
+in vec2 aPos;
+uniform vec4 uRect;
+uniform vec4 uCrop;
+out vec2 vUv;
+void main() {
+	vec2 p = aPos * 0.5 + 0.5;
+	vUv = uCrop.xy + p * uCrop.zw;
 	gl_Position = vec4(uRect.xy + p * uRect.zw, 0.0, 1.0);
 }`;
 
@@ -181,7 +195,7 @@ export class Compositor {
 	private quad!: WebGLVertexArrayObject;
 	private grade!: {
 		program: WebGLProgram;
-		u: Uniforms<'rect' | 'image' | 'gain' | 'lift' | 'contrast' | 'saturation'>;
+		u: Uniforms<'rect' | 'crop' | 'image' | 'gain' | 'lift' | 'contrast' | 'saturation'>;
 	};
 	private transition!: {
 		program: WebGLProgram;
@@ -233,8 +247,9 @@ export class Compositor {
 
 	private init() {
 		const gl = this.gl;
-		this.grade = this.program(RECT_VS, GRADE_FS, {
+		this.grade = this.program(LAYER_VS, GRADE_FS, {
 			rect: 'uRect',
+			crop: 'uCrop',
 			image: 'uImage',
 			gain: 'uGain',
 			lift: 'uLift',
@@ -361,6 +376,7 @@ export class Compositor {
 		gl.useProgram(this.grade.program);
 		gl.uniform1i(u.image, 0);
 		gl.uniform4f(u.rect, ...Compositor.clipRect(rect, W, H));
+		gl.uniform4f(u.crop, ...layer.uv);
 		const g = layer.grade;
 		gl.uniform3f(u.gain, g.gain[0], g.gain[1], g.gain[2]);
 		gl.uniform3f(u.lift, g.lift[0], g.lift[1], g.lift[2]);
@@ -386,7 +402,9 @@ export class Compositor {
 			const small = this.target(2 + slot, sw, sh);
 			gl.bindFramebuffer(gl.FRAMEBUFFER, small.fbo);
 			gl.viewport(0, 0, sw, sh);
-			this.drawGraded(layer, frameRect(undefined, layer.width, layer.height, sw, sh), sw, sh);
+			const cw = layer.width * layer.uv[2];
+			const ch = layer.height * layer.uv[3];
+			this.drawGraded(layer, frameRect(undefined, cw, ch, sw, sh), sw, sh);
 			gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 			gl.viewport(0, 0, W, H);
 			gl.useProgram(this.blur.program);

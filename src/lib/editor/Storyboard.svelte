@@ -424,6 +424,7 @@
 							thumbnail={thumbnailFor(item.scene)}
 							scene={item.scene}
 							tileAspect={formatRatio(editor.project.format)}
+							sourceSize={editor.sourceSize(item.scene) ?? undefined}
 							{selected}
 							onselect={() => onCardClick(item.scene.id)}
 							onkeydown={(e) => onCardKeydown(e, item)}

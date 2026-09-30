@@ -5,9 +5,11 @@
 <script lang="ts">
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Copy from '@lucide/svelte/icons/copy';
+	import CropIcon from '@lucide/svelte/icons/crop';
 	import { Button, ChipGroup, Field, Slider } from '$lib/ui';
 	import {
 		DEFAULT_FRAME,
+		frameRect,
 		MAX_ZOOM,
 		minZoom,
 		type FrameBars,
@@ -15,6 +17,7 @@
 		type SceneFrame
 	} from '$lib/model/framing';
 	import type { Scene } from '$lib/model/types';
+	import { croppedSize } from '$lib/model/crop';
 	import { useEditor } from '$lib/state/context';
 
 	let { scene }: { scene: Scene } = $props();
@@ -24,9 +27,26 @@
 	const frame = $derived(scene.frame ?? DEFAULT_FRAME);
 	const info = $derived(editor.media[scene.mediaId]);
 	const out = $derived(editor.project.format);
-	const lowest = $derived(info ? minZoom(info.width, info.height, out.width, out.height) : 1);
+	const size = $derived(info ? croppedSize(scene.crop, info) : null);
+	const lowest = $derived(size ? minZoom(size.width, size.height, out.width, out.height) : 1);
 	const matches = $derived(
-		!!info && Math.abs(info.width / info.height - out.width / out.height) < 0.01
+		!!size && Math.abs(size.width / size.height - out.width / out.height) < 0.01
+	);
+
+	/** How much the picture is blown up in the saved video (output pixels per source pixel). */
+	const enlarged = $derived.by(() => {
+		if (!size) return 1;
+		const rect = frameRect(frame, size.width, size.height, out.width, out.height);
+		return rect.w / size.width;
+	});
+	const cropSummary = $derived(
+		info
+			? `${info.width} × ${info.height}` +
+					(scene.crop ? ` → cropped to ${scene.crop.w} × ${scene.crop.h}` : '')
+			: ''
+	);
+	const sameClip = $derived(
+		editor.project.scenes.filter((s) => s.mediaId === scene.mediaId).length
 	);
 
 	const modes: { value: FrameMode; label: string; description: string }[] = [
@@ -51,6 +71,31 @@
 		editor.setSceneFrame(scene.id, next);
 	}
 </script>
+
+<div class="crop-row">
+	<div class="crop-text">
+		<span class="crop-label">Picture</span>
+		<span class="mono crop-size" data-testid="crop-summary">{cropSummary}</span>
+	</div>
+	<Button
+		variant="soft"
+		size="sm"
+		icon={CropIcon}
+		title="Crop (C)"
+		onclick={() => editor.enterCrop(scene.id)}
+	>
+		Crop
+	</Button>
+</div>
+{#if enlarged > 1.15}
+	<p class="soft-note">Enlarged {enlarged.toFixed(1)}×, may look a bit soft.</p>
+{/if}
+{#if scene.crop && sameClip > 1}
+	<button type="button" class="link" onclick={() => editor.applyCropToClip(scene.id)}>
+		<Copy size={13} strokeWidth={2} aria-hidden="true" />
+		Apply crop to all scenes from this clip
+	</button>
+{/if}
 
 <Field label="Frame" hint={matches ? 'Same shape as the video' : undefined}>
 	<ChipGroup label="Frame" options={modes} value={frame.mode} onchange={setMode} />
@@ -100,6 +145,31 @@
 {/if}
 
 <style>
+	.crop-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+	}
+	.crop-text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+	.crop-label {
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+	}
+	.crop-size {
+		font-size: var(--text-xs);
+		color: var(--color-muted);
+	}
+	.soft-note {
+		margin-top: calc(-1 * var(--space-3));
+		font-size: var(--text-xs);
+		color: var(--color-muted);
+	}
 	.tip {
 		margin-top: calc(-1 * var(--space-2));
 		font-size: var(--text-xs);

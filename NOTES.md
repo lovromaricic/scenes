@@ -371,6 +371,42 @@ npm run check        # svelte-check (TypeScript strict)
   vertical 1080p project into 720×1280 at its 25 fps; the framing test saves a 720×1280 project and
   compares its frames with the preview in Fill, Fit-with-blur and Custom.
 
+## Crop tool
+
+- **Model:** `scene.crop = { x, y, w, h }` in the source clip's own pixels (missing = the whole clip).
+  All crop maths is pure and unit tested in `src/lib/model/crop.ts`: edge/corner/move drags,
+  snapping to the clip's edges and centre lines, Shift/locked-shape corners (anchored at the
+  opposite corner), "largest box of this shape centred on the current box", the four side values,
+  and clamping (inside the clip, at least 64 × 64). A crop covering the whole clip is stored as
+  "no crop".
+- **Order: crop, then frame.** The layer shader samples only the cropped part of the texture
+  (`uCrop`), and framing (`frameRect`) works with the cropped size, so Fill / Fit / Custom place the
+  cropped picture. Blurred bars use the cropped picture too. Because the same `layerInput()` is used
+  by the preview, Watch mode and export, and the filmstrip uses the same crop and framing maths with
+  Canvas 2D, they all match. Custom-framing zoom limits and the reframe ghost use the cropped size.
+- **Crop mode** (Crop button next to Frame, the C key, or double-clicking the picture): playback
+  pauses and Space won't start it, but scrubbing (ruler, ←/→) still works; the preview shows the
+  scene's whole source, fitted, without its crop, framing or words. The box has 8 handles (corners
+  and edge midpoints), dragging inside moves it, arrow keys nudge it (Shift = 10 px), the outside is
+  dimmed, a thirds grid shows while dragging, a size label rides under the box, and handles snap
+  within 8 screen pixels. When a shape is locked, only the corner handles show (edges would break
+  the shape). Double-clicking inside the box also applies.
+- **Crop panel** (replaces the right column): Original and Cropped sizes, Left / Right / Top / Bottom
+  fields (typing moves that side live), shape chips (Free, Original, Match project, 16:9, 9:16, 1:1,
+  4:5), Reset, Cancel (Esc) and Done (Enter). Enter on a focused button in the panel presses that
+  button instead. Undo/redo and editing shortcuts wait until you leave crop mode.
+- **After cropping:** the scene settings show "1280 × 800 → cropped to 1280 × 720" with a Crop button,
+  a soft note when the picture is enlarged more than 1.15× in the saved video ("Enlarged 1.5×, may
+  look a bit soft."), and "Apply crop to all scenes from this clip" when several scenes use the
+  same file. Split halves keep the crop. One undo step per Done; saved with the project.
+- **Toasts no longer block clicks**: the message body lets clicks through to what's underneath
+  (only × is clickable). The first-run tip sat right over the crop box's top handle.
+- Tests: `e2e/crop.test.ts` crops the magenta "browser toolbar" off a generated 1280×800 screen
+  recording by dragging the top edge (checking the live label), then checks preview, filmstrip and
+  the saved 1280×720 MP4 contain no toolbar pixels; plus side fields, shape chips, Shift, snapping,
+  Reset, Cancel, undo/redo, crop with Fit/Custom framing (and the enlargement note), applying to
+  every scene from the clip, and reload.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
@@ -380,6 +416,7 @@ npm run check        # svelte-check (TypeScript strict)
 - Framing ideas: rotate, "follow the subject" pan over time (Ken Burns), per-scene background colour.
 - The reframe ghost uses the preview-quality frame (≤1280px); fine for positioning, soft when
   zoomed far in.
+- Crop ideas: rotate/straighten, crop presets remembered per clip, keyboard resizing of the crop box.
 - Only one project exists at a time (no project list). Ideas: a small "Your videos" page.
 - Undo history isn't persisted across reloads.
 

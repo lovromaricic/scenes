@@ -45,13 +45,15 @@
 		color: var(--color-on-ink);
 		box-shadow: var(--shadow-float);
 		font-size: var(--text-md);
-		pointer-events: auto;
+		/* Clicks go through to whatever is underneath (e.g. the crop box's top edge); only × is clickable. */
+		pointer-events: none;
 		animation: toast-in var(--dur) var(--ease-out);
 	}
 	.toast p {
 		flex: 1;
 	}
 	button {
+		pointer-events: auto;
 		display: grid;
 		place-items: center;
 		width: 26px;

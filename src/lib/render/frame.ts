@@ -1,6 +1,7 @@
 import type { FrameResult } from '$lib/media/frames';
 import { MOOD_GRADES } from '$lib/model/moods';
 import { frameRect } from '$lib/model/framing';
+import { croppedSize, cropUv, type Size } from '$lib/model/crop';
 import { textFrameState } from '$lib/model/textAnimation';
 import type { MoodId, Scene, TextItem } from '$lib/model/types';
 import type { LayerInput, TextDraw } from './compositor';
@@ -11,21 +12,30 @@ import type { TextSpriteCache } from './text';
  * same way (moods, text placement and animation).
  */
 
-/** One scene's picture for an output frame of outW × outH: its mood and its framing. */
+/**
+ * One scene's picture for an output frame of outW × outH: its crop (applied first), then its
+ * framing, and its mood. `source` is the clip's own size in pixels (crop is measured in it).
+ */
 export function layerInput(
 	frame: FrameResult,
 	scene: Scene,
 	projectMood: MoodId,
 	outW: number,
-	outH: number
+	outH: number,
+	source: Size = { width: frame.width, height: frame.height }
 ): LayerInput {
+	// The decoded image may be smaller than the source; crop maps across proportionally.
+	const cropped = croppedSize(scene.crop, source);
+	const aspectW = (cropped.width / source.width) * frame.width;
+	const aspectH = (cropped.height / source.height) * frame.height;
 	return {
 		image: frame.image,
 		width: frame.width,
 		height: frame.height,
 		grade: MOOD_GRADES[scene.mood ?? projectMood],
-		rect: frameRect(scene.frame, frame.width, frame.height, outW, outH),
-		bars: scene.frame?.bars ?? 'black'
+		rect: frameRect(scene.frame, aspectW, aspectH, outW, outH),
+		bars: scene.frame?.bars ?? 'black',
+		uv: cropUv(scene.crop, source)
 	};
 }
 

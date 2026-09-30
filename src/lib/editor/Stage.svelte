@@ -10,6 +10,7 @@
 	import TextOverlay from './TextOverlay.svelte';
 	import RecordingOverlay from './RecordingOverlay.svelte';
 	import FramingOverlay from './FramingOverlay.svelte';
+	import CropOverlay from './CropOverlay.svelte';
 
 	interface Props {
 		onpick: () => void;
@@ -70,6 +71,12 @@
 			class="preview"
 			class:empty
 			class:reshaping
+			class:cropping={!!editor.cropping}
+			role="presentation"
+			ondblclick={() => {
+				// Double-click the picture to crop the scene under the playhead.
+				if (!editor.cropping && !empty) editor.enterCrop();
+			}}
 			bind:clientWidth={previewW}
 			bind:clientHeight={previewH}
 			style:--ar={ratio}
@@ -103,7 +110,9 @@
 					</div>
 				{/if}
 			</div>
-			{#if !empty}
+			{#if editor.cropping}
+				<CropOverlay width={previewW} height={previewH} />
+			{:else if !empty}
 				<FramingOverlay width={previewW} height={previewH} />
 				<TextOverlay width={previewW} height={previewH} />
 			{/if}
