@@ -691,8 +691,8 @@ npm run check        # svelte-check (TypeScript strict)
   subsets (Cyrillic/Greek) for the built-in fonts, cleaning up stored fonts nobody uses.
 - Undo history isn't persisted across reloads.
 - Project files: media sliced from a file is checked by size, not checksum (to keep opening
-  fast). Deleting a project leaves uploaded fonts that another project uses; fonts no project
-  uses are only removed with the last project that used them.
+  fast). Replacing a project from a file keeps the fonts its old version used (they stay in
+  the font list); deleting a project does remove fonts no other project uses.
 
 ## Summary
 
