@@ -22,7 +22,7 @@ describe('what a project uses', () => {
 	it('lists media from scenes, sounds and "Your media", but not cards', () => {
 		const p = project('a', {
 			scenes: [scene('s1', 'm1'), scene('s2', ''), scene('s3', 'm1')],
-			sounds: [{ id: 'x', mediaId: 'm2', name: 'm', start: 0, sourceStart: 0, duration: 1, volume: 1, kind: 'music', fadeIn: 1.5, fadeOut: 3, row: 0 }],
+			sounds: [{ id: 'x', mediaId: 'm2', name: 'm', start: 0, sourceStart: 0, duration: 1, volume: 1, kind: 'music', fadeIn: 1.5, fadeOut: 3, trackId: 'a1' }],
 			library: ['m1', 'm3']
 		});
 		p.scenes[1].kind = 'card';
@@ -31,8 +31,8 @@ describe('what a project uses', () => {
 	it('lists stored fonts, not built-in ones', () => {
 		const p = project('a', {
 			texts: [
-				{ id: 't1', text: 'a', start: 0, duration: 1, x: 0, y: 0, style: 'clean', animation: 'none', font: { family: 'Mine', source: 'upload', id: 'f1', weight: 400, italic: false } },
-				{ id: 't2', text: 'b', start: 0, duration: 1, x: 0, y: 0, style: 'clean', animation: 'none', font: { family: 'Lora', source: 'builtin', id: 'lora', weight: 400, italic: false } }
+				{ id: 't1', trackId: 'o1', text: 'a', start: 0, duration: 1, x: 0, y: 0, style: 'clean', animation: 'none', font: { family: 'Mine', source: 'upload', id: 'f1', weight: 400, italic: false } },
+				{ id: 't2', trackId: 'o1', text: 'b', start: 0, duration: 1, x: 0, y: 0, style: 'clean', animation: 'none', font: { family: 'Lora', source: 'builtin', id: 'lora', weight: 400, italic: false } }
 			]
 		});
 		expect(projectFontIds(p)).toEqual(['f1']);

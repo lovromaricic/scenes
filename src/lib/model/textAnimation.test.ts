@@ -4,6 +4,7 @@ import type { TextItem } from './types';
 
 const text = (animation: TextItem['animation']): TextItem => ({
 	id: 't',
+	trackId: 'o1',
 	text: 'Hi',
 	start: 2,
 	duration: 3,

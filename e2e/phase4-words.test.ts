@@ -79,8 +79,8 @@ test.describe('Phase 4: words', () => {
 		await seekTo(page, t0.start + 1);
 		expect((await textAreaPixels(page)).some(isYellowish)).toBe(true);
 
-		// Drag the pill in the Words lane about 2 seconds later.
-		const lane = page.getByRole('group', { name: 'Words' });
+		// Drag the words on the Text track about 2 seconds later.
+		const lane = page.getByRole('group', { name: 'Text' });
 		const pill = lane.getByRole('button', { name: /^Words: Split at noon/ });
 		const pps = await page.evaluate(() => {
 			const cards = document.querySelectorAll('.card-slot');
@@ -96,7 +96,7 @@ test.describe('Phase 4: words', () => {
 		expect(moved.duration).toBeCloseTo(t0.duration, 5);
 
 		// Resize: drag the end edge 1.5 seconds later.
-		const edge = page.locator('.pill-slot .edge.end').first();
+		const edge = lane.locator('[data-trim="end"]').first();
 		const e = (await edge.boundingBox())!;
 		await page.mouse.move(e.x + e.width / 2, e.y + e.height / 2);
 		await page.mouse.down();

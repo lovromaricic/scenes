@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fixture, importViaPicker, openNewVideo, scenes, seekTo } from './helpers';
 
-type Placed = { overlay: { id: string; kind: string; name: string; row: number; duration: number; box: { x: number; y: number; w: number; h: number } }; start: number };
+type Placed = { overlay: { id: string; kind: string; name: string; trackId: string; duration: number; box: { x: number; y: number; w: number; h: number } }; start: number };
 const layers = (page: Page) =>
 	scenes(page, (s) =>
 		(s as unknown as { placedOverlays: Placed[] }).placedOverlays.map((p) => ({
@@ -104,31 +104,34 @@ test.describe('Adding layers by dragging', () => {
 		expect(green).toMatchObject({ kind: 'video', start: 1, duration: 3 });
 	});
 
-	test('the Cards button and files from the computer onto the Layers track, at that time', async ({ page }) => {
+	test('the Cards button and files from the computer onto an overlay track, at that time', async ({ page }) => {
 		await setup(page);
-		const lane = await box(page, '.layers');
+		const lane = await box(page, '[data-track-lane]');
 		const scene1 = await box(page, '.card-slot');
 		const pxPerSec = scene1.width / 4;
 		const x = lane.x + pxPerSec * 6; // 6 s
 		const y = lane.y + lane.height / 2;
 
 		await hover(page, x, y, { card: true });
-		await expect(page.locator('.layers .drop-ghost')).toBeVisible();
-		await expect(page.locator('.layers .drop-ghost')).toContainText('Place here');
+		await expect(page.locator('[data-track-lane] .drop-ghost')).toBeVisible();
+		await expect(page.locator('[data-track-lane] .drop-ghost')).toContainText('Place here');
 		await drop(page, x, y, { card: true });
-		await expect(page.locator('.layers .drop-ghost')).toHaveCount(0);
+		await expect(page.locator('[data-track-lane] .drop-ghost')).toHaveCount(0);
 		let list = await layers(page);
 		expect(list).toHaveLength(1);
-		expect(list[0]).toMatchObject({ kind: 'card', row: 0 });
+		const overlay1 = await scenes(page, (s) => (s as unknown as { project: { tracks: { id: string; name: string }[] } }).project.tracks.find((t) => t.name === 'Overlay 1')!.id);
+		expect(list[0]).toMatchObject({ kind: 'card', trackId: overlay1 });
 		expect(list[0].start).toBeCloseTo(6, 0);
 
-		// A photo from the computer onto the same time: it overlaps, so it gets a row above.
+		// A photo from the computer onto the same time: it overlaps, so it goes on a new track above.
 		await drop(page, x, y, { files: [file('yellow.jpg', 'image/jpeg')] });
 		await expect.poll(async () => (await layers(page)).length).toBe(2);
 		list = await layers(page);
 		const photo = list.find((l) => l.kind === 'photo')!;
 		expect(photo.start).toBeCloseTo(6, 0);
-		expect(photo.row).toBe(1);
+		const tracks = await scenes(page, (s) => (s as unknown as { project: { tracks: { id: string; name: string }[] } }).project.tracks);
+		expect(tracks.map((t) => t.name)).toEqual(['Overlay 2', 'Overlay 1', 'Scenes', 'Audio 1']);
+		expect(photo.trackId).toBe(tracks[0].id);
 		expect(await sceneNames(page)).toEqual(['Red', 'Green', 'Blue']);
 	});
 
@@ -152,7 +155,7 @@ test.describe('Adding layers by dragging', () => {
 		// Dragging files over the page: a hint says where they can go.
 		const preview = (await page.getByTestId('preview').boundingBox())!;
 		await hover(page, preview.x + 10, preview.y + 10, { files: [file('yellow.jpg', 'image/jpeg')] });
-		await expect(page.getByText('Drop on the picture or the Layers row to place on top')).toBeVisible();
+		await expect(page.getByText('Drop on the picture or an overlay track to place on top')).toBeVisible();
 	});
 
 	test('with no scenes yet, a drop on the picture makes the first scene', async ({ page }) => {

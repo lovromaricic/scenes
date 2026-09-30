@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { fixture, importViaPicker, openNewVideo, scenes, seekTo } from './helpers';
 
-type Sound = { id: string; start: number; sourceStart: number; duration: number; fadeIn: number; fadeOut: number; row: number; volume: number };
+type Sound = { id: string; start: number; sourceStart: number; duration: number; fadeIn: number; fadeOut: number; trackId: string; volume: number };
 const sounds = (page: Page) =>
 	scenes(page, (s) => JSON.parse(JSON.stringify((s as unknown as { project: { sounds: Sound[] } }).project.sounds))) as Promise<Sound[]>;
 
@@ -51,8 +51,8 @@ async function setup(page: Page) {
 		for (const sc of s.project.scenes) s.setSceneVolume(sc.id, 0);
 	});
 	await addSong(page);
-	const clip = page.locator('.clip-slot').first();
-	await clip.locator('.sound').click();
+	const clip = page.locator('.item-slot.sound').first();
+	await clip.locator('.item').click();
 	await expect(page.getByRole('complementary', { name: 'Settings' }).getByRole('heading', { name: 'Music' })).toBeVisible();
 	/** Pixels per second: the first scene (12 s) spans its slot. */
 	const scene = await settled(page.locator('.card-slot').first());
@@ -60,12 +60,12 @@ async function setup(page: Page) {
 }
 
 async function addSong(page: Page) {
-	const count = await page.locator('.clip-slot').count();
+	const count = await page.locator('.item-slot.sound').count();
 	await page.getByRole('button', { name: /^Sound Music/ }).click();
 	const chooser = page.waitForEvent('filechooser');
 	await page.getByRole('button', { name: /^Music Add a song/ }).click();
 	await (await chooser).setFiles(fixture('music.m4a'));
-	await expect(page.locator('.clip-slot')).toHaveCount(count + 1);
+	await expect(page.locator('.item-slot.sound')).toHaveCount(count + 1);
 	await page.keyboard.press('Escape');
 }
 
@@ -87,7 +87,7 @@ test.describe('Editing sound clips', () => {
 
 	test('trim from both sides with handles: live length, the waveform cropped, never beyond the file', async ({ page }) => {
 		const pps = await setup(page);
-		const clip = page.locator('.clip-slot').first();
+		const clip = page.locator('.item-slot.sound').first();
 		const startHandle = clip.locator('[data-sound-trim="start"]');
 		const endHandle = clip.locator('[data-sound-trim="end"]');
 		await expect(startHandle).toBeVisible();
@@ -96,7 +96,7 @@ test.describe('Editing sound clips', () => {
 		await dragBy(page, startHandle, pps * 2, 0, {
 			alt: true,
 			hold: async () => {
-				await expect(page.getByTestId('sound-drag-label')).toHaveText(/0:1\d/);
+				await expect(page.getByTestId('item-drag-label')).toHaveText(/0:1\d/);
 			}
 		});
 		let [s] = await sounds(page);
@@ -133,7 +133,7 @@ test.describe('Editing sound clips', () => {
 
 	test('move a clip, with snapping (Alt drags freely); split it with S and with Split here', async ({ page }) => {
 		const pps = await setup(page);
-		const clip = page.locator('.clip-slot').first();
+		const clip = page.locator('.item-slot.sound').first();
 		// Trim to about 4 s so there's room to move it, then make it exactly 3.5 s (so only its
 		// start can snap to the scene boundary at 12 s, not its end to the video's end).
 		await dragBy(page, clip.locator('[data-sound-trim="end"]'), -pps * 8, 0, { alt: true });
@@ -145,7 +145,7 @@ test.describe('Editing sound clips', () => {
 		});
 
 		// Move it right to about 11.9 s: its start snaps to the scene boundary at 12 s.
-		await dragBy(page, clip.locator('.sound'), pps * 11.9, 0, {
+		await dragBy(page, clip.locator('.item'), pps * 11.9, 0, {
 			hold: async () => {
 				await expect(page.locator('.snap-line')).toBeVisible();
 			}
@@ -153,7 +153,7 @@ test.describe('Editing sound clips', () => {
 		expect((await sounds(page))[0].start).toBe(12);
 		await expect(page.locator('.snap-line')).toHaveCount(0);
 		// With Alt, no snapping.
-		await dragBy(page, clip.locator('.sound'), -pps * 3.02, 0, { alt: true });
+		await dragBy(page, clip.locator('.item'), -pps * 3.02, 0, { alt: true });
 		const free = (await sounds(page))[0].start;
 		expect(free).not.toBe(9);
 		expect(free).toBeCloseTo(9, 0);
@@ -162,7 +162,7 @@ test.describe('Editing sound clips', () => {
 
 		// Split at the playhead with S.
 		await seekTo(page, free + 1.5);
-		await clip.locator('.sound').click();
+		await clip.locator('.item').click();
 		await page.keyboard.press('s');
 		let list = await sounds(page);
 		expect(list).toHaveLength(2);
@@ -173,7 +173,7 @@ test.describe('Editing sound clips', () => {
 		expect(b.fadeIn).toBe(0);
 		// And with the Split here button.
 		await seekTo(page, b.start + 1);
-		await page.locator(`[data-sound-id="${b.id}"] .sound`).click();
+		await page.locator(`[data-item-id="${b.id}"] .item`).click();
 		await page.getByRole('complementary', { name: 'Settings' }).getByRole('button', { name: 'Split here' }).click();
 		list = await sounds(page);
 		expect(list).toHaveLength(3);
@@ -181,34 +181,37 @@ test.describe('Editing sound clips', () => {
 		expect(list.reduce((n, x) => n + x.duration, 0)).toBeCloseTo(3.5, 3);
 	});
 
-	test('a second song gets its own row when it overlaps; empty rows go away', async ({ page }) => {
+	test('a second song that overlaps goes on a new audio track; it can be dragged between audio tracks', async ({ page }) => {
 		const pps = await setup(page);
 		await seekTo(page, 3);
 		await addSong(page);
 		let list = await sounds(page);
-		expect(list.map((s) => s.row)).toEqual([0, 1]);
+		const tracks = () =>
+			scenes(page, (s) => (s as unknown as { project: { tracks: { id: string; name: string; kind: string }[] } }).project.tracks);
+		let t = await tracks();
+		expect(t.filter((x) => x.kind === 'audio').map((x) => x.name)).toEqual(['Audio 1', 'Audio 2']);
+		expect(list.map((s) => t.find((x) => x.id === s.trackId)!.name)).toEqual(['Audio 1', 'Audio 2']);
 		expect(list[1].start).toBeCloseTo(3, 1);
-		await expect(page.getByRole('group', { name: 'Sound', exact: true })).toHaveCSS('height', /\d+px/);
-		const laneHeight = (await page.getByRole('group', { name: 'Sound', exact: true }).boundingBox())!.height;
 
-		// Trim the first song to 3 s, then drag the second up into the first row where it fits.
-		await page.locator('.clip-slot').first().locator('.sound').click();
-		await dragBy(page, page.locator('.clip-slot').first().locator('[data-sound-trim="end"]'), -pps * 9.5, 0, { alt: true });
-		const second = page.locator('.clip-slot').nth(1).locator('.sound');
-		await dragBy(page, second, 0, -40, { alt: true });
+		// Trim the first song to 2.5 s, then drag the second up onto Audio 1 where it fits.
+		await page.locator('.item-slot.sound').first().locator('.item').click();
+		await dragBy(page, page.locator('.item-slot.sound').first().locator('[data-sound-trim="end"]'), -pps * 9.5, 0, { alt: true });
+		const second = page.locator('.item-slot.sound').nth(1).locator('.item');
+		await dragBy(page, second, 0, -48, { alt: true });
 		list = await sounds(page);
-		expect(list.map((s) => s.row)).toEqual([0, 0]);
-		await expect.poll(async () => (await page.getByRole('group', { name: 'Sound', exact: true }).boundingBox())!.height).toBeLessThan(laneHeight);
+		t = await tracks();
+		expect(list.map((s) => t.find((x) => x.id === s.trackId)!.name)).toEqual(['Audio 1', 'Audio 1']);
 
-		// Dropped where it overlaps the first: a new row below again.
-		await dragBy(page, page.locator('.clip-slot').nth(1).locator('.sound'), -pps * 2, 0, { alt: true });
+		// Dropped where it overlaps the first: a new audio track just above.
+		await dragBy(page, page.locator('.item-slot.sound').nth(1).locator('.item'), -pps * 2, 0, { alt: true });
 		list = await sounds(page);
-		expect(list.map((s) => s.row).sort()).toEqual([0, 1]);
+		t = await tracks();
+		expect(new Set(list.map((s) => s.trackId)).size).toBe(2);
 	});
 
 	test('fades follow the trimmed edges and can be dragged', async ({ page }) => {
 		const pps = await setup(page);
-		const clip = page.locator('.clip-slot').first();
+		const clip = page.locator('.item-slot.sound').first();
 		let [s] = await sounds(page);
 		expect([s.fadeIn, s.fadeOut]).toEqual([1.5, 3]);
 		// The automatic fade: quiet at the very start, full in the middle.
@@ -227,7 +230,7 @@ test.describe('Editing sound clips', () => {
 		await expect(dot).toBeVisible();
 		await dragBy(page, dot, pps * 2.5, 0, {
 			hold: async () => {
-				await expect(page.getByTestId('sound-drag-label')).toHaveText(/Fade in \d\.\d s/);
+				await expect(page.getByTestId('item-drag-label')).toHaveText(/Fade in \d\.\d s/);
 			}
 		});
 		[s] = await sounds(page);
@@ -254,11 +257,11 @@ test.describe('Editing sound clips', () => {
 	test('the saved MP4’s audio matches the preview mix exactly', async ({ page }, info) => {
 		test.skip(!hasFfmpeg, 'needs ffmpeg to inspect the saved file');
 		const pps = await setup(page);
-		const clip = page.locator('.clip-slot').first();
+		const clip = page.locator('.item-slot.sound').first();
 		// Trim both ends, move it, give it a long fade in, and add a second song later.
 		await dragBy(page, clip.locator('[data-sound-trim="start"]'), pps * 1, 0, { alt: true });
 		await dragBy(page, clip.locator('[data-sound-trim="end"]'), -pps * 4, 0, { alt: true });
-		await dragBy(page, clip.locator('.sound'), pps * 2, 0, { alt: true });
+		await dragBy(page, clip.locator('.item'), pps * 2, 0, { alt: true });
 		await dragBy(page, clip.locator('[data-sound-fade="in"]'), pps * 2, 0);
 		await seekTo(page, 12.5);
 		await addSong(page);

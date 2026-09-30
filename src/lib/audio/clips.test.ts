@@ -79,7 +79,7 @@ const music: SoundItem = {
 	kind: 'music',
 	fadeIn: 1.5,
 	fadeOut: 3,
-	row: 0
+	trackId: 'a1'
 };
 
 describe('soundAudioClips', () => {

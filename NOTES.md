@@ -1137,6 +1137,66 @@ Also: `dragstart` is prevented on the preview and the storyboard tracks, the hom
       silence where it's silent), after trims, a move, a long fade and a second song.
   - The phase 5 test now sets "Fade in" to 0 where it used to turn the Fade switch off.
 
+## Tracks (one multi-track system)
+
+The Layers rows, the Words lane and the Sound rows are replaced by tracks of three kinds.
+`project.tracks` is in storyboard order, top to bottom:
+
+- **Overlay tracks** (any number): videos, photos, cards and text, at fixed times, gaps allowed.
+  Higher tracks are drawn on top.
+- **The main track, "Scenes"** (exactly one): the scenes, magnetic as before.
+- **Audio tracks** (any number): music and voiceovers.
+
+Items (`overlays`, `texts`, `sounds`) name their track by `trackId` and have a fixed `start`.
+Overlays aren't linked to scenes any more.
+
+### 1. Migration
+
+- **Model.**
+  - `model/tracks.ts`: `Track {id, kind, name, hidden, muted, locked}`, ordering helpers
+    (`orderTracks`, `insertTrack`, `indexAbove`, `overlayTracksBottomUp`), `accepts` (what goes
+    where), `fits` and `freeTrack`.
+  - `model/items.ts` handles every kind of item the same way: `allItems`, `getItem`,
+    `updateItem`, `removeItems`, `moveItems`, and `settle`, which moves an overlapping item onto a
+    new track just above. It also manages the tracks themselves: add, rename, flags, delete,
+    duplicate and move.
+- **Migration** (`migrateToTracks`, run by `migrateProject`, so both stored projects and
+  `.scenes` files come up to date):
+  - Each Layers row becomes an overlay track, keeping its stacking.
+  - The Words lane becomes an overlay track "Text", above all others (text was always drawn on
+    top).
+  - Each Sound row becomes an audio track.
+  - An overlay linked to a scene gets that scene's start plus its offset as its fixed start.
+  - There is always at least one overlay track and one audio track, as the old storyboard always
+    showed a Layers row and a Sound row.
+  - The file format is now version 2. A version 1 file drops any `tracks` field before migrating.
+- **Rendering.**
+  - `render/visuals.ts` (`visualsAt`) lists what's on screen at a time, in drawing order:
+    overlay tracks from the lowest to the highest, and items by start on each track.
+  - The compositor draws that one list (overlay shader or text sprite). Preview, export and the
+    home picture all use it, so they can't disagree about stacking.
+  - `projectAudioClips` gets the tracks too.
+- **Storyboard.**
+  - One scroller holds every track. Each row is a sticky header (name) plus a lane.
+  - The ruler sticks to the top and the Scenes row to the top and bottom, so both stay in view
+    when there are many tracks.
+  - `TrackLane.svelte` draws and drags every kind of item: cards for pictures, a "T" card for
+    text, and waveforms with fades for sound. This replaces `LayersTrack`, `WordsLane` and
+    `SoundLane`.
+  - `.tracks` is `isolation: isolate`, so its sticky rows stay under the zoom controls.
+  - The storyboard has `min-width: 0`, so a zoomed-in timeline scrolls instead of widening the
+    page.
+- **Gone.** Scene links (`sceneId`/`offset`), rows and relinking on split or delete. Deleting a
+  scene no longer asks about its layers: overlays keep their times.
+- **Tests.**
+  - Unit (`tracks.test.ts`): migration order, starts, idempotence, moving items, managing tracks.
+  - Unit (`zip.test.ts`): a v1 file opens with tracks.
+  - E2E (`tracks-migration.test.ts`): a project is built, recorded, rewritten in IndexedDB in
+    the old shape (rows, scene links, sound rows, no tracks) and reloaded. The tracks come out
+    as Text, Overlay 2, Overlay 1, Scenes, Audio 1, Audio 2, every start is the same, and the
+    preview pixels at four times and the audio clip list match.
+  - The existing e2e tests now use track names and `.item-slot`.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

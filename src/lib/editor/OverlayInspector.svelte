@@ -19,7 +19,6 @@
 	import {
 		MIN_OVERLAY_SECONDS,
 		placeBox,
-		rowCount,
 		type Placement,
 		type PlacedOverlay
 	} from '$lib/model/overlay';
@@ -40,7 +39,7 @@
 		w: Math.round(o.box.w * format.width),
 		h: Math.round(o.box.h * format.height)
 	});
-	const rows = $derived(rowCount(editor.project.overlays));
+	const trackName = $derived(editor.track(o.trackId)?.name ?? '');
 	const maxLength = $derived(
 		Math.max(
 			MIN_OVERLAY_SECONDS,
@@ -84,7 +83,7 @@
 <div class="head">
 	<h2 class="serif title">Layer</h2>
 	<p class="subtitle">
-		{kindLabel} · {o.name} · row {o.row + 1} of {rows}
+		{kindLabel} · {o.name} · on {trackName}
 	</p>
 </div>
 
@@ -207,10 +206,10 @@
 	<section aria-label="Layer order">
 		<h3 class="section-title">Layer order</h3>
 		<div class="row">
-			<Button variant="soft" size="sm" icon={ArrowUp} onclick={() => editor.moveOverlayRow(o.id, 1)}
+			<Button variant="soft" size="sm" icon={ArrowUp} onclick={() => editor.moveItemTrack(o.id, 1)}
 				>Bring forward</Button
 			>
-			<Button variant="soft" size="sm" icon={ArrowDown} onclick={() => editor.moveOverlayRow(o.id, -1)}
+			<Button variant="soft" size="sm" icon={ArrowDown} onclick={() => editor.moveItemTrack(o.id, -1)}
 				>Send back</Button
 			>
 		</div>

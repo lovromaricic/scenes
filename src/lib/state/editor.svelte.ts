@@ -23,9 +23,6 @@ import {
 	MIN_SOUND,
 	MUSIC_FADE_IN,
 	MUSIC_FADE_OUT,
-	assignSoundRow,
-	compactSoundRows,
-	freeRow,
 	soundEnd,
 	splitSound,
 	trimSound
@@ -33,25 +30,27 @@ import {
 import {
 	MAX_VIDEO_OVERLAYS,
 	MIN_OVERLAY_SECONDS,
-	linkAt,
 	OVERLAY_SECONDS,
 	DEFAULT_OVERLAY_STYLE,
 	defaultBox,
-	rowCount,
 	tooManyVideos,
-	assignRow,
-	compactRows,
-	maxOverlayDuration,
-	moveOverlayTo,
-	overlaysOf,
-	placeOverlays,
-	relinkByTime,
-	sendBack,
 	fitShape,
+	maxOverlayDuration,
+	placeOverlays,
 	type Overlay,
 	type OverlayBox,
 	type OverlayStyle
 } from '$lib/model/overlay';
+import {
+	addTrack,
+	allItems,
+	getItem,
+	itemKind,
+	moveItems,
+	settle,
+	updateItem
+} from '$lib/model/items';
+import { TEXT_TRACK_NAME, fits, freeTrack, type Track } from '$lib/model/tracks';
 import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
 import { computePeaks, PEAKS_PER_SECOND } from '$lib/media/waveform';
 import { mixdown } from '$lib/audio/mixdown';
@@ -129,6 +128,17 @@ let hashesBackfilled = false;
 export class EditorStore {
 	project = $state<Project>(newProject());
 	selectedId = $state<string | null>(null);
+	/**
+	 * Items on tracks selected together (Shift-click or a selection box). Always includes the
+	 * selected item, if it's on a track; scenes are selected on their own.
+	 */
+	extraSelected = $state<string[]>([]);
+	/** Every selected item: the selected one and any others selected with it. */
+	selectedIds = $derived(
+		this.selectedId && !this.extraSelected.includes(this.selectedId)
+			? [this.selectedId, ...this.extraSelected]
+			: this.extraSelected
+	);
 	time = $state(0);
 	playing = $state(false);
 	/** Files still being read after a drop or pick. */
@@ -172,10 +182,9 @@ export class EditorStore {
 	selectedText = $derived(this.project.texts.find((t) => t.id === this.selectedId) ?? null);
 	selectedSound = $derived(this.project.sounds.find((s) => s.id === this.selectedId) ?? null);
 	/** Overlays with their times, lowest row first. */
-	placedOverlays = $derived(placeOverlays(this.project.overlays, this.placed));
+	placedOverlays = $derived(placeOverlays(this.project.overlays, this.project.tracks.map((t) => t.id)));
 	selectedOverlay = $derived(this.placedOverlays.find((p) => p.overlay.id === this.selectedId) ?? null);
-	/** A scene being removed that has overlays: the question "remove them too?" is showing. */
-	removingScene = $state<{ id: string; count: number } | null>(null);
+
 	/** The scene under the playhead (the last one at the very end). */
 	sceneAtPlayhead = $derived(
 		this.placed.find((p) => this.time >= p.start && this.time < p.end) ?? this.placed.at(-1) ?? null
@@ -519,7 +528,32 @@ export class EditorStore {
 		this.select(null);
 	}
 
+	/** Add an item to the selection, or take it out (Shift-click on the storyboard). */
+	toggleSelected(id: string): void {
+		if (this.trackOfItem(id)?.locked) return;
+		const current = this.selectedIds.filter((x) => itemKind(this.project, x));
+		const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+		this.selectedId = next.at(-1) ?? null;
+		this.extraSelected = next.slice(0, -1);
+	}
+
+	/** Select several items on tracks at once (a selection box). */
+	selectItems(ids: string[]): void {
+		const ok = ids.filter((id) => itemKind(this.project, id) && !this.trackOfItem(id)?.locked);
+		this.stopEditingText();
+		this.selectedId = ok.at(-1) ?? null;
+		this.extraSelected = ok.slice(0, -1);
+	}
+
+	/** Whether an item ends exactly at the end of the video (it then stays there, see ripple). */
+	endsWithVideo(item: { start: number; duration: number }): boolean {
+		return this.duration > 0 && Math.abs(item.start + item.duration - this.duration) < 1e-3;
+	}
+
 	select(id: string | null): void {
+		this.extraSelected = [];
+		// Items on locked tracks can't be selected.
+		if (id && this.trackOfItem(id)?.locked) return;
 		if (id !== this.editingTextId) this.stopEditingText();
 		this.selectedId = id;
 		// Selecting something shows it: jump there unless the playhead is already inside it.
@@ -749,17 +783,7 @@ export class EditorStore {
 			);
 			return;
 		}
-		const before = this.placed;
-		this.edit(
-			'Split',
-			(p) => ({
-				...p,
-				scenes: result.scenes,
-				// Overlays stay where they are in time, linked to whichever half they start over.
-				overlays: relinkByTime(p.overlays, before, placeScenes(result.scenes))
-			}),
-			{ select: result.secondId }
-		);
+		this.edit('Split', (p) => ({ ...p, scenes: result.scenes }), { select: result.secondId });
 	}
 
 	// ─── Cards ──────────────────────────────────────────────────────────────────────────────
@@ -826,35 +850,15 @@ export class EditorStore {
 		if (placed) this.seek(placed.start);
 	}
 
-	/**
-	 * Remove a scene. If overlays are linked to it, asks first (`removingScene`) whether to remove
-	 * them too or keep them where they are; answer with `overlays`.
-	 */
-	deleteScene(id: string, overlays?: 'remove' | 'keep'): void {
+	/** Remove a scene (the ones after it close the gap). */
+	deleteScene(id: string): void {
 		const index = this.project.scenes.findIndex((s) => s.id === id);
 		if (index === -1) return;
-		const linked = overlaysOf(this.project.overlays, id);
-		if (linked.length && !overlays) {
-			this.removingScene = { id, count: linked.length };
-			return;
-		}
-		this.removingScene = null;
 		const after = removeScene(this.project.scenes, id);
 		const nextSelected = after[Math.min(index, after.length - 1)]?.id ?? null;
-		const before = this.placed;
-		const ids = new Set(linked.map((o) => o.id));
-		this.edit(
-			'Delete scene',
-			(p) => {
-				const scenes = removeScene(p.scenes, id);
-				const kept =
-					overlays === 'remove'
-						? p.overlays.filter((o) => !ids.has(o.id))
-						: relinkByTime(p.overlays, before, placeScenes(scenes), ids);
-				return { ...p, scenes, overlays: compactRows(kept) };
-			},
-			{ select: nextSelected }
-		);
+		this.edit('Delete scene', (p) => ({ ...p, scenes: removeScene(p.scenes, id) }), {
+			select: nextSelected
+		});
 	}
 
 	/** Delete whatever is selected. */
@@ -867,16 +871,80 @@ export class EditorStore {
 		else if (this.project.overlays.some((o) => o.id === id)) this.deleteOverlay(id);
 	}
 
-	// ─── Layers (overlays) ──────────────────────────────────────────────────────────────────
+	// ─── Tracks ─────────────────────────────────────────────────────────────────────────────
+
+	track(id: string): Track | undefined {
+		return this.project.tracks.find((t) => t.id === id);
+	}
+
+	/** The track an item is on. */
+	trackOfItem(itemId: string): Track | undefined {
+		const item = getItem(this.project, itemId);
+		return item ? this.track(item.trackId) : undefined;
+	}
+
+	/** Add an overlay or audio track at `index` in the list (default: top, or bottom for audio). */
+	addTrack(kind: 'overlay' | 'audio', index?: number, name?: string): string {
+		const id = newId();
+		const at = index ?? (kind === 'overlay' ? 0 : this.project.tracks.length);
+		this.edit(kind === 'overlay' ? 'Add overlay track' : 'Add audio track', (p) => addTrack(p, kind, at, id, name));
+		return id;
+	}
+
+	/**
+	 * The first overlay track (from the top) where `span` is free, or a new one at the top. Used
+	 * when something is dropped on the picture or added without a track.
+	 */
+	private overlayTrackFor(p: Project, span: { start: number; duration: number }): { project: Project; trackId: string } {
+		const free = freeTrack(p.tracks, allItems(p), 'overlay', span);
+		if (free) return { project: p, trackId: free.id };
+		const trackId = newId();
+		return { project: addTrack(p, 'overlay', 0, trackId), trackId };
+	}
+
+	private audioTrackFor(p: Project, span: { start: number; duration: number }): { project: Project; trackId: string } {
+		const free = freeTrack(p.tracks, allItems(p), 'audio', span);
+		if (free) return { project: p, trackId: free.id };
+		const trackId = newId();
+		return { project: addTrack(p, 'audio', p.tracks.length, trackId), trackId };
+	}
+
+	/**
+	 * Move items by `delta` seconds, and (if given) onto another track, as one undo step. An item
+	 * that would overlap goes on a new track just above.
+	 */
+	moveItems(ids: string[], delta: number, trackId?: string, label = 'Move'): void {
+		const movable = ids.filter((id) => !this.trackOfItem(id)?.locked);
+		if (!movable.length) return;
+		this.edit(label, (p) => moveItems(p, movable, delta, newId, trackId));
+	}
+
+	/**
+	 * Move an item onto a new track created at `index` in the list (dropped into the gap between
+	 * two tracks, or above the top one), at `start`.
+	 */
+	moveItemToNewTrack(id: string, start: number, index: number): void {
+		const kind = itemKind(this.project, id);
+		const item = getItem(this.project, id);
+		if (!kind || !item || this.trackOfItem(id)?.locked) return;
+		const trackId = newId();
+		this.edit('Move to a new track', (p) => {
+			const withTrack = addTrack(p, kind === 'sound' ? 'audio' : 'overlay', index, trackId);
+			return updateItem(withTrack, id, (i) => ({ ...i, start: Math.max(0, start), trackId }));
+		});
+	}
+
+	// ─── Overlays ───────────────────────────────────────────────────────────────────────────
 
 	private updateOverlay(label: string, id: string, change: (o: Overlay) => Overlay, key?: string): void {
+		if (this.trackOfItem(id)?.locked) return;
 		this.edit(label, (p) => ({ ...p, overlays: p.overlays.map((o) => (o.id === id ? change(o) : o)) }), {
 			key
 		});
 	}
 
-	/** Whether a video layer may play from `start` for `duration` (at most 4 videos at once). */
-	private videoRoom(o: Overlay, start: number, duration: number): boolean {
+	/** Whether a video overlay may play from `start` for `duration` (at most 4 videos at once). */
+	private videoRoom(o: Pick<Overlay, 'kind' | 'id'>, start: number, duration: number): boolean {
 		if (o.kind !== 'video' || !tooManyVideos(this.placedOverlays, start, duration, o.id)) return true;
 		toasts.show(
 			`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment, so this one can’t go there.`,
@@ -890,27 +958,21 @@ export class EditorStore {
 		return maxOverlayDuration(o, this.media[o.mediaId]?.duration);
 	}
 
-	/** Move an overlay to `start` (linking it to the scene there), into `row` (or a new row above
-	 * it, if it would overlap something there). */
-	placeOverlay(id: string, start: number, row: number, label = 'Move layer'): void {
+	/** Move an overlay to `start` on `trackId` (a new track above if it would overlap). */
+	placeOverlay(id: string, start: number, trackId?: string, label = 'Move layer'): void {
 		const o = this.project.overlays.find((o) => o.id === id);
 		if (!o) return;
-		const latest = Math.max(0, this.duration - MIN_OVERLAY_SECONDS);
-		const at = Math.min(Math.max(0, start), latest);
+		const at = Math.max(0, start);
 		if (!this.videoRoom(o, at, o.duration)) return;
-		this.edit(label, (p) => {
-			const moved = p.overlays.map((x) => (x.id === id ? moveOverlayTo(x, at, placeScenes(p.scenes)) : x));
-			return { ...p, overlays: assignRow(moved, id, row, placeScenes(p.scenes)) };
-		});
+		this.moveItems([id], at - o.start, trackId, label);
 	}
 
 	/** New timing for an overlay's start or end edge (`delta` in seconds). */
 	resizeOverlay(o: Overlay, edge: 'start' | 'end', delta: number): { start: number; duration: number; sourceStart: number } {
-		const start = this.placedOverlays.find((p) => p.overlay.id === o.id)?.start ?? 0;
+		const start = o.start;
 		const max = this.overlayMaxDuration(o);
 		if (edge === 'end') {
-			const end = Math.min(this.duration, start + o.duration + delta);
-			const duration = Math.min(max, Math.max(MIN_OVERLAY_SECONDS, end - start));
+			const duration = Math.min(max, Math.max(MIN_OVERLAY_SECONDS, o.duration + delta));
 			return { start, duration, sourceStart: o.sourceStart };
 		}
 		// Moving the start: a video shows a later (or earlier) part of its clip.
@@ -923,33 +985,33 @@ export class EditorStore {
 	/** Change an overlay's timing (start in timeline seconds). */
 	setOverlayTiming(id: string, start: number, duration: number, sourceStart?: number, key?: string): void {
 		const o = this.project.overlays.find((o) => o.id === id);
-		if (!o) return;
-		const latest = Math.max(0, this.duration - MIN_OVERLAY_SECONDS);
-		const at = Math.min(Math.max(0, start), latest);
-		const length = Math.min(this.overlayMaxDuration({ ...o, sourceStart: sourceStart ?? o.sourceStart }), Math.max(MIN_OVERLAY_SECONDS, duration));
+		if (!o || this.trackOfItem(id)?.locked) return;
+		const at = Math.max(0, start);
+		const length = Math.min(
+			this.overlayMaxDuration({ ...o, sourceStart: sourceStart ?? o.sourceStart }),
+			Math.max(MIN_OVERLAY_SECONDS, duration)
+		);
 		if (!this.videoRoom(o, at, length)) return;
 		this.edit(
 			'Layer timing',
 			(p) => {
-				const scenes = placeScenes(p.scenes);
 				const overlays = p.overlays.map((x) =>
-					x.id === id
-						? { ...moveOverlayTo(x, at, scenes), duration: length, sourceStart: sourceStart ?? x.sourceStart }
-						: x
+					x.id === id ? { ...x, start: at, duration: length, sourceStart: sourceStart ?? x.sourceStart } : x
 				);
-				// Longer or moved, it may now overlap something in its row.
-				return { ...p, overlays: assignRow(overlays, id, o.row, scenes) };
+				// Longer or moved, it may now overlap something on its track.
+				return settle({ ...p, overlays }, id, newId);
 			},
 			{ key }
 		);
 	}
 
 	/**
-	 * Add an overlay at `start` in `row` (default: the top row), and select it. Returns its id, or
-	 * null if it couldn't be added (too many videos at that moment).
+	 * Add an overlay at `start` on `trackId` (default: the first overlay track that's free then, or
+	 * a new one at the top), and select it. Returns its id, or null if it couldn't be added (too
+	 * many videos at that moment).
 	 */
-	private insertOverlay(o: Omit<Overlay, 'sceneId' | 'offset' | 'row'>, start: number, row?: number): string | null {
-		const at = Math.min(Math.max(0, start), Math.max(0, this.duration - MIN_OVERLAY_SECONDS));
+	private insertOverlay(o: Omit<Overlay, 'trackId' | 'start'>, start: number, trackId?: string): string | null {
+		const at = Math.max(0, start);
 		if (o.kind === 'video' && tooManyVideos(this.placedOverlays, at, o.duration)) {
 			toasts.show(
 				`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment. Try another time, or use a photo.`,
@@ -957,30 +1019,34 @@ export class EditorStore {
 			);
 			return null;
 		}
-		const target = row ?? rowCount(this.project.overlays) - 1;
+		const target = trackId ? this.track(trackId) : undefined;
 		this.edit(
 			'Add layer',
 			(p) => {
-				const scenes = placeScenes(p.scenes);
-				const overlay: Overlay = { ...o, ...moveOverlayTo({ ...o, row: target } as Overlay, at, scenes), row: target };
+				const span = { start: at, duration: o.duration };
+				const place =
+					target && target.kind === 'overlay' && !target.locked
+						? { project: p, trackId: target.id }
+						: this.overlayTrackFor(p, span);
+				const overlay: Overlay = { ...o, start: at, trackId: place.trackId };
 				// A photo or video used as a layer is part of "Your media".
-				const library = o.mediaId && !p.library.includes(o.mediaId) ? [...p.library, o.mediaId] : p.library;
-				return { ...p, library, overlays: assignRow([...p.overlays, overlay], overlay.id, target, scenes) };
+				const library =
+					o.mediaId && !p.library.includes(o.mediaId) ? [...p.library, o.mediaId] : p.library;
+				const next = { ...place.project, library, overlays: [...place.project.overlays, overlay] };
+				return settle(next, overlay.id, newId);
 			},
 			{ select: o.id }
 		);
-		const placed = this.placedOverlays.find((p) => p.overlay.id === o.id);
-		if (placed && !(this.time >= placed.start && this.time < placed.end)) this.seek(placed.start);
+		if (!(this.time >= at && this.time < at + o.duration)) this.seek(at);
 		return o.id;
 	}
 
 	/** A photo or video from "Your media" as an overlay (5 s, or the clip's length if shorter). */
-	addOverlayFromMedia(mediaId: string, start = this.time, row?: number): string | null {
+	addOverlayFromMedia(mediaId: string, start = this.time, trackId?: string): string | null {
 		const info = this.media[mediaId];
 		if (!info || info.kind === 'audio') return null;
 		const kind = info.kind === 'video' ? 'video' : 'photo';
-		const room = Math.max(MIN_OVERLAY_SECONDS, this.duration - Math.max(0, start));
-		const length = Math.min(OVERLAY_SECONDS, room, kind === 'video' ? info.duration : Infinity);
+		const length = Math.min(OVERLAY_SECONDS, kind === 'video' ? info.duration - info.startTime : Infinity);
 		return this.insertOverlay(
 			{
 				id: newId(),
@@ -996,20 +1062,19 @@ export class EditorStore {
 				sound: { on: false, volume: 1 }
 			},
 			start,
-			row
+			trackId
 		);
 	}
 
 	/** A card (colour and rectangle) as an overlay. */
-	addCardOverlay(start = this.time, row?: number): string | null {
-		const room = Math.max(MIN_OVERLAY_SECONDS, this.duration - Math.max(0, start));
+	addCardOverlay(start = this.time, trackId?: string): string | null {
 		return this.insertOverlay(
 			{
 				id: newId(),
 				kind: 'card',
 				mediaId: '',
 				name: 'Card',
-				duration: Math.min(OVERLAY_SECONDS, room),
+				duration: OVERLAY_SECONDS,
 				sourceStart: 0,
 				box: defaultBox(this.project.format, this.project.format),
 				card: defaultCard(),
@@ -1019,17 +1084,17 @@ export class EditorStore {
 				sound: { on: false, volume: 1 }
 			},
 			start,
-			row
+			trackId
 		);
 	}
 
-	// ─── Moving between tracks ─────────────────────────────────────────────────────────────
+	// ─── Moving between the main track and overlay tracks ───────────────────────────────────
 
 	/**
-	 * Turn a scene into a layer at `start` (in the timeline as it is now) in `row`: it gets the
-	 * default layer size, and the remaining scenes close the gap. One undo step.
+	 * Turn a scene into an overlay at `start` (in the timeline as it is now) on `trackId`: it gets
+	 * the default overlay size, and the remaining scenes close the gap. One undo step.
 	 */
-	sceneToOverlay(sceneId: string, start: number, row: number): string | null {
+	sceneToOverlay(sceneId: string, start: number, trackId?: string, newTrackAt?: number): string | null {
 		const scene = this.project.scenes.find((s) => s.id === sceneId);
 		const removed = this.placed.find((p) => p.scene.id === sceneId);
 		if (!scene || !removed) return null;
@@ -1044,20 +1109,17 @@ export class EditorStore {
 				: scene.crop
 					? { width: scene.crop.w, height: scene.crop.h }
 					: info;
-		const length =
-			scene.kind === 'video' ? scene.sourceEnd - scene.sourceStart : sceneDuration(scene);
+		const length = scene.kind === 'video' ? scene.sourceEnd - scene.sourceStart : sceneDuration(scene);
 		// Where it lands once the gap has closed: times after the scene move back by its length.
-		const at = start >= removed.end ? start - removed.duration : start;
-		const overlay: Overlay = {
+		const at = Math.max(0, start >= removed.end ? start - removed.duration : start);
+		const overlay: Omit<Overlay, 'trackId'> = {
 			id: newId(),
 			kind: scene.kind,
 			mediaId: scene.mediaId,
 			name: scene.name,
-			sceneId: null,
-			offset: 0,
+			start: at,
 			duration: Math.max(MIN_OVERLAY_SECONDS, length),
 			sourceStart: scene.kind === 'video' ? scene.sourceStart : 0,
-			row,
 			box: defaultBox(picture, this.project.format),
 			crop: scene.crop ? { ...scene.crop } : undefined,
 			card: scene.card ? structuredClone($state.snapshot(scene.card) as CardContent) : undefined,
@@ -1066,38 +1128,36 @@ export class EditorStore {
 			exit: 'none',
 			sound: { on: false, volume: 1 }
 		};
-		const others = this.placedOverlays.filter(
-			(p) => p.overlay.kind === 'video' && p.overlay.sceneId !== sceneId
-		);
-		if (overlay.kind === 'video' && tooManyVideos(others, at, overlay.duration)) {
-			toasts.show(
-				`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment. Try another time.`,
-				'error'
-			);
-			return null;
-		}
+		if (!this.videoRoom(overlay, at, overlay.duration)) return null;
+		const target = trackId ? this.track(trackId) : undefined;
 		this.edit(
 			'Scene to layer',
 			(p) => {
-				const before = placeScenes(p.scenes);
 				const scenes = p.scenes.filter((s) => s.id !== sceneId);
-				const after = placeScenes(scenes);
-				// Layers that started over this scene stay where they are in time.
-				const linked = new Set(overlaysOf(p.overlays, sceneId).map((o) => o.id));
-				const kept = relinkByTime(p.overlays, before, after, linked);
-				const latest = Math.max(0, totalDuration(scenes) - MIN_OVERLAY_SECONDS);
-				const placed = { ...overlay, ...linkAt(Math.min(Math.max(0, at), latest), after) };
-				return { ...p, scenes, overlays: assignRow([...kept, placed], placed.id, row, after) };
+				const span = { start: at, duration: overlay.duration };
+				const fresh = newId();
+				const place =
+					newTrackAt !== undefined
+						? { project: addTrack(p, 'overlay', newTrackAt, fresh), trackId: fresh }
+						: target && target.kind === 'overlay' && !target.locked
+							? { project: p, trackId: target.id }
+							: this.overlayTrackFor(p, span);
+				const next = {
+					...place.project,
+					scenes,
+					overlays: [...place.project.overlays, { ...overlay, trackId: place.trackId }]
+				};
+				return settle(next, overlay.id, newId);
 			},
 			{ select: overlay.id }
 		);
 		return overlay.id;
 	}
 
-	/** Turn a layer into a full-frame scene at `index`. One undo step. */
+	/** Turn an overlay into a full-frame scene at `index`. One undo step. */
 	overlayToScene(overlayId: string, index: number): string | null {
 		const o = this.project.overlays.find((x) => x.id === overlayId);
-		if (!o) return null;
+		if (!o || this.trackOfItem(overlayId)?.locked) return null;
 		const scene: Scene = {
 			id: newId(),
 			mediaId: o.mediaId,
@@ -1118,7 +1178,7 @@ export class EditorStore {
 			(p) => {
 				const scenes = p.scenes.slice();
 				scenes.splice(Math.max(0, Math.min(index, scenes.length)), 0, scene);
-				return { ...p, scenes, overlays: compactRows(p.overlays.filter((x) => x.id !== overlayId)) };
+				return { ...p, scenes, overlays: p.overlays.filter((x) => x.id !== overlayId) };
 			},
 			{ select: scene.id }
 		);
@@ -1162,21 +1222,39 @@ export class EditorStore {
 		this.updateOverlay('Remove crop', id, (x) => ({ ...x, crop: undefined, box }));
 	}
 
-	/** Move a layer up a row (drawn over more), or down (drawn under more). */
-	moveOverlayRow(id: string, direction: 1 | -1): void {
-		const o = this.project.overlays.find((x) => x.id === id);
-		if (!o) return;
-		this.edit(direction > 0 ? 'Bring forward' : 'Send back', (p) => {
-			const scenes = placeScenes(p.scenes);
-			// Up: into the row above (or a new row above it if something's in the way there).
-			if (direction > 0) return { ...p, overlays: assignRow(p.overlays, id, o.row + 1, scenes) };
-			// Down: into the row below (or a new row just under it if something's in the way).
-			return { ...p, overlays: sendBack(p.overlays, id, scenes) };
-		});
+	/**
+	 * Move an item to the next track up (drawn over more) or down (drawn under more), if that's a
+	 * track of the same kind. If it overlaps something there, a new track is made between.
+	 */
+	moveItemTrack(id: string, direction: 1 | -1): void {
+		const kind = itemKind(this.project, id);
+		const track = this.trackOfItem(id);
+		const item = getItem(this.project, id);
+		if (!kind || !track || !item || track.locked) return;
+		const tracks = this.project.tracks;
+		const index = tracks.findIndex((t) => t.id === track.id);
+		const next = tracks[index - direction];
+		const sameKind = (t?: Track) => !!t && t.kind === track.kind;
+		const span = { start: item.start, duration: item.duration };
+		if (sameKind(next) && fits(allItems(this.project), next!.id, span)) {
+			this.moveItems([id], 0, next!.id, direction > 0 ? 'Bring forward' : 'Send back');
+			return;
+		}
+		// Something's in the way on that track: a new track beyond it, so it really ends up over
+		// (or under) it. No track there at all: a new track right next to its own.
+		const at = sameKind(next)
+			? direction > 0
+				? index - 1
+				: index + 2
+			: direction > 0
+				? index
+				: index + 1;
+		this.moveItemToNewTrack(id, item.start, at);
 	}
 
 	deleteOverlay(id: string): void {
-		this.edit('Remove layer', (p) => ({ ...p, overlays: compactRows(p.overlays.filter((o) => o.id !== id)) }), {
+		if (this.trackOfItem(id)?.locked) return;
+		this.edit('Remove layer', (p) => ({ ...p, overlays: p.overlays.filter((o) => o.id !== id) }), {
 			select: this.selectedId === id ? null : this.selectedId
 		});
 	}
@@ -1212,11 +1290,11 @@ export class EditorStore {
 		this.importing++;
 		try {
 			const info = await this.storeAudio(file);
-			// The first song starts with the video; more songs start at the playhead. Each goes in
-			// the first row where it fits (a second row if it overlaps).
+			// The first song starts with the video; more songs start at the playhead. Each goes on
+			// the first audio track where it fits (a new track if none has room).
 			const start = this.project.sounds.length ? Math.min(this.time, Math.max(0, this.duration - MIN_SOUND)) : 0;
 			const duration = info.duration - info.startTime;
-			const sound: SoundItem = {
+			const sound: Omit<SoundItem, 'trackId'> = {
 				id: newId(),
 				mediaId: info.id,
 				name: file.name.replace(/\.[^.]+$/, '') || 'Music',
@@ -1226,10 +1304,16 @@ export class EditorStore {
 				volume: 0.6,
 				kind: 'music',
 				fadeIn: MUSIC_FADE_IN,
-				fadeOut: MUSIC_FADE_OUT,
-				row: freeRow(this.project.sounds, start, duration)
+				fadeOut: MUSIC_FADE_OUT
 			};
-			this.edit('Add music', (p) => ({ ...p, sounds: [...p.sounds, sound] }), { select: sound.id });
+			this.edit(
+				'Add music',
+				(p) => {
+					const place = this.audioTrackFor(p, { start, duration });
+					return { ...place.project, sounds: [...place.project.sounds, { ...sound, trackId: place.trackId }] };
+				},
+				{ select: sound.id }
+			);
 		} catch (error) {
 			toasts.show(
 				error instanceof MediaImportError
@@ -1279,26 +1363,30 @@ export class EditorStore {
 	}
 
 	/**
-	 * Place a sound clip: its timing (start, part of the file) and row. If it overlaps a clip in
-	 * that row, it gets a new row below. One undo step (`key` merges quick repeats).
+	 * Place a sound clip: its timing (start, part of the file) and, optionally, another audio
+	 * track. If it overlaps a clip there, it goes on a new track just above. One undo step (`key`
+	 * merges quick repeats).
 	 */
 	setSoundTiming(
 		id: string,
 		timing: Pick<SoundItem, 'start' | 'sourceStart' | 'duration'>,
-		row?: number,
+		trackId?: string,
 		label = 'Sound timing',
 		key?: string
 	): void {
 		const sound = this.project.sounds.find((x) => x.id === id);
-		if (!sound) return;
-		const latest = Math.max(0, this.duration - MIN_SOUND);
-		const next = { ...timing, start: Math.min(Math.max(0, timing.start), latest) };
+		if (!sound || this.trackOfItem(id)?.locked) return;
+		const target = trackId ? this.track(trackId) : undefined;
+		const onto = target?.kind === 'audio' && !target.locked ? target.id : sound.trackId;
+		const next = {
+			start: Math.max(0, timing.start),
+			sourceStart: timing.sourceStart,
+			duration: timing.duration,
+			trackId: onto
+		};
 		this.edit(
 			label,
-			(p) => {
-				const sounds = p.sounds.map((x) => (x.id === id ? { ...x, ...next } : x));
-				return { ...p, sounds: assignSoundRow(sounds, id, row ?? sound.row) };
-			},
+			(p) => settle({ ...p, sounds: p.sounds.map((x) => (x.id === id ? { ...x, ...next } : x)) }, id, newId),
 			{ key }
 		);
 	}
@@ -1320,11 +1408,10 @@ export class EditorStore {
 	}
 
 	deleteSound(id: string): void {
-		this.edit(
-			'Remove sound',
-			(p) => ({ ...p, sounds: compactSoundRows(p.sounds.filter((s) => s.id !== id)) }),
-			{ select: this.selectedId === id ? null : this.selectedId }
-		);
+		if (this.trackOfItem(id)?.locked) return;
+		this.edit('Remove sound', (p) => ({ ...p, sounds: p.sounds.filter((s) => s.id !== id) }), {
+			select: this.selectedId === id ? null : this.selectedId
+		});
 	}
 
 	/** Render the mixed soundtrack for a stretch of time (used by export and tests). */
@@ -1430,7 +1517,7 @@ export class EditorStore {
 		try {
 			const file = new File([result.blob], `${name}.webm`, { type: result.blob.type });
 			const info = await this.storeAudio(file);
-			const sound: SoundItem = {
+			const sound: Omit<SoundItem, 'trackId'> = {
 				id: newId(),
 				mediaId: info.id,
 				name,
@@ -1440,12 +1527,16 @@ export class EditorStore {
 				volume: 1,
 				kind: 'voice',
 				fadeIn: 0,
-				fadeOut: 0,
-				row: freeRow(this.project.sounds, state.start, Math.max(0.3, info.duration - info.startTime))
+				fadeOut: 0
 			};
-			this.edit('Record voiceover', (p) => ({ ...p, sounds: [...p.sounds, sound] }), {
-				select: sound.id
-			});
+			this.edit(
+				'Record voiceover',
+				(p) => {
+					const place = this.audioTrackFor(p, sound);
+					return { ...place.project, sounds: [...place.project.sounds, { ...sound, trackId: place.trackId }] };
+				},
+				{ select: sound.id }
+			);
 			this.seek(state.start);
 		} catch (error) {
 			console.error(error);
@@ -1472,9 +1563,11 @@ export class EditorStore {
 			toasts.show('Add a photo or video first, then put words on it.');
 			return;
 		}
+		const trackId = this.project.tracks.find((t) => t.kind === 'overlay' && t.name === TEXT_TRACK_NAME)?.id ?? newId();
 		const item: TextItem = clampTextTiming(
 			{
 				id: newId(),
+				trackId,
 				text: kind === 'title' ? 'Your title' : 'Your caption',
 				start: this.player.time >= this.duration - 0.5 ? 0 : this.player.time,
 				duration: 3,
@@ -1487,7 +1580,14 @@ export class EditorStore {
 		);
 		this.edit(
 			kind === 'title' ? 'Add title' : 'Add caption',
-			(p) => ({ ...p, texts: [...p.texts, item] }),
+			(p) => {
+				// On the "Text" track (made at the top if there isn't one); a new track just above it
+				// if it would overlap other words there.
+				const withTrack = p.tracks.some((t) => t.id === trackId)
+					? p
+					: addTrack(p, 'overlay', 0, trackId, TEXT_TRACK_NAME);
+				return settle({ ...withTrack, texts: [...withTrack.texts, item] }, item.id, newId);
+			},
 			{
 				select: item.id
 			}
@@ -1497,7 +1597,7 @@ export class EditorStore {
 	}
 
 	private updateText(label: string, id: string, fn: (t: TextItem) => TextItem, key?: string): void {
-		if (!this.project.texts.some((t) => t.id === id)) return;
+		if (!this.project.texts.some((t) => t.id === id) || this.trackOfItem(id)?.locked) return;
 		this.edit(label, (p) => ({ ...p, texts: p.texts.map((t) => (t.id === id ? fn(t) : t)) }), {
 			key
 		});
@@ -1550,12 +1650,17 @@ export class EditorStore {
 	}
 
 	setTextTiming(id: string, start: number, duration: number): void {
+		if (this.trackOfItem(id)?.locked) return;
 		const d = this.duration;
-		this.updateText(
+		this.edit(
 			'Timing',
-			id,
-			(t) => clampTextTiming({ ...t, start, duration }, d),
-			`timing:${id}`
+			(p) =>
+				settle(
+					{ ...p, texts: p.texts.map((t) => (t.id === id ? clampTextTiming({ ...t, start, duration }, d) : t)) },
+					id,
+					newId
+				),
+			{ key: `timing:${id}` }
 		);
 	}
 
@@ -1565,6 +1670,7 @@ export class EditorStore {
 	}
 
 	deleteText(id: string): void {
+		if (this.trackOfItem(id)?.locked) return;
 		if (this.editingTextId === id) this.stopEditingText();
 		this.edit('Remove words', (p) => ({ ...p, texts: p.texts.filter((t) => t.id !== id) }), {
 			select: this.selectedId === id ? null : this.selectedId
@@ -1652,7 +1758,7 @@ export class EditorStore {
 	 * Photos and videos from the computer as overlays at `start` (each also joins "Your media").
 	 * Without any scenes yet there's nothing to put them on, so they become scenes.
 	 */
-	async importAsOverlays(files: File[], start: number, row?: number): Promise<void> {
+	async importAsOverlays(files: File[], start: number, trackId?: string): Promise<void> {
 		if (files.length === 0) return;
 		await this.load();
 		if (this.project.scenes.length === 0) return this.importFiles(files);
@@ -1661,7 +1767,7 @@ export class EditorStore {
 			for (const file of files) {
 				const info = await this.storeVisual(file);
 				this.importing--;
-				if (info) this.addOverlayFromMedia(info.id, start, row);
+				if (info) this.addOverlayFromMedia(info.id, start, trackId);
 			}
 		} finally {
 			this.importing = Math.max(0, this.importing);

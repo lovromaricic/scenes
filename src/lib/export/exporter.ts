@@ -18,14 +18,15 @@ import type { SourceBounds } from '$lib/model/edits';
 import { placeScenes, type PlacedScene } from '$lib/model/timeline';
 import type { Project, Scene } from '$lib/model/types';
 import { Compositor, type CompositeFrame } from '$lib/render/compositor';
-import { layerInput, textDrawsAt } from '$lib/render/frame';
+import { layerInput } from '$lib/render/frame';
 import { CardCache } from '$lib/render/card';
 import { TextSpriteCache } from '$lib/render/text';
 import { ensureFonts } from '$lib/render/fonts';
 import { resolveTextStyle } from '$lib/model/textStyle';
 import { exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
 import { placeOverlays, type PlacedOverlay } from '$lib/model/overlay';
-import { cardSize, overlayDraw, type OverlayDraw } from '$lib/render/overlay';
+import { cardSize, overlayDraw } from '$lib/render/overlay';
+import { textDraw, visualsAt, type VisualDraw } from '$lib/render/visuals';
 import { PhotoExportReader, VideoExportReader, type ExportFrameReader } from './reader';
 
 /**
@@ -228,26 +229,31 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 			: null;
 	};
 
-	// Layers, lowest row first: each drawn with the same geometry as the preview.
-	const layers = placeOverlays(project.overlays ?? [], placed);
-	const overlaysAt = async (t: number): Promise<OverlayDraw[]> => {
-		const draws: OverlayDraw[] = [];
-		for (const p of layers) {
-			if (t < p.start || t >= p.end) continue;
-			const frame = await overlayFrame(p, t);
+	// The overlay tracks, lowest first (hidden ones left out), drawn exactly as in the preview.
+	const layers = placeOverlays(project.overlays ?? []);
+	const visuals = async (t: number): Promise<VisualDraw[]> => {
+		const draws: VisualDraw[] = [];
+		for (const v of visualsAt(project, t, duration)) {
+			if (v.type === 'text') {
+				const d = textDraw(v.item, t, width, height, sprites);
+				if (d) draws.push({ type: 'text', draw: d });
+				continue;
+			}
+			const frame = await overlayFrame(v.placed, t);
 			if (!frame) continue;
-			draws.push(
-				overlayDraw(
+			draws.push({
+				type: 'overlay',
+				draw: overlayDraw(
 					frame,
-					p,
+					v.placed,
 					t,
 					project.mood,
 					width,
 					height,
 					project.format.width,
-					request.sourceSize(p.overlay.mediaId) ?? undefined
+					request.sourceSize(v.placed.overlay.mediaId) ?? undefined
 				)
-			);
+			});
 		}
 		return draws;
 	};
@@ -287,8 +293,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 				a: await layer(c.a),
 				b: await layer(c.b),
 				transition: c.transition,
-				overlays: await overlaysAt(t),
-				texts: textDrawsAt(project.texts, t, width, height, sprites)
+				visuals: await visuals(t)
 			};
 			compositor.render(frame);
 			await videoSource.add(t, 1 / fps);

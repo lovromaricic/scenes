@@ -1,17 +1,11 @@
 /**
- * Overlays: videos, photos and cards on the Layers track, drawn on top of the scenes at any size
- * and position, and free to overlap in time. Pure data and maths, no DOM.
- *
- * Timing: an overlay is linked to the scene it starts over (`sceneId`), and `offset` is how far
- * into that scene (on the timeline) it starts. So moving, trimming or removing scenes before it
- * carries it along. With no scenes it's unlinked and `offset` is from the start of the video.
- *
- * Rows: `row` 0 is the lowest Layers row, drawn first; higher rows are drawn on top.
+ * Overlays: videos, photos and cards on overlay tracks, drawn on top of the scenes at any size
+ * and position. Each has a fixed start on the timeline and lives on a track (`trackId`); higher
+ * tracks are drawn on top of lower ones (see tracks.ts). Pure data and maths, no DOM.
  */
 
 import type { CardContent } from './card';
 import type { Crop } from './crop';
-import type { PlacedScene } from './timeline';
 import type { TextAnimation } from './types';
 
 export type OverlayKind = 'video' | 'photo' | 'card';
@@ -42,15 +36,14 @@ export interface Overlay {
 	/** The source file (videos and photos); '' for cards. */
 	mediaId: string;
 	name: string;
-	/** The scene it starts over (null when there are no scenes). */
-	sceneId: string | null;
-	/** Seconds after the linked scene's start (or after 0 when unlinked). */
-	offset: number;
+	/** The overlay track it's on. */
+	trackId: string;
+	/** When it starts on the timeline, in seconds. */
+	start: number;
 	/** How long it shows, in seconds. */
 	duration: number;
 	/** Videos: where in the clip it starts (source seconds). */
 	sourceStart: number;
-	row: number;
 	box: OverlayBox;
 	/** Part of the source kept, in source pixels (missing = whole picture). */
 	crop?: Crop;
@@ -62,6 +55,7 @@ export interface Overlay {
 	/** Videos: the clip's own sound (off by default). */
 	sound: { on: boolean; volume: number };
 }
+
 
 export const OVERLAY_SECONDS = 5;
 /** New overlays are this wide, as a fraction of the frame. */
@@ -112,116 +106,30 @@ export function fitShape(
 	return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 
-/** When an overlay starts on the timeline. */
-export function overlayStart(o: Pick<Overlay, 'sceneId' | 'offset'>, placed: PlacedScene[]): number {
-	const scene = o.sceneId ? placed.find((p) => p.scene.id === o.sceneId) : undefined;
-	return (scene?.start ?? 0) + o.offset;
-}
-
 export interface PlacedOverlay {
 	overlay: Overlay;
 	start: number;
 	end: number;
 }
 
-/** Every overlay with its start and end, lowest row first (the order they're drawn in). */
-export function placeOverlays(overlays: Overlay[], placed: PlacedScene[]): PlacedOverlay[] {
+/**
+ * Every overlay with its start and end, in drawing order: lowest track first (tracks listed top
+ * to bottom in `trackOrder`), then by start time.
+ */
+export function placeOverlays(overlays: Overlay[], trackOrder: string[] = []): PlacedOverlay[] {
+	const depth = (id: string) => {
+		const i = trackOrder.indexOf(id);
+		return i === -1 ? -Infinity : -i;
+	};
 	return overlays
-		.map((overlay) => {
-			const start = overlayStart(overlay, placed);
-			return { overlay, start, end: start + overlay.duration };
-		})
-		.sort((a, b) => a.overlay.row - b.overlay.row || a.start - b.start);
-}
-
-/** Link to the scene under `start` (or the last one, past the end). */
-export function linkAt(start: number, placed: PlacedScene[]): Pick<Overlay, 'sceneId' | 'offset'> {
-	const t = Math.max(0, start);
-	const scene = placed.find((p) => t >= p.start && t < p.end) ?? placed.at(-1);
-	return scene ? { sceneId: scene.scene.id, offset: t - scene.start } : { sceneId: null, offset: t };
-}
-
-/** The same overlay placed at `start` (linked to the scene there). */
-export function moveOverlayTo(o: Overlay, start: number, placed: PlacedScene[]): Overlay {
-	return { ...o, ...linkAt(start, placed) };
+		.map((overlay) => ({ overlay, start: overlay.start, end: overlay.start + overlay.duration }))
+		.sort((a, b) => depth(a.overlay.trackId) - depth(b.overlay.trackId) || a.start - b.start);
 }
 
 /** Longest an overlay may show: a video can't outlast its clip. */
 export function maxOverlayDuration(o: Pick<Overlay, 'kind' | 'sourceStart'>, clipDuration?: number): number {
 	if (o.kind !== 'video' || clipDuration === undefined) return Infinity;
 	return Math.max(MIN_OVERLAY_SECONDS, clipDuration - o.sourceStart);
-}
-
-const overlaps = (a: { start: number; end: number }, b: { start: number; end: number }) =>
-	a.start < b.end - 1e-6 && b.start < a.end - 1e-6;
-
-/**
- * Put overlay `id` in `row`. If it would overlap another overlay there, a new row is made just
- * above `row` for it instead. Rows are then renumbered so there are no empty ones.
- */
-export function assignRow(overlays: Overlay[], id: string, row: number, placed: PlacedScene[]): Overlay[] {
-	const times = new Map(placeOverlays(overlays, placed).map((p) => [p.overlay.id, p]));
-	const me = times.get(id);
-	if (!me) return overlays;
-	const clash = overlays.some((o) => o.id !== id && o.row === row && overlaps(times.get(o.id)!, me));
-	const next = overlays.map((o) => {
-		if (o.id === id) return { ...o, row: clash ? row + 1 : row };
-		// Make room for the new row above `row`.
-		if (clash && o.row > row) return { ...o, row: o.row + 1 };
-		return o;
-	});
-	return compactRows(next);
-}
-
-/**
- * Send overlay `id` one row down. If something there overlaps it (or it's already the lowest),
- * it gets a new row of its own just below, so it ends up underneath.
- */
-export function sendBack(overlays: Overlay[], id: string, placed: PlacedScene[]): Overlay[] {
-	const me = overlays.find((o) => o.id === id);
-	if (!me) return overlays;
-	const target = me.row - 1;
-	const times = new Map(placeOverlays(overlays, placed).map((p) => [p.overlay.id, p]));
-	const clash =
-		target < 0 ||
-		overlays.some((o) => o.id !== id && o.row === target && overlaps(times.get(o.id)!, times.get(id)!));
-	if (!clash) return compactRows(overlays.map((o) => (o.id === id ? { ...o, row: target } : o)));
-	const at = Math.max(0, target);
-	return compactRows(
-		overlays.map((o) => (o.id === id ? { ...o, row: at } : o.row >= at ? { ...o, row: o.row + 1 } : o))
-	);
-}
-
-/** Renumber rows 0, 1, 2… keeping their order (empty rows disappear). */
-export function compactRows(overlays: Overlay[]): Overlay[] {
-	const used = [...new Set(overlays.map((o) => o.row))].sort((a, b) => a - b);
-	if (used.every((r, i) => r === i)) return overlays;
-	return overlays.map((o) => ({ ...o, row: used.indexOf(o.row) }));
-}
-
-/** How many rows there are (at least one, so the Layers row always shows). */
-export function rowCount(overlays: Overlay[]): number {
-	return Math.max(1, ...overlays.map((o) => o.row + 1));
-}
-
-/**
- * After scenes change in a way that should keep overlays where they are in time (a split, or
- * removing a scene but keeping its overlays), link each overlay to the scene now at its time.
- */
-export function relinkByTime(
-	overlays: Overlay[],
-	before: PlacedScene[],
-	after: PlacedScene[],
-	ids?: Set<string>
-): Overlay[] {
-	return overlays.map((o) =>
-		!ids || ids.has(o.id) ? { ...o, ...linkAt(overlayStart(o, before), after) } : o
-	);
-}
-
-/** Overlays linked to a scene. */
-export function overlaysOf(overlays: Overlay[], sceneId: string): Overlay[] {
-	return overlays.filter((o) => o.sceneId === sceneId);
 }
 
 /** Video overlays showing at `t`. */

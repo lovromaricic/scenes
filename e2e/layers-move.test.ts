@@ -45,18 +45,18 @@ async function setup(page: Page) {
 
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-test.describe('Moving between Scenes and Layers', () => {
-	test('drag a scene up into Layers: it becomes a layer, and the scenes close the gap', async ({ page }) => {
+test.describe('Moving between the Scenes track and overlay tracks', () => {
+	test('drag a scene up onto an overlay track: it becomes an overlay, and the scenes close the gap', async ({ page }) => {
 		await setup(page);
 		const green = await settled(page.locator('.card-slot').nth(1));
-		const lane = await settled(page.locator('.layers'));
+		const lane = await settled(page.locator('[data-track-lane]').first());
 		const red = await settled(page.locator('.card-slot').first());
 		const pxPerSec = red.width / 4;
 		await page.mouse.move(green.x + 20, green.y + green.height / 2);
 		await page.mouse.down();
-		// Up into the Layers row, over 1 s into the red scene.
+		// Up onto Overlay 1, over 1 s into the red scene: that track is highlighted as the target.
 		await page.mouse.move(red.x + pxPerSec + 20, lane.y + lane.height / 2, { steps: 12 });
-		await expect(page.locator('.layers .drop-ghost')).toContainText('Make it a layer');
+		await expect(page.locator('.track-row.target')).toHaveCount(1);
 		await page.mouse.up();
 
 		await expect.poll(async () => (await state(page)).scenes).toEqual(['Red@0', 'Blue@4']);
@@ -80,8 +80,8 @@ test.describe('Moving between Scenes and Layers', () => {
 			const green = Object.values(s.media).find((m) => m.name === 'green.mp4')!;
 			s.addOverlayFromMedia(green.id, 1);
 		});
-		await expect(page.locator('.layer-slot')).toHaveCount(1);
-		const item = await settled(page.locator('.layer-slot'));
+		await expect(page.locator('.item-slot.overlay')).toHaveCount(1);
+		const item = await settled(page.locator('.item-slot.overlay'));
 		const blue = await settled(page.locator('.card-slot').nth(2));
 		await page.mouse.move(item.x + 20, item.y + item.height / 2);
 		await page.mouse.down();

@@ -27,7 +27,7 @@ test.describe('Phase 8: polish', () => {
 		await page.keyboard.type('Our trip');
 		await page.keyboard.press('Enter');
 		await expect(
-			page.getByRole('group', { name: 'Words' }).getByRole('button', { name: /Our trip/ })
+			page.getByRole('group', { name: 'Text' }).getByRole('button', { name: /Our trip/ })
 		).toBeVisible();
 
 		// A transition and a look.
@@ -104,7 +104,7 @@ test.describe('Phase 8: polish', () => {
 				await expect(page.getByRole('button', { name, exact: true })).toBeInViewport();
 			}
 			await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeInViewport();
-			await expect(page.getByRole('group', { name: 'Sound', exact: true })).toBeInViewport();
+			await expect(page.getByRole('group', { name: 'Audio 1', exact: true })).toBeInViewport();
 			await expect(page.getByRole('button', { name: /^Cards/ })).toBeInViewport();
 		}
 	});

@@ -4,6 +4,7 @@ import { frameRect, showsBars, type FrameBars, type Rect } from '$lib/model/fram
 import type { TransitionKind } from '$lib/model/types';
 import { compileProgram, createTexture } from './gl';
 import type { OverlayDraw } from './overlay';
+import type { VisualDraw } from './visuals';
 
 /**
  * The WebGL2 compositor draws one output frame. The same code renders the live preview and,
@@ -13,9 +14,8 @@ import type { OverlayDraw } from './overlay';
  *   1. each visible scene frame is drawn "cover"-fitted with its colour mood (grade shader);
  *      during a transition both scenes go to offscreen framebuffers first,
  *   2. the transition shader blends them onto the output,
- *   3. overlays (the Layers track) are drawn on top, lowest row first, with rounded corners,
- *      border, shadow and opacity,
- *   4. text sprites are drawn on top of everything with their animation.
+ *   3. what's on the overlay tracks is drawn on top, lowest track first: pictures with rounded
+ *      corners, border, shadow and opacity, and words as sprites with their animation.
  */
 
 export interface LayerInput {
@@ -51,9 +51,8 @@ export interface CompositeFrame {
 	/** The incoming scene during a transition. */
 	b?: LayerInput | null;
 	transition?: { kind: TransitionKind; progress: number } | null;
-	/** Layers, in drawing order (lowest row first). */
-	overlays?: OverlayDraw[];
-	texts?: TextDraw[];
+	/** Overlay tracks' pictures and words, in drawing order (lowest track first). */
+	visuals?: VisualDraw[];
 }
 
 export const TRANSITION_IDS: Record<TransitionKind, number> = {
@@ -495,49 +494,58 @@ export class Compositor {
 			gl.clear(gl.COLOR_BUFFER_BIT);
 		}
 
-		this.drawOverlays(frame.overlays ?? []);
-		this.drawTexts(frame.texts ?? []);
+		this.drawVisuals(frame.visuals ?? []);
 		gl.bindVertexArray(null);
 	}
 
 	/** Texture slots for overlays start after the scenes' (0, 1). */
 	private static readonly OVERLAY_SLOT = 8;
 
-	private drawOverlays(overlays: OverlayDraw[]) {
-		if (overlays.length === 0) return;
+	/** Pictures and words from the overlay tracks, in order, blended onto the frame. */
+	private drawVisuals(visuals: VisualDraw[]) {
+		if (visuals.length === 0) return;
 		const gl = this.gl;
 		const { width: W, height: H } = this.canvas;
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		gl.viewport(0, 0, W, H);
-		const { program, u } = this.overlay;
-		gl.useProgram(program);
 		gl.enable(gl.BLEND);
 		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+		let slot = 0;
+		for (const v of visuals) {
+			if (v.type === 'overlay') this.drawOverlay(v.draw, Compositor.OVERLAY_SLOT + slot++);
+			else this.drawText(v.draw);
+		}
+		gl.disable(gl.BLEND);
+		this.evictSprites();
+	}
+
+	private drawOverlay(o: OverlayDraw, slot: number) {
+		if (o.opacity <= 0.001 || o.rect.w < 1 || o.rect.h < 1) return;
+		const gl = this.gl;
+		const { width: W, height: H } = this.canvas;
+		const { program, u } = this.overlay;
+		gl.useProgram(program);
 		gl.uniform2f(u.viewport, W, H);
 		gl.uniform1i(u.image, 0);
-		overlays.forEach((o, i) => {
-			if (o.opacity <= 0.001 || o.rect.w < 1 || o.rect.h < 1) return;
-			this.bindImage(Compositor.OVERLAY_SLOT + i, o.image);
-			const s = o.shadow;
-			gl.uniform2f(u.center, o.rect.x + o.rect.w / 2, o.rect.y + o.rect.h / 2);
-			gl.uniform2f(u.half, o.rect.w / 2, o.rect.h / 2);
-			gl.uniform1f(u.margin, s ? s.blur + Math.hypot(s.offsetX, s.offsetY) + 2 : 1);
-			gl.uniform1f(u.radius, Math.min(o.radius, o.rect.w / 2, o.rect.h / 2));
-			gl.uniform1f(u.border, o.borderWidth);
-			gl.uniform3f(u.borderColor, ...o.borderColor);
-			gl.uniform1f(u.shadowBlur, s ? Math.max(1, s.blur) : 1);
-			gl.uniform2f(u.shadowOffset, s?.offsetX ?? 0, s?.offsetY ?? 0);
-			gl.uniform1f(u.shadowAlpha, s?.alpha ?? 0);
-			gl.uniform1f(u.opacity, o.opacity);
-			gl.uniform4f(u.uv, ...o.uv);
-			const g = o.grade;
-			gl.uniform3f(u.gain, g.gain[0], g.gain[1], g.gain[2]);
-			gl.uniform3f(u.lift, g.lift[0], g.lift[1], g.lift[2]);
-			gl.uniform1f(u.contrast, g.contrast);
-			gl.uniform1f(u.saturation, g.saturation);
-			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-		});
-		gl.disable(gl.BLEND);
+		this.bindImage(slot, o.image);
+		const s = o.shadow;
+		gl.uniform2f(u.center, o.rect.x + o.rect.w / 2, o.rect.y + o.rect.h / 2);
+		gl.uniform2f(u.half, o.rect.w / 2, o.rect.h / 2);
+		gl.uniform1f(u.margin, s ? s.blur + Math.hypot(s.offsetX, s.offsetY) + 2 : 1);
+		gl.uniform1f(u.radius, Math.min(o.radius, o.rect.w / 2, o.rect.h / 2));
+		gl.uniform1f(u.border, o.borderWidth);
+		gl.uniform3f(u.borderColor, ...o.borderColor);
+		gl.uniform1f(u.shadowBlur, s ? Math.max(1, s.blur) : 1);
+		gl.uniform2f(u.shadowOffset, s?.offsetX ?? 0, s?.offsetY ?? 0);
+		gl.uniform1f(u.shadowAlpha, s?.alpha ?? 0);
+		gl.uniform1f(u.opacity, o.opacity);
+		gl.uniform4f(u.uv, ...o.uv);
+		const g = o.grade;
+		gl.uniform3f(u.gain, g.gain[0], g.gain[1], g.gain[2]);
+		gl.uniform3f(u.lift, g.lift[0], g.lift[1], g.lift[2]);
+		gl.uniform1f(u.contrast, g.contrast);
+		gl.uniform1f(u.saturation, g.saturation);
+		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 	}
 
 	/** A pixel rectangle (top-left origin) as uRect in clip space for a W × H target. */
@@ -614,30 +622,22 @@ export class Compositor {
 		return entry.texture;
 	}
 
-	private drawTexts(texts: TextDraw[]) {
-		if (texts.length === 0) return;
+	private drawText(t: TextDraw) {
+		if (t.opacity <= 0.001) return;
 		const gl = this.gl;
 		const { width: W, height: H } = this.canvas;
-		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		const { program, u } = this.sprite;
 		gl.useProgram(program);
-		gl.enable(gl.BLEND);
-		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 		gl.activeTexture(gl.TEXTURE0);
 		gl.uniform1i(u.image, 0);
-		for (const t of texts) {
-			if (t.opacity <= 0.001) continue;
-			gl.bindTexture(gl.TEXTURE_2D, this.spriteTexture(t.key, t.image));
-			const w = t.width * t.scale;
-			const h = t.height * t.scale;
-			const left = t.cx - w / 2;
-			const bottom = t.cy + h / 2;
-			gl.uniform4f(u.rect, (left / W) * 2 - 1, 1 - (bottom / H) * 2, (w / W) * 2, (h / H) * 2);
-			gl.uniform1f(u.opacity, t.opacity);
-			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-		}
-		gl.disable(gl.BLEND);
-		this.evictSprites();
+		gl.bindTexture(gl.TEXTURE_2D, this.spriteTexture(t.key, t.image));
+		const w = t.width * t.scale;
+		const h = t.height * t.scale;
+		const left = t.cx - w / 2;
+		const bottom = t.cy + h / 2;
+		gl.uniform4f(u.rect, (left / W) * 2 - 1, 1 - (bottom / H) * 2, (w / W) * 2, (h / H) * 2);
+		gl.uniform1f(u.opacity, t.opacity);
+		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 	}
 
 	/** Free textures for sprites that haven't been drawn for a few seconds. */

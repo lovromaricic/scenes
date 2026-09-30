@@ -35,9 +35,12 @@
 
 	const visible = $derived(
 		width > 0
-			? editor.project.texts.filter(
-					(t) => isTextVisible(t, editor.time) || t.id === editor.editingTextId
-				)
+			? editor.project.texts.filter((t) => {
+					// Words on hidden tracks aren't shown; on locked tracks they can't be changed.
+					const track = editor.track(t.trackId);
+					if (track?.hidden || track?.locked) return false;
+					return isTextVisible(t, editor.time) || t.id === editor.editingTextId;
+				})
 			: []
 	);
 

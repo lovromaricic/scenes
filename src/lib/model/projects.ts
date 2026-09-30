@@ -2,6 +2,8 @@ import { legacyFormat } from './format';
 import { resolveTextStyle, TEXT_STYLE_SPECS } from './textStyle';
 import type { Project } from './types';
 import { migrateSounds } from './sound';
+import { migrateToTracks } from './tracks';
+import { placeScenes } from './timeline';
 
 /**
  * Pure helpers for managing many projects: what each one uses, what becomes unused when one is
@@ -60,9 +62,13 @@ export function migrateProject<T extends Partial<Project> & { aspect?: string }>
 	project.texts ??= [];
 	project.sounds ??= [];
 	// Before trimming, fade lengths and Sound rows.
-	project.sounds = migrateSounds(project.sounds as never);
-	// Before the Layers track.
+	project.sounds = migrateSounds(project.sounds as never) as never;
 	project.overlays ??= [];
+	// Before tracks: Layers rows, the Words lane and Sound rows become tracks; overlays linked to
+	// scenes keep their place on the timeline.
+	const sceneStarts = new Map(placeScenes(project.scenes).map((p) => [p.scene.id, p.start]));
+	const withTracks = migrateToTracks(project as never, sceneStarts, () => crypto.randomUUID());
+	Object.assign(project, withTracks);
 	project.mood ??= 'natural';
 	project.title ??= 'My video';
 	// Words in a style this version doesn't know are shown in the plain style.

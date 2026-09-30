@@ -63,7 +63,7 @@ test.describe('Phase 5: sound', () => {
 		const chooser = page.waitForEvent('filechooser');
 		await page.getByRole('button', { name: /^Music/ }).click();
 		await (await chooser).setFiles(fixture('music.m4a'));
-		const pill = page.getByRole('button', { name: /^Music: music, 0:10/ });
+		const pill = page.getByRole('button', { name: /^Music: music, from 0s for 10s/ });
 		await expect(pill).toBeVisible();
 		// It stops at the end of the 10s video even though the song is 12s, and has a waveform.
 		await expect(pill.locator('canvas')).toBeVisible();

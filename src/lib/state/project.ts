@@ -4,6 +4,7 @@ import { DEFAULT_FORMAT } from '$lib/model/format';
 import { DEFAULT_FRAME } from '$lib/model/framing';
 import { CARD_SECONDS, defaultCard } from '$lib/model/card';
 import { nameFromFile } from '$lib/media/kinds';
+import { mainTrack, newTrack } from '$lib/model/tracks';
 
 export const PHOTO_SECONDS = 3;
 
@@ -22,6 +23,12 @@ export function newProject(): Project {
 		scenes: [],
 		texts: [],
 		sounds: [],
+		// A new video starts with one overlay track and one audio track around the scenes.
+		tracks: [
+			newTrack(newId(), 'overlay', 'Overlay 1'),
+			mainTrack(),
+			newTrack(newId(), 'audio', 'Audio 1')
+		],
 		overlays: [],
 		library: [],
 		createdAt: now,

@@ -16,7 +16,12 @@ import type { Project } from '$lib/model/types';
  */
 
 export const APP_NAME = 'Scenes';
-export const FILE_FORMAT_VERSION = 1;
+/**
+ * 1: the first version.
+ * 2: tracks. Layers rows, the Words lane and Sound rows became tracks, and overlays have a fixed
+ *    start instead of a link to a scene (see migrateProjectJson).
+ */
+export const FILE_FORMAT_VERSION = 2;
 export const FILE_EXTENSION = '.scenes';
 export const FILE_MIME = 'application/x-scenes-project';
 export const FILE_TYPES = [{ description: 'Scenes project', accept: { [FILE_MIME]: [FILE_EXTENSION] } }];
@@ -91,9 +96,9 @@ export function checkManifest(value: unknown): Manifest {
 
 /**
  * Bring project.json from any earlier format version up to date, and check it has what's needed.
- * Version 1 is the first; later versions add their steps here (`if (version < 2) …`).
+ * Each version adds its step here.
  */
-export function migrateProjectJson(value: unknown, _version: number): ProjectJson {
+export function migrateProjectJson(value: unknown, version: number): ProjectJson {
 	const data = value as Partial<ProjectJson> | null;
 	const project = data?.project as Partial<Project> | undefined;
 	if (
@@ -105,6 +110,10 @@ export function migrateProjectJson(value: unknown, _version: number): ProjectJso
 	) {
 		throw new ProjectFileError(DAMAGED);
 	}
+	// Version 1 → 2 (tracks): rows, the Words lane and scene links become tracks and fixed starts.
+	// `migrateProject` does it (the same step brings projects stored in the browser up to date);
+	// a version 1 file never has tracks, so they're always rebuilt from its rows.
+	if (version < 2) delete (project as { tracks?: unknown }).tracks;
 	return {
 		project: migrateProject(project),
 		view: data.view,

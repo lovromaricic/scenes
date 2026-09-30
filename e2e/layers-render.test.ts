@@ -37,8 +37,8 @@ type Api = {
 	setOverlayStyle(id: string, style: object): void;
 	setOverlayCard(id: string, card: object): void;
 	setOverlaySound(id: string, sound: object): void;
-	moveOverlayRow(id: string, d: 1 | -1): void;
-	project: { overlays: { id: string; style: object; row: number }[] };
+	moveItemTrack(id: string, d: 1 | -1): void;
+	project: { overlays: { id: string; style: object; trackId: string }[]; tracks: { id: string }[] };
 };
 
 /** Red video (0–4 s) then the yellow photo (4–7 s), with three layers. */
@@ -93,7 +93,7 @@ const CHECKS: [number, number, number, RGB, number][] = [
 test.describe('Layers in the picture', () => {
 	test.setTimeout(180_000);
 
-	test('layers draw over scenes with corners, border, shadow and opacity; higher rows on top', async ({ page }) => {
+	test('layers draw over scenes with corners, border, shadow and opacity; higher tracks on top', async ({ page }) => {
 		await build(page);
 		for (const [t, x, y, want, tol] of CHECKS) {
 			await seekTo(page, t);
@@ -117,7 +117,7 @@ test.describe('Layers in the picture', () => {
 			const photo = Object.values(s.media).find((m) => m.name === 'yellow.jpg')!.id;
 			const low = s.addOverlayFromMedia(photo, 0, 0);
 			s.setOverlayBox(low, { x: 0.05, y: 0.55, w: 0.3, h: 0.35 });
-			const card = s.addCardOverlay(0, 5);
+			const card = s.addCardOverlay(0);
 			s.setOverlayBox(card, { x: 0.1, y: 0.6, w: 0.2, h: 0.25 });
 			s.setOverlayCard(card, { background: '#00ff00', rect: null });
 			return { low, card };
@@ -126,15 +126,16 @@ test.describe('Layers in the picture', () => {
 		expect(near(await previewPixel(page, 0.2, 0.72), GREEN, 20)).toBe(true);
 		const rows = await page.evaluate(({ low, card }) => {
 			const s = (window as unknown as { __scenes: Api }).__scenes;
-			const row = (id: string) => s.project.overlays.find((o) => o.id === id)!.row;
+			// How high a layer's track is: tracks are listed top first.
+			const row = (id: string) => -s.project.tracks.findIndex((t) => t.id === s.project.overlays.find((o) => o.id === id)!.trackId);
 			return [row(low), row(card)];
 		}, ids);
 		expect(rows[1]).toBeGreaterThan(rows[0]);
 		// Send the card back (a row at a time) until it's under the photo: now the photo is on top.
 		await page.evaluate(({ low, card }) => {
 			const s = (window as unknown as { __scenes: Api }).__scenes;
-			const row = (id: string) => s.project.overlays.find((o) => o.id === id)!.row;
-			for (let i = 0; i < 8 && row(card) > row(low); i++) s.moveOverlayRow(card, -1);
+			const row = (id: string) => -s.project.tracks.findIndex((t) => t.id === s.project.overlays.find((o) => o.id === id)!.trackId);
+			for (let i = 0; i < 8 && row(card) > row(low); i++) s.moveItemTrack(card, -1);
 		}, ids);
 		expect(near(await previewPixel(page, 0.2, 0.72), YELLOW, 25)).toBe(true);
 	});

@@ -4,7 +4,7 @@
  *
  * A clip plays `duration` seconds of its file from `sourceStart`, starting at `start` on the
  * timeline. Trimming changes `sourceStart`/`duration` (never beyond the file); moving changes
- * `start`. `row` 0 is the first Sound row; overlapping clips go in different rows.
+ * `start`. Clips live on audio tracks (see tracks.ts).
  */
 
 import type { SoundItem } from './types';
@@ -73,48 +73,17 @@ export function effectiveFades(s: Pick<SoundItem, 'fadeIn' | 'fadeOut'>, length:
 	return { fadeIn: fadeIn * k, fadeOut: fadeOut * k };
 }
 
-// ─── Rows ──────────────────────────────────────────────────────────────────────────────────
+// ─── Older projects ───────────────────────────────────────────────────────────────────────
 
-type Placed = Pick<SoundItem, 'id' | 'row' | 'start' | 'duration'>;
+type Placed = { id: string; row: number; start: number; duration: number };
 
-const overlaps = (a: Placed, b: Placed) =>
+const overlapsRow = (a: Placed, b: Placed) =>
 	a.start < b.start + b.duration - 1e-6 && b.start < a.start + a.duration - 1e-6;
 
-/** The lowest row where a clip from `start` for `duration` fits without overlapping. */
-export function freeRow(sounds: Placed[], start: number, duration: number, except?: string): number {
+/** The lowest row where a clip from `start` for `duration` fits (for migrating old projects). */
+export function freeRow(sounds: Placed[], start: number, duration: number): number {
 	const probe = { id: '', row: 0, start, duration };
-	for (let row = 0; ; row++) {
-		if (!sounds.some((s) => s.id !== except && s.row === row && overlaps(s, probe))) return row;
-	}
-}
-
-/**
- * Put clip `id` in `row`. If it would overlap another clip there, a new row is made just below
- * `row` for it (rows further down shift down). Then empty rows are removed.
- */
-export function assignSoundRow<T extends Placed>(sounds: T[], id: string, row: number): T[] {
-	const me = sounds.find((s) => s.id === id);
-	if (!me) return sounds;
-	const moved = { ...me, row };
-	const clash = sounds.some((s) => s.id !== id && s.row === row && overlaps(s, moved));
-	const next = sounds.map((s) => {
-		if (s.id === id) return { ...s, row: clash ? row + 1 : row };
-		if (clash && s.row > row) return { ...s, row: s.row + 1 };
-		return s;
-	});
-	return compactSoundRows(next);
-}
-
-/** Renumber rows 0, 1, 2… keeping their order (empty rows disappear). */
-export function compactSoundRows<T extends Pick<SoundItem, 'row'>>(sounds: T[]): T[] {
-	const used = [...new Set(sounds.map((s) => s.row))].sort((a, b) => a - b);
-	if (used.every((r, i) => r === i)) return sounds;
-	return sounds.map((s) => ({ ...s, row: used.indexOf(s.row) }));
-}
-
-/** How many Sound rows to show (at least one). */
-export function soundRowCount(sounds: Pick<SoundItem, 'row'>[]): number {
-	return Math.max(1, ...sounds.map((s) => s.row + 1));
+	for (let row = 0; ; row++) if (!sounds.some((s) => s.row === row && overlapsRow(s, probe))) return row;
 }
 
 // ─── Snapping ──────────────────────────────────────────────────────────────────────────────
@@ -143,23 +112,30 @@ export function snapTimes(
  * Migrate a sound saved before trimming and rows existed: `fade: true` becomes the automatic
  * fade lengths, voiceovers stack in rows under the music.
  */
-export function migrateSounds(sounds: (SoundItem & { fade?: boolean })[]): SoundItem[] {
-	const needsRows = sounds.some((s) => typeof s.row !== 'number');
+export function migrateSounds<T extends Partial<SoundItem> & { id: string; fade?: boolean; row?: number }>(
+	sounds: T[]
+): (T & { fadeIn: number; fadeOut: number; row: number })[] {
+	// Already on tracks: nothing to place.
+	const needsRows = sounds.some((s) => typeof s.row !== 'number' && typeof s.trackId !== 'string');
 	let out = sounds.map((s) => {
 		const { fade, ...rest } = s;
-		return {
-			...rest,
+		const fades = {
 			fadeIn: typeof s.fadeIn === 'number' ? s.fadeIn : fade ? MUSIC_FADE_IN : 0,
-			fadeOut: typeof s.fadeOut === 'number' ? s.fadeOut : fade ? MUSIC_FADE_OUT : 0,
-			row: typeof s.row === 'number' ? s.row : 0
+			fadeOut: typeof s.fadeOut === 'number' ? s.fadeOut : fade ? MUSIC_FADE_OUT : 0
 		};
+		// On a track already: no row (tracks replaced rows).
+		if (typeof s.trackId === 'string') return { ...rest, ...fades } as never;
+		return { ...rest, ...fades, row: typeof s.row === 'number' ? s.row : 0 };
 	});
 	if (needsRows) {
 		// Music on the first row, voiceovers where they fit below.
-		const placed: SoundItem[] = [];
-		const order = [...out].sort((a, b) => (a.kind === b.kind ? a.start - b.start : a.kind === 'music' ? -1 : 1));
-		for (const s of order) placed.push({ ...s, row: freeRow(placed, s.start, s.duration) });
+		const placed: typeof out = [];
+		const order = [...out].sort((a, b) =>
+			a.kind === b.kind ? (a.start ?? 0) - (b.start ?? 0) : a.kind === 'music' ? -1 : 1
+		);
+		for (const s of order)
+			placed.push({ ...s, row: freeRow(placed as never, s.start ?? 0, s.duration ?? 0) });
 		out = out.map((s) => placed.find((p) => p.id === s.id)!);
 	}
-	return out;
+	return out as never;
 }

@@ -6,7 +6,7 @@
 <div class="overlay" aria-hidden="true">
 	<p class="message">
 		<ImagePlus size={16} strokeWidth={1.8} />
-		Drop on the picture or the Layers row to place on top · anywhere else adds scenes
+		Drop on the picture or an overlay track to place on top · anywhere else adds scenes
 	</p>
 </div>
 

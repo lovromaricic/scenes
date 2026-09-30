@@ -59,7 +59,7 @@ describe('project files', () => {
 		expect(progress.every((p, i) => i === 0 || p >= progress[i - 1])).toBe(true);
 
 		const opened = await readProjectFile(file);
-		expect(opened.manifest).toMatchObject({ app: 'Scenes', formatVersion: 1, name: 'Summer trip' });
+		expect(opened.manifest).toMatchObject({ app: 'Scenes', formatVersion: 2, name: 'Summer trip' });
 		expect(opened.data.project).toEqual(input.project);
 		expect(opened.data.view).toEqual({ time: 1.5, selectedId: null });
 		expect(opened.data.media[0]).toMatchObject({ id: 'm1', path: 'media/m1.mp4', thumbnailPath: 'thumbnails/m1.jpg' });
@@ -127,6 +127,30 @@ describe('project files', () => {
 				})
 			)
 		).rejects.toThrow(DAMAGED);
+	});
+
+	it('opens a version 1 file (before tracks) with everything on tracks, in the same places', async () => {
+		const project = {
+			...newProject(),
+			tracks: undefined,
+			scenes: [
+				{ id: 's1', mediaId: 'm1', kind: 'video', name: 'a', sourceStart: 0, sourceEnd: 4, speed: 1, volume: 1, mood: null, transition: { kind: 'cut', duration: 0 } }
+			],
+			overlays: [{ id: 'o', kind: 'card', mediaId: '', name: 'Card', sceneId: 's1', offset: 1.5, row: 0, duration: 2, sourceStart: 0, box: { x: 0, y: 0, w: 0.3, h: 0.3 }, style: {}, enter: 'none', exit: 'none', sound: { on: false, volume: 1 } }],
+			texts: [{ id: 't', text: 'Hi', start: 0, duration: 2, x: 0.5, y: 0.5, style: 'clean', animation: 'none' }],
+			sounds: [{ id: 's', mediaId: 'a', name: 'song', start: 0, sourceStart: 0, duration: 4, volume: 1, kind: 'music', fade: true }]
+		};
+		const chunks: Uint8Array[] = [];
+		const zip = new ZipWriter(new WritableStream<Uint8Array>({ write: (c) => void chunks.push(c) }));
+		await zip.add('manifest.json', new TextReader(JSON.stringify({ app: 'Scenes', formatVersion: 1, name: 'Old' })));
+		await zip.add('project.json', new TextReader(JSON.stringify({ project, media: [], fonts: [] })));
+		await zip.close();
+		const opened = await readProjectFile(new Blob(chunks as BlobPart[]));
+		const p = opened.data.project;
+		expect(p.tracks.map((t) => t.name)).toEqual(['Text', 'Overlay 1', 'Scenes', 'Audio 1']);
+		expect(p.overlays[0]).toMatchObject({ start: 1.5, trackId: p.tracks[1].id });
+		expect(p.texts[0].trackId).toBe(p.tracks[0].id);
+		expect(p.sounds[0]).toMatchObject({ trackId: p.tracks[3].id, fadeIn: 1.5, fadeOut: 3 });
 	});
 
 	it('makes safe file names', () => {

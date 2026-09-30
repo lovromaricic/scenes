@@ -35,7 +35,11 @@
 	const showing = $derived(
 		editor.playing || editor.cropping
 			? []
-			: editor.placedOverlays.filter((p) => editor.time >= p.start && editor.time < p.end)
+			: editor.placedOverlays.filter((p) => {
+					// Items on hidden tracks aren't shown; on locked tracks they can't be changed.
+					const track = editor.track(p.overlay.trackId);
+					return !track?.hidden && !track?.locked && editor.time >= p.start && editor.time < p.end;
+				})
 	);
 
 	const HANDLES: CropHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];

@@ -11,11 +11,11 @@
 	import SceneCard from './SceneCard.svelte';
 	import TransitionButton from './TransitionButton.svelte';
 	import TransitionPicker from './TransitionPicker.svelte';
-	import SoundLane from './SoundLane.svelte';
-	import WordsLane from './WordsLane.svelte';
-	import LayersTrack from './LayersTrack.svelte';
-	import { stackRows } from '$lib/model/edits';
-	import { rowCount } from '$lib/model/overlay';
+	import TrackLane from './TrackLane.svelte';
+	import TrackHeader from './TrackHeader.svelte';
+	import type { DropTarget, LaneServices } from './lanes';
+	import { accepts, type ItemKind } from '$lib/model/tracks';
+	import { allItems } from '$lib/model/items';
 	import { formatRatio } from '$lib/model/format';
 	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
@@ -37,6 +37,10 @@
 	const editor = useEditor();
 
 	const CARD_GAP = 10;
+	/** Width of the track headers on the left (matches --track-header-w). */
+	const HEADER_W = 150;
+	const OVERLAY_H = 58;
+	const AUDIO_H = 44;
 	const ADD_CARD_W = 104;
 	const LOADING_CARD_W = 120;
 	const END_PAD = 24;
@@ -68,8 +72,8 @@
 		x: number;
 		active: boolean;
 		startY: number;
-		/** Dragged up into the Layers track: where it would become a layer (else null). */
-		toLayers: { start: number; duration: number; row: number } | null;
+		/** Dragged up onto an overlay track (or a gap): where it would become an overlay (else null). */
+		toLayers: { start: number; duration: number; target: DropTarget } | null;
 		dy: number;
 	}
 	interface Trim {
@@ -105,7 +109,7 @@
 	const durations = $derived(scenes.map(sceneDuration));
 	/** The scale that shows the whole video ("Fit"). */
 	const fittedPps = $derived(
-		fitTimeline(durations, trackWidth - TRACK_PAD - ADD_CARD_W - END_PAD - CARD_GAP)
+		fitTimeline(durations, trackWidth - HEADER_W - TRACK_PAD - ADD_CARD_W - END_PAD - CARD_GAP)
 	);
 	/** Zoom slider, 0 = Fit, 1 = closest. */
 	let zoom = $state(0);
@@ -120,15 +124,16 @@
 	let zooming = $state(false);
 	let zoomingTimer: ReturnType<typeof setTimeout> | undefined;
 	function zoomAround(value: number, clientX?: number) {
+		// Positions within the visible part of the lanes (right of the track headers).
 		const rect = tracks.getBoundingClientRect();
-		// From the slider: keep the playhead in place if it's in view, else the middle.
+		const view = rect.width - HEADER_W;
 		const playheadX = map.x(editor.time) - tracks.scrollLeft;
 		const anchorX =
 			clientX !== undefined
-				? clientX - rect.left
-				: playheadX >= 0 && playheadX <= rect.width
+				? clientX - rect.left - HEADER_W
+				: playheadX >= 0 && playheadX <= view
 					? playheadX
-					: rect.width / 2;
+					: view / 2;
 		// A burst of wheel events (or slider moves) keeps its first anchor until the zooming stops,
 		// so each step doesn't drift by the scroll the previous one hasn't applied yet.
 		const from = clientX === undefined ? 'slider' : 'wheel';
@@ -211,22 +216,61 @@
 		return { items, end: x };
 	});
 
-	const LAYER_ROW_H = 58;
-	let layersH = $state(LAYER_ROW_H);
-	let layersLane: HTMLDivElement;
-	let scenesRow: HTMLDivElement;
-
-	const WORD_ROW_H = 28;
-	/** Stack by where items sit on screen (with minimum widths), so short ones never overlap. */
-	const onScreen = (items: { start: number; duration: number }[]) =>
-		items.map((i) => ({ start: map.x(i.start), duration: map.width(i.start, i.duration) }));
-	const wordRows = $derived(stackRows(onScreen(editor.project.texts)));
-	const wordsH = $derived(Math.max(1, Math.max(0, ...wordRows) + 1) * WORD_ROW_H + 4);
-
-	const SOUND_ROW_H = 40;
-	/** The Sound lane's height (its rows are the clips' own), and where a drag snapped to. */
-	let soundH = $state(SOUND_ROW_H + 4);
+	let rulerLane: HTMLDivElement;
+	let scenesRow = $state<HTMLDivElement>();
+	/** Where a drag has snapped to (content x), and where a dragged item would land. */
 	let snapX = $state<number | null>(null);
+	let dropTarget = $state<{ target: DropTarget; from: string } | null>(null);
+
+	const trackList = $derived(editor.project.tracks);
+	const mainIndex = $derived(trackList.findIndex((t) => t.kind === 'main'));
+
+	/**
+	 * What's under a pointer's y for a dragged item of `kind`: a track it can go on, the gap
+	 * between two tracks (or above the top one / below the bottom one) where a new track would be
+	 * made, or the Scenes track (pictures only). Null: nowhere new.
+	 */
+	function targetAt(clientY: number, kind: ItemKind, clientX?: number): DropTarget | null {
+		const rows = [...tracks.querySelectorAll<HTMLElement>('[data-track-row]')];
+		const rects = rows.map((r) => r.getBoundingClientRect());
+		const EDGE = 4;
+		// Gap i is the space before row i (i = 0: above the top track; i = n: below the last),
+		// reaching a few pixels into the rows on either side.
+		for (let i = 0; i <= rects.length; i++) {
+			const top = i > 0 ? rects[i - 1].bottom - EDGE : -Infinity;
+			const bottom = i < rects.length ? rects[i].top + EDGE : Infinity;
+			if (clientY < top || clientY >= bottom) continue;
+			// Only where that kind of track may go: overlay tracks above the Scenes track, audio below.
+			if (kind === 'sound' ? i > mainIndex : i <= mainIndex) return { kind: 'gap', index: i };
+			break;
+		}
+		const i = rects.findIndex((r) => clientY >= r.top && clientY < r.bottom);
+		if (i === -1) return null;
+		const track = trackList[i];
+		if (!track) return null;
+		if (track.kind === 'main') {
+			return kind === 'overlay' && clientX !== undefined
+				? { kind: 'main', index: insertIndexAt(contentX(clientX)) }
+				: null;
+		}
+		return accepts(track, kind) && !track.locked ? { kind: 'track', id: track.id } : null;
+	}
+
+	const services: LaneServices = {
+		targetAt: (clientY, kind, clientX) => targetAt(clientY, kind, clientX),
+		showTarget: (target, from) => {
+			dropTarget = target ? { target, from } : null;
+			dropIndex = target?.kind === 'main' ? target.index : null;
+		},
+		snapTargets: (except) => {
+			const list = [0, duration, editor.time];
+			for (const p of editor.placed) list.push(p.start, p.end);
+			for (const i of allItems(editor.project))
+				if (!except.includes(i.id)) list.push(i.start, i.start + i.duration);
+			return list;
+		},
+		setSnap: (x) => (snapX = x)
+	};
 
 	const loadingWidth = $derived(importing * (LOADING_CARD_W + CARD_GAP));
 	const contentWidth = $derived(
@@ -239,9 +283,9 @@
 		return url ? `url("${url}")` : 'none';
 	}
 
+	/** A pointer's x on the timeline (content pixels): measured from the lanes' left edge. */
 	function contentX(clientX: number): number {
-		const rect = tracks.getBoundingClientRect();
-		return clientX - rect.left + tracks.scrollLeft;
+		return clientX - rulerLane.getBoundingClientRect().left;
 	}
 
 	// Reorder by dragging a card.
@@ -281,20 +325,23 @@
 		const x = contentX(event.clientX);
 		d.x = x - d.grab;
 		d.dy = event.clientY - d.startY;
-		// Up into the Layers track: it would become a layer (the scenes don't reorder meanwhile).
-		const lane = layersLane.getBoundingClientRect();
-		if (event.clientY < scenesRow.getBoundingClientRect().top - 6) {
+		// Up onto an overlay track (or into a gap above the Scenes track): it would become an
+		// overlay there (the scenes don't reorder meanwhile).
+		const up = event.clientY < scenesRow!.getBoundingClientRect().top - 2;
+		const target = up ? targetAt(event.clientY, 'overlay') : null;
+		if (target && target.kind !== 'main') {
 			const scene = scenes.find((s) => s.id === d.id)!;
-			const rows = rowCount(editor.project.overlays);
 			d.toLayers = {
 				start: Math.max(0, map.t(Math.max(0, d.x))),
 				duration: scene.kind === 'video' ? scene.sourceEnd - scene.sourceStart : sceneDuration(scene),
-				row: Math.max(0, Math.min(rows, Math.floor((lane.bottom - event.clientY) / LAYER_ROW_H)))
+				target
 			};
+			dropTarget = { target, from: 'main' };
 			d.to = d.from;
 			return;
 		}
 		d.toLayers = null;
+		dropTarget = null;
 		// Insert before the first other card whose middle is right of the pointer.
 		let offset = 0;
 		let to = 0;
@@ -317,7 +364,10 @@
 			// The click that ends a drag must not also select; later clicks must still work.
 			suppressClick = true;
 			setTimeout(() => (suppressClick = false));
-			if (d.toLayers) editor.sceneToOverlay(d.id, d.toLayers.start, d.toLayers.row);
+			const to = d.toLayers;
+			dropTarget = null;
+			if (to?.target.kind === 'track') editor.sceneToOverlay(d.id, to.start, to.target.id);
+			else if (to?.target.kind === 'gap') editor.sceneToOverlay(d.id, to.start, undefined, to.target.index);
 			else editor.moveScene(d.from, d.to);
 		}
 	}
@@ -356,6 +406,33 @@
 			media: (id) => editor.addSceneFromMedia(id, index),
 			card: () => editor.addCard(index),
 			files: (files) => void editor.importFiles(files, index)
+		});
+		if (placed) event.preventDefault();
+	}
+
+	// Dropping from "Your media", the Cards button or the computer onto an overlay track: an overlay
+	// at that time on that track (a new track just above if it would overlap).
+	let laneDrop = $state<{ trackId: string; start: number } | null>(null);
+	const dropTime = (clientX: number) => Math.max(0, Math.min(map.t(contentX(clientX)), Math.max(0, duration - 0.5)));
+
+	function onLaneDragOver(event: DragEvent, trackId: string) {
+		const track = editor.track(trackId);
+		if (!dragHasVisual(event) || track?.kind !== 'overlay' || track.locked) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+		laneDrop = { trackId, start: dropTime(event.clientX) };
+	}
+
+	function onLaneDrop(event: DragEvent, trackId: string) {
+		const track = editor.track(trackId);
+		if (!dragHasVisual(event) || track?.kind !== 'overlay' || track.locked) return;
+		const start = dropTime(event.clientX);
+		laneDrop = null;
+		const noScenes = scenes.length === 0;
+		const placed = handleVisualDrop(event, {
+			media: (id) => (noScenes ? editor.addSceneFromMedia(id) : editor.addOverlayFromMedia(id, start, trackId)),
+			card: () => (noScenes ? editor.addCard() : editor.addCardOverlay(start, trackId)),
+			files: (files) => void editor.importAsOverlays(files, start, trackId)
 		});
 		if (placed) event.preventDefault();
 	}
@@ -454,7 +531,7 @@
 		if (event.button !== 0 || editor.cropping) return;
 		const target = event.target as Element;
 		const onItem = target.closest(
-			'button, input, .zoom, [role="button"], .card-slot, .layer-slot, .clip-slot, .pill-slot, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
+			'button, input, .zoom, [role="button"], .card-slot, .item-slot, .track-header, .ruler, .playhead, .transition-slot, .loading-card, [role="dialog"], [role="menu"]'
 		);
 		if (!onItem) editor.deselect();
 	}
@@ -479,160 +556,180 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc deselects from the keyboard) -->
 <section class="storyboard" class:zooming aria-label="Storyboard" onpointerdown={onEmptyPointerDown}>
-	<div class="labels" aria-hidden="true">
-		<span class="label ruler-label"></span>
-		<span class="label layers-label" style:height="{layersH}px">Layers</span>
-		<span class="label scenes-label">Scenes</span>
-		<span class="label words-label" style:height="{wordsH}px">Words</span>
-		<span class="label sound-label" style:height="{soundH}px">Sound</span>
-	</div>
-
-	<!-- The browser's own drag of pictures or selected text would swallow a drag's release. -->
-	<div class="tracks" ondragstart={preventNativeDrag} role="presentation" bind:this={tracks} bind:clientWidth={trackWidth}>
-		<div class="content" style:width="{contentWidth}px">
+	<!-- One scroller for all tracks: headers stay on the left when scrolling sideways; the ruler
+		stays on top and the Scenes track stays in view when scrolling up and down. The browser's own
+		drag of pictures or selected text would swallow a drag's release, so it's turned off. -->
+	<div
+		class="tracks"
+		ondragstart={preventNativeDrag}
+		role="presentation"
+		bind:this={tracks}
+		bind:clientWidth={trackWidth}
+	>
+		<div class="grid" style:width="{HEADER_W + contentWidth + TRACK_PAD}px" style:--header-w="{HEADER_W}px">
 			<!-- Ruler: click or drag to move the playhead -->
-			<div
-				class="ruler"
-				role="presentation"
-				onpointerdown={onRulerDown}
-			>
-				{#each rulerTicks as t (t)}
-					<span class="tick mono" style:left="{map.x(t)}px">{formatClock(t)}</span>
-				{/each}
-			</div>
-
-			<!-- Layers: overlays drawn on top of the scenes -->
-			<div class="row lane layers-lane" role="group" aria-label="Layers" bind:this={layersLane}>
-				<LayersTrack
-					{map}
-					rowHeight={LAYER_ROW_H}
-					gap={10}
-					bind:height={layersH}
-					ghost={drag?.active ? drag.toLayers : null}
-					toScenes={{
-						index: (clientX) => insertIndexAt(contentX(clientX)),
-						hover: (index) => (dropIndex = index)
-					}}
-				/>
-			</div>
-
-			<!-- Scenes -->
-			<div
-				bind:this={scenesRow}
-				class="row scenes-row"
-				class:dragging={drag?.active}
-				role="group"
-				aria-label="Scenes"
-				ondragover={onMediaDragOver}
-				ondragleave={() => (dropIndex = null)}
-				ondrop={onMediaDrop}
-			>
-				{#if dropIndex !== null}
-					<span class="drop-marker" style:left="{gapX(dropIndex) - 1}px" aria-hidden="true"></span>
-				{/if}
-				{#each layout.items as item (item.scene.id)}
-					{@const isDragged = drag?.active && drag.id === item.scene.id}
-					{@const isTrimmed = trim?.id === item.scene.id}
-					{@const selected = editor.selectedId === item.scene.id}
-					<div
-						class="card-slot"
-						class:lifted={isDragged}
-						class:trimming={isTrimmed}
-						data-scene-id={item.scene.id}
-						style:left="{isDragged ? drag!.x : item.left}px"
-						style:translate={isDragged && drag?.toLayers ? `0 ${drag.dy}px` : undefined}
-						class:to-layers={isDragged && !!drag?.toLayers}
-						style:width="{item.width}px"
-						role="presentation"
-						onpointerdown={(e) => onCardPointerDown(e, item)}
-					>
-						<SceneCard
-							index={item.index}
-							name={item.scene.name}
-							duration={item.duration}
-							width={Math.max(24, item.width - CARD_GAP)}
-							thumbnail={thumbnailFor(item.scene)}
-							scene={item.scene}
-							tileAspect={formatRatio(editor.project.format)}
-							sourceSize={editor.sourceSize(item.scene) ?? undefined}
-							{selected}
-							onselect={() => onCardClick(item.scene.id)}
-							onkeydown={(e) => onCardKeydown(e, item)}
-						/>
-						{#if !drag?.active}
-							{#each ['start', 'end'] as const as edge (edge)}
-								<span
-									class="trim-handle {edge}"
-									class:visible={selected || isTrimmed}
-									aria-hidden="true"
-									title={edge === 'start' ? 'Drag to trim the start' : 'Drag to trim the end'}
-									onpointerdown={(e) => onTrimPointerDown(e, item, edge)}
-								></span>
-							{/each}
-						{/if}
-						{#if isTrimmed}
-							<span class="trim-badge mono">{formatShort(item.duration)}</span>
-						{/if}
-					</div>
-				{/each}
-				{#if !drag?.active && !trim}
-					{#each layout.items.slice(0, -1) as item (item.scene.id)}
-						<div class="transition-slot" style:left="{item.left + item.width - CARD_GAP / 2}px">
-							<TransitionButton
-								kind={item.scene.transition.kind}
-								after={item.index + 1}
-								active={picker?.sceneId === item.scene.id}
-								onclick={(e) => openPicker(e, item)}
-							/>
-						</div>
+			<div class="row ruler-row">
+				<div class="header corner"></div>
+				<div class="ruler" role="presentation" bind:this={rulerLane} onpointerdown={onRulerDown}>
+					{#each rulerTicks as t (t)}
+						<span class="tick mono" style:left="{map.x(t)}px">{formatClock(t)}</span>
 					{/each}
+				</div>
+			</div>
+
+			{#each trackList as track, index (track.id)}
+				{#if dropTarget?.target.kind === 'gap' && dropTarget.target.index === index}
+					<div class="gap-line" aria-hidden="true"></div>
 				{/if}
-				{#each { length: importing } as _, i (i)}
-					<div
-						class="loading-card"
-						style:left="{layout.end + i * (LOADING_CARD_W + CARD_GAP)}px"
-						style:width="{LOADING_CARD_W}px"
-						aria-label="Adding a clip"
-						role="img"
-					>
-						<LoaderCircle size={18} strokeWidth={1.8} aria-hidden="true" />
-						<span>Adding…</span>
+				{#if track.kind === 'main'}
+					<!-- Scenes -->
+					<div class="row main-row" data-track-row data-track-id={track.id}>
+						<div class="header"><TrackHeader {track} /></div>
+						<div
+							bind:this={scenesRow}
+							class="lane scenes-row"
+							class:dragging={drag?.active}
+							role="group"
+							aria-label="Scenes"
+							ondragover={onMediaDragOver}
+							ondragleave={() => (dropIndex = null)}
+							ondrop={onMediaDrop}
+						>
+							{#if dropIndex !== null}
+								<span class="drop-marker" style:left="{gapX(dropIndex) - 1}px" aria-hidden="true"></span>
+							{/if}
+							{#each layout.items as item (item.scene.id)}
+								{@const isDragged = drag?.active && drag.id === item.scene.id}
+								{@const isTrimmed = trim?.id === item.scene.id}
+								{@const selected = editor.selectedId === item.scene.id}
+								<div
+									class="card-slot"
+									class:lifted={isDragged}
+									class:trimming={isTrimmed}
+									data-scene-id={item.scene.id}
+									style:left="{isDragged ? drag!.x : item.left}px"
+									style:translate={isDragged && drag?.toLayers ? `0 ${drag.dy}px` : undefined}
+									class:to-layers={isDragged && !!drag?.toLayers}
+									style:width="{item.width}px"
+									role="presentation"
+									onpointerdown={(e) => onCardPointerDown(e, item)}
+								>
+									<SceneCard
+										index={item.index}
+										name={item.scene.name}
+										duration={item.duration}
+										width={Math.max(24, item.width - CARD_GAP)}
+										thumbnail={thumbnailFor(item.scene)}
+										scene={item.scene}
+										tileAspect={formatRatio(editor.project.format)}
+										sourceSize={editor.sourceSize(item.scene) ?? undefined}
+										{selected}
+										onselect={() => onCardClick(item.scene.id)}
+										onkeydown={(e) => onCardKeydown(e, item)}
+									/>
+									{#if !drag?.active}
+										{#each ['start', 'end'] as const as edge (edge)}
+											<span
+												class="trim-handle {edge}"
+												class:visible={selected || isTrimmed}
+												aria-hidden="true"
+												title={edge === 'start' ? 'Drag to trim the start' : 'Drag to trim the end'}
+												onpointerdown={(e) => onTrimPointerDown(e, item, edge)}
+											></span>
+										{/each}
+									{/if}
+									{#if isTrimmed}
+										<span class="trim-badge mono">{formatShort(item.duration)}</span>
+									{/if}
+								</div>
+							{/each}
+							{#if !drag?.active && !trim}
+								{#each layout.items.slice(0, -1) as item (item.scene.id)}
+									<div class="transition-slot" style:left="{item.left + item.width - CARD_GAP / 2}px">
+										<TransitionButton
+											kind={item.scene.transition.kind}
+											after={item.index + 1}
+											active={picker?.sceneId === item.scene.id}
+											onclick={(e) => openPicker(e, item)}
+										/>
+									</div>
+								{/each}
+							{/if}
+							{#each { length: importing } as _, i (i)}
+								<div
+									class="loading-card"
+									style:left="{layout.end + i * (LOADING_CARD_W + CARD_GAP)}px"
+									style:width="{LOADING_CARD_W}px"
+									aria-label="Adding a clip"
+									role="img"
+								>
+									<LoaderCircle size={18} strokeWidth={1.8} aria-hidden="true" />
+									<span>Adding…</span>
+								</div>
+							{/each}
+							{#if scenes.length === 0 && importing === 0}
+								<p class="empty-hint" style:left="{ADD_CARD_W + CARD_GAP * 2}px">
+									Your scenes line up here, in the order they play.
+								</p>
+							{/if}
+							<button
+								type="button"
+								class="add-scene"
+								style:left="{layout.end + loadingWidth}px"
+								style:width="{ADD_CARD_W}px"
+								onclick={onaddscene}
+							>
+								<Plus size={16} strokeWidth={2} aria-hidden="true" />
+								Scene
+							</button>
+						</div>
 					</div>
-				{/each}
-				{#if scenes.length === 0 && importing === 0}
-					<p class="empty-hint" style:left="{ADD_CARD_W + CARD_GAP * 2}px">
-						Your scenes line up here, in the order they play.
-					</p>
+				{:else}
+					<div
+						class="row track-row {track.kind}"
+						class:target={dropTarget?.target.kind === 'track' && dropTarget.target.id === track.id}
+						data-track-row
+						data-track-id={track.id}
+					>
+						<div class="header"><TrackHeader {track} /></div>
+						<div
+							class="lane"
+							class:drop-hover={laneDrop?.trackId === track.id}
+							role="group"
+							aria-label={track.name}
+							data-track-lane={track.id}
+							ondragover={(e) => onLaneDragOver(e, track.id)}
+							ondragleave={(e) => {
+								if (!(e.currentTarget as Node).contains(e.relatedTarget as Node)) laneDrop = null;
+							}}
+							ondrop={(e) => onLaneDrop(e, track.id)}
+						>
+							<TrackLane {track} {map} height={track.kind === 'audio' ? AUDIO_H : OVERLAY_H} {services} />
+							{#if laneDrop?.trackId === track.id}
+								<span
+									class="drop-ghost"
+									aria-hidden="true"
+									style:left="{map.x(laneDrop.start)}px"
+									style:width="{map.width(laneDrop.start, 5) - 3}px"
+								>
+									<span>Place here</span>
+								</span>
+							{/if}
+						</div>
+					</div>
 				{/if}
-				<button
-					type="button"
-					class="add-scene"
-					style:left="{layout.end + loadingWidth}px"
-					style:width="{ADD_CARD_W}px"
-					onclick={onaddscene}
-				>
-					<Plus size={16} strokeWidth={2} aria-hidden="true" />
-					Scene
-				</button>
-			</div>
-
-			<!-- Words lane -->
-			<div class="row lane words-lane" role="group" aria-label="Words" style:height="{wordsH}px">
-				<WordsLane {map} rows={wordRows} rowHeight={WORD_ROW_H} />
-			</div>
-
-			<!-- Sound lane -->
-			<div class="row lane sound-lane" role="group" aria-label="Sound" style:height="{soundH}px">
-				<SoundLane {map} rowHeight={SOUND_ROW_H} bind:height={soundH} bind:snapX />
-			</div>
+			{/each}
+			{#if dropTarget?.target.kind === 'gap' && dropTarget.target.index === trackList.length}
+				<div class="gap-line" aria-hidden="true"></div>
+			{/if}
 
 			{#if snapX !== null}
-				<!-- A sound clip being dragged has snapped here. -->
-				<span class="snap-line" style:left="{snapX}px" aria-hidden="true"></span>
+				<!-- A dragged item has snapped here. -->
+				<span class="snap-line" style:left="{HEADER_W + snapX}px" aria-hidden="true"></span>
 			{/if}
 
 			<!-- Playhead -->
-			<div class="playhead" style:translate="{map.x(editor.time)}px 0">
+			<div class="playhead" style:translate="{HEADER_W + map.x(editor.time)}px 0">
 				<button
 					type="button"
 					class="handle"
@@ -708,14 +805,10 @@
 	}
 	.storyboard {
 		position: relative;
+		min-width: 0;
 		--ruler-h: 26px;
 		--scenes-h: 104px;
-		--words-h: 32px;
-		--sound-h: 44px;
-		--row-gap: 10px;
-
-		display: grid;
-		grid-template-columns: var(--lane-label-w) 1fr;
+		--row-gap: 6px;
 		padding: var(--space-3) 0 var(--space-4);
 		border-top: 1px solid var(--color-border);
 		background: var(--color-bg);
@@ -725,53 +818,99 @@
 		.storyboard {
 			--scenes-h: 88px;
 			--ruler-h: 24px;
-			--row-gap: 8px;
 			padding-bottom: var(--space-3);
 		}
-		.labels {
-			padding-left: var(--space-4);
-		}
-	}
-
-	.labels {
-		display: flex;
-		flex-direction: column;
-		gap: var(--row-gap);
-		padding-left: var(--space-5);
-	}
-	.label {
-		display: flex;
-		align-items: center;
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		color: var(--color-muted);
-	}
-	.ruler-label {
-		height: var(--ruler-h);
-	}
-	.scenes-label {
-		height: var(--scenes-h);
-	}
-	.words-label {
-		height: var(--words-h);
-	}
-	.sound-label {
-		height: var(--sound-h);
 	}
 
 	.tracks {
 		position: relative;
-		overflow-x: auto;
-		overflow-y: hidden;
-		padding-right: var(--space-6);
+		/* Its rows stack among themselves, under the zoom controls. */
+		isolation: isolate;
+		overflow: auto;
+		/* Many tracks: the list scrolls up and down (the ruler and Scenes track stay in view). */
+		max-height: min(44vh, 520px);
 		scrollbar-width: thin;
 	}
-	.content {
+	.grid {
 		position: relative;
 		display: flex;
 		flex-direction: column;
 		gap: var(--row-gap);
 		min-width: 100%;
+	}
+	.row {
+		position: relative;
+		display: flex;
+		flex: none;
+	}
+	/* Track headers stay on the left when scrolling sideways. */
+	.header {
+		position: sticky;
+		left: 0;
+		z-index: 14;
+		flex: none;
+		width: var(--header-w);
+		background: var(--color-bg);
+	}
+	.ruler-row {
+		position: sticky;
+		top: 0;
+		z-index: 13;
+		background: var(--color-bg);
+	}
+	/* The Scenes track stays in view: under the ruler when scrolled down, at the bottom when up. */
+	.main-row {
+		position: sticky;
+		top: var(--ruler-h);
+		bottom: 0;
+		z-index: 12;
+		background: var(--color-bg);
+		padding: 2px 0;
+	}
+	.lane {
+		position: relative;
+		flex: 1;
+		min-width: 0;
+		border-radius: var(--radius-sm);
+		background: var(--color-surface);
+	}
+	.track-row.target .lane {
+		box-shadow: inset 0 0 0 1.5px var(--color-ink);
+	}
+	.lane.drop-hover {
+		box-shadow: inset 0 0 0 1.5px var(--color-ink);
+	}
+	.drop-ghost {
+		position: absolute;
+		top: 2px;
+		bottom: 2px;
+		z-index: 8;
+		display: flex;
+		align-items: flex-end;
+		padding: 4px 6px;
+		border: 2px dashed var(--color-ink);
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
+		pointer-events: none;
+	}
+	.gap-line {
+		position: relative;
+		flex: none;
+		height: 0;
+		margin-left: var(--header-w);
+		z-index: 15;
+	}
+	.gap-line::after {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: -2px;
+		height: 3px;
+		border-radius: 2px;
+		background: var(--color-ink);
 	}
 
 	.snap-line {
@@ -787,6 +926,7 @@
 	}
 	.ruler {
 		position: relative;
+		flex: 1;
 		height: var(--ruler-h);
 		border-bottom: 1px solid var(--color-border);
 		cursor: ew-resize;
@@ -805,11 +945,9 @@
 		user-select: none;
 	}
 
-	.row {
-		position: relative;
-	}
 	.scenes-row {
 		height: var(--scenes-h);
+		background: none;
 	}
 	.card-slot {
 		position: absolute;
@@ -981,16 +1119,6 @@
 		}
 	}
 
-	.lane {
-		border-radius: var(--radius-sm);
-		background: var(--color-surface);
-	}
-	.words-lane {
-		transition: height var(--dur) var(--ease-out);
-	}
-	.sound-lane {
-		transition: height var(--dur) var(--ease-out);
-	}
 
 	.playhead {
 		position: absolute;
@@ -1001,7 +1129,7 @@
 		margin-left: -1px;
 		background: var(--color-accent);
 		pointer-events: none;
-		z-index: 4;
+		z-index: 13;
 		will-change: translate;
 	}
 	.handle {

@@ -22,7 +22,9 @@ import {
 import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
 import { ensureFonts, onFontsChange } from '$lib/render/fonts';
 import { resolveTextStyle } from '$lib/model/textStyle';
-import { layerInput, textDrawsAt } from '$lib/render/frame';
+import { layerInput } from '$lib/render/frame';
+import { textDraw, visualsAt, type VisualDraw } from '$lib/render/visuals';
+import type { Track } from '$lib/model/tracks';
 import { CardCache } from '$lib/render/card';
 import { placeOverlays, type Overlay, type PlacedOverlay } from '$lib/model/overlay';
 import { cardSize, overlayDraw, type OverlayDraw } from '$lib/render/overlay';
@@ -66,6 +68,7 @@ export class Player {
 
 	private scenes: Scene[] = [];
 	private texts: TextItem[] = [];
+	private tracks: Track[] = [];
 	private sounds: Project['sounds'] = [];
 	private overlays: Overlay[] = [];
 	private placedOverlays: PlacedOverlay[] = [];
@@ -171,7 +174,8 @@ export class Player {
 		this.placed = placeScenes(project.scenes);
 		this.duration = this.placed.at(-1)?.end ?? 0;
 		this.overlays = project.overlays ?? [];
-		this.placedOverlays = placeOverlays(this.overlays, this.placed);
+		this.tracks = project.tracks ?? [];
+		this.placedOverlays = placeOverlays(this.overlays, this.tracks.map((t) => t.id));
 		this.projectWidth = project.format.width;
 		this.lookup = lookup;
 		this.mood = project.mood;
@@ -197,7 +201,7 @@ export class Player {
 
 	private audioClips(): AudioClip[] {
 		return projectAudioClips(
-			{ scenes: this.scenes, sounds: this.sounds, overlays: this.overlays },
+			{ scenes: this.scenes, sounds: this.sounds, overlays: this.overlays, tracks: this.tracks },
 			this.hasAudio
 		);
 	}
@@ -377,8 +381,13 @@ export class Player {
 		return scenesReady && this.overlaysAt(t).every((p) => this.overlayFrame(p, t, playing)?.exact ?? false);
 	}
 
+	/** What's on the (shown) overlay tracks at `t`, in drawing order. */
+	private visualsAt(t: number) {
+		return visualsAt({ tracks: this.tracks, overlays: this.overlays, texts: this.texts }, t, this.duration);
+	}
+
 	private overlaysAt(t: number): PlacedOverlay[] {
-		return this.placedOverlays.filter((p) => t >= p.start && t < p.end && t < this.duration);
+		return this.visualsAt(t).flatMap((v) => (v.type === 'overlay' ? [v.placed] : []));
 	}
 
 	/** An overlay's picture at time `t`: a video frame, the photo, or the card at its box size. */
@@ -396,32 +405,37 @@ export class Player {
 		return source.frameAt(sourceTime);
 	}
 
-	/** The layers showing at time `t`, lowest row first. */
-	private overlayDraws(t: number, playing: boolean): OverlayDraw[] {
+	/** Pictures and words on the overlay tracks at `t`, lowest track first. */
+	private visualDraws(t: number, playing: boolean, textOnly = false): VisualDraw[] {
 		if (!this.canvas) return [];
-		const draws: OverlayDraw[] = [];
-		for (const p of this.overlaysAt(t)) {
-			const frame = this.overlayFrame(p, t, playing);
+		const { width, height } = this.canvas;
+		const draws: VisualDraw[] = [];
+		for (const v of this.visualsAt(t)) {
+			if (v.type === 'text') {
+				// Words being typed are shown by the HTML editor instead.
+				if (v.item.id === this.hiddenTextId) continue;
+				const d = textDraw(v.item, t, width, height, this.sprites);
+				if (d) draws.push({ type: 'text', draw: d });
+				continue;
+			}
+			if (textOnly) continue;
+			const frame = this.overlayFrame(v.placed, t, playing);
 			if (!frame) continue;
-			draws.push(
-				overlayDraw(
+			draws.push({
+				type: 'overlay',
+				draw: overlayDraw(
 					frame,
-					p,
+					v.placed,
 					t,
 					this.mood,
-					this.canvas.width,
-					this.canvas.height,
+					width,
+					height,
 					this.projectWidth,
-					this.lookup.sourceSize(p.overlay.mediaId) ?? undefined
+					this.lookup.sourceSize(v.placed.overlay.mediaId) ?? undefined
 				)
-			);
+			});
 		}
 		return draws;
-	}
-
-	/** The text sprites showing at time `t`, with their animation applied. */
-	private textDraws(t: number, width: number, height: number): TextDraw[] {
-		return textDrawsAt(this.texts, t, width, height, this.sprites, this.hiddenTextId);
 	}
 
 	private peekFrame(target: { sceneId: string; sourceTime: number }) {
@@ -571,10 +585,9 @@ export class Player {
 				transition: c.transition
 			};
 		}
-		const texts = cropPlaced ? [] : this.textDraws(t, this.canvas.width, this.canvas.height);
-		composite.texts = texts;
-		const overlays = cropPlaced || this.peekTarget ? [] : this.overlayDraws(t, this.playing);
-		composite.overlays = overlays;
+		// Crop mode shows just the picture; while trimming (peek) only words stay on top.
+		const visuals = cropPlaced ? [] : this.visualDraws(t, this.playing, !!this.peekTarget);
+		composite.visuals = visuals;
 		const layerKey = (l: LayerInput | null | undefined) =>
 			l
 				? `${objectId(l.image)}:${JSON.stringify(l.grade)}:${JSON.stringify(l.rect)}:${l.bars}`
@@ -586,16 +599,11 @@ export class Player {
 			composite.transition
 				? `${composite.transition.kind}:${composite.transition.progress.toFixed(4)}`
 				: '',
-			texts
-				.map(
-					(d) =>
-						`${d.key}:${d.opacity.toFixed(3)}:${d.scale.toFixed(3)}:${d.cx.toFixed(1)}:${d.cy.toFixed(1)}`
-				)
-				.join(','),
-			overlays
-				.map(
-					(o) =>
-						`${objectId(o.image)}:${JSON.stringify(o.rect)}:${JSON.stringify(o.uv)}:${o.radius}:${o.borderWidth}:${o.borderColor}:${JSON.stringify(o.shadow)}:${o.opacity.toFixed(3)}`
+			visuals
+				.map(({ type, draw: d }) =>
+					type === 'text'
+						? `t:${d.key}:${d.opacity.toFixed(3)}:${d.scale.toFixed(3)}:${d.cx.toFixed(1)}:${d.cy.toFixed(1)}`
+						: `o:${objectId(d.image)}:${JSON.stringify(d.rect)}:${JSON.stringify(d.uv)}:${d.radius}:${d.borderWidth}:${d.borderColor}:${JSON.stringify(d.shadow)}:${d.opacity.toFixed(3)}`
 				)
 				.join(',')
 		].join('|');

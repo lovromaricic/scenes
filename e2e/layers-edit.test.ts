@@ -7,7 +7,7 @@ const near = (a: RGB, b: RGB, tol: number) => a.every((v, i) => Math.abs(v - b[i
 type O = {
 	id: string;
 	kind: string;
-	row: number;
+	trackId: string;
 	duration: number;
 	box: { x: number; y: number; w: number; h: number };
 	crop?: { x: number; y: number; w: number; h: number };
@@ -199,16 +199,20 @@ test.describe('Editing layers', () => {
 
 		// Layer order: another layer on top; send this one… no, bring this one forward.
 		const other = await page.evaluate(() => {
-			const st = (window as unknown as { __scenes: { addCardOverlay(start: number, row: number): string } }).__scenes;
-			return st.addCardOverlay(2, 5);
+			const st = (window as unknown as { __scenes: { addCardOverlay(start: number): string } }).__scenes;
+			return st.addCardOverlay(2);
 		});
 		await page.evaluate((id) => (window as unknown as { __scenes: { select(id: string): void } }).__scenes.select(id), id);
-		const before = [(await layer(page, id)).row, (await layer(page, other)).row];
+		const height = async (x: string) => {
+			const t = await scenes(page, (st) => (st as unknown as { project: { tracks: { id: string }[] } }).project.tracks.map((k) => k.id));
+			return -t.indexOf((await layer(page, x)).trackId);
+		};
+		const before = [await height(id), await height(other)];
 		expect(before[0]).toBeLessThan(before[1]);
 		await s.getByRole('button', { name: 'Bring forward' }).click();
-		expect((await layer(page, id)).row).toBeGreaterThan((await layer(page, other)).row);
+		expect(await height(id)).toBeGreaterThan(await height(other));
 		await s.getByRole('button', { name: 'Send back' }).click();
-		expect((await layer(page, id)).row).toBeLessThan((await layer(page, other)).row);
+		expect(await height(id)).toBeLessThan(await height(other));
 	});
 
 	test('a card layer has the same background and rectangle settings as card scenes', async ({ page }) => {

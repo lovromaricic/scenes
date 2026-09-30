@@ -124,7 +124,7 @@ async function buildProject(page: Page) {
 		s.setOverlayStyle(layer, { radius: 0.5, borderColor: '#ffffff', borderWidth: 8, shadow: 'soft', opacity: 0.9 });
 		s.setOverlaySound(layer, { on: true, volume: 0.7 });
 	});
-	await expect(page.locator('.layer-slot')).toHaveCount(1);
+	await expect(page.locator('.item-slot.overlay')).toHaveCount(1);
 
 	// Music.
 	await page.getByRole('button', { name: /^Sound/ }).click();
@@ -186,7 +186,7 @@ test.describe('Project files', () => {
 			expect(e.compressionMethod).toBe(0);
 		}
 		const manifest = JSON.parse(await (entries[0] as FileEntry).getData(new TextWriter()));
-		expect(manifest).toMatchObject({ app: 'Scenes', formatVersion: 1, name: 'Summer trip' });
+		expect(manifest).toMatchObject({ app: 'Scenes', formatVersion: 2, name: 'Summer trip' });
 
 		// Delete it from the app: its media and fonts go too.
 		await page.getByRole('link', { name: 'Projects' }).click();

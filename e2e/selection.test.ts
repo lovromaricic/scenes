@@ -157,11 +157,11 @@ test.describe('Selecting and deselecting on the video', () => {
 		expect(await selectedId(page)).toBeNull();
 		await expect(settingsTitle(page)).toHaveText('Scene 2');
 
-		// Empty space in the Words lane too.
+		// Empty space on the Text track too.
 		await seekTo(page, 1);
 		await words(page, 'Hello there').click();
 		await expect(toolbar(page)).toBeVisible();
-		const lane = (await page.getByRole('group', { name: 'Words' }).boundingBox())!;
+		const lane = (await page.getByRole('group', { name: 'Text' }).boundingBox())!;
 		await page.mouse.click(lane.x + lane.width - 20, lane.y + lane.height / 2);
 		await expectDeselected(page);
 	});

@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { SoundItem } from './types';
 import {
-	assignSoundRow,
-	compactSoundRows,
 	effectiveFades,
 	freeRow,
 	migrateSounds,
 	snapTimes,
-	soundRowCount,
 	splitSound,
 	trimSound
 } from './sound';
@@ -23,7 +20,7 @@ const song = (over: Partial<SoundItem> = {}): SoundItem => ({
 	kind: 'music',
 	fadeIn: 1.5,
 	fadeOut: 3,
-	row: 0,
+	trackId: 'a1',
 	...over
 });
 const file = { start: 0, end: 10 };
@@ -76,16 +73,9 @@ describe('fades', () => {
 	});
 });
 
-describe('sound rows', () => {
-	const a = song({ id: 'a', start: 0, duration: 5, row: 0 });
-	const b = song({ id: 'b', start: 3, duration: 5, row: 0 });
-	it('an overlapping clip gets a new row below; empty rows go away', () => {
-		const rows = assignSoundRow([a, b], 'b', 0);
-		expect(rows.map((s) => s.row)).toEqual([0, 1]);
-		expect(soundRowCount(rows)).toBe(2);
-		expect(compactSoundRows([{ ...a, row: 3 }]).map((s) => s.row)).toEqual([0]);
-	});
+describe('older projects’ rows', () => {
 	it('finds the lowest free row', () => {
+		const a = { id: 'a', row: 0, start: 0, duration: 5 };
 		expect(freeRow([a], 1, 2)).toBe(1);
 		expect(freeRow([a], 5, 2)).toBe(0);
 	});
@@ -107,8 +97,8 @@ describe('snapping', () => {
 describe('older projects', () => {
 	it('turn "fade" into fade lengths and stack voiceovers under the music', () => {
 		const old = [
-			{ ...song({ id: 'm', start: 0, duration: 20 }), fade: true, fadeIn: undefined, fadeOut: undefined, row: undefined },
-			{ ...song({ id: 'v', kind: 'voice', start: 4, duration: 2 }), fade: false, fadeIn: undefined, fadeOut: undefined, row: undefined }
+			{ ...song({ id: 'm', start: 0, duration: 20 }), fade: true, fadeIn: undefined, fadeOut: undefined, trackId: undefined },
+			{ ...song({ id: 'v', kind: 'voice', start: 4, duration: 2 }), fade: false, fadeIn: undefined, fadeOut: undefined, trackId: undefined }
 		] as unknown as (SoundItem & { fade?: boolean })[];
 		const out = migrateSounds(old);
 		expect(out[0]).toMatchObject({ fadeIn: 1.5, fadeOut: 3, row: 0 });

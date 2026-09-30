@@ -4,7 +4,7 @@ import { frameRect, showsBars } from '$lib/model/framing';
 import type { MediaInfo } from '$lib/media/db';
 import type { Project } from '$lib/model/types';
 import { drawCard } from '$lib/render/card';
-import { placeOverlays } from '$lib/model/overlay';
+import { visualsAt } from '$lib/render/visuals';
 import { placeScenes } from '$lib/model/timeline';
 import { overlayDraw } from '$lib/render/overlay';
 
@@ -25,8 +25,10 @@ export function thumbnailKey(project: Project): string {
 		: '';
 }
 
+/** Pictures on (shown) overlay tracks at the very start, lowest track first. */
 function startLayers(project: Project) {
-	return placeOverlays(project.overlays ?? [], placeScenes(project.scenes)).filter((p) => p.start <= 0.01);
+	const length = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	return visualsAt(project, 0, length).flatMap((v) => (v.type === 'overlay' ? [v.placed] : []));
 }
 
 export async function makeProjectThumbnail(project: Project, media: Record<string, MediaInfo>): Promise<Blob | null> {

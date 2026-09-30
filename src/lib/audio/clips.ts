@@ -1,6 +1,7 @@
 import type { Project, Scene, SoundItem } from '$lib/model/types';
 import { placeScenes, totalDuration } from '$lib/model/timeline';
 import { placeOverlays, type Overlay } from '$lib/model/overlay';
+import type { Track } from '$lib/model/tracks';
 
 import { effectiveFades, soundEnd } from '$lib/model/sound';
 export { MUSIC_FADE_IN, MUSIC_FADE_OUT, soundEnd } from '$lib/model/sound';
@@ -91,7 +92,7 @@ export function overlayAudioClips(
 	hasAudio: (mediaId: string) => boolean
 ): AudioClip[] {
 	const length = totalDuration(scenes);
-	return placeOverlays(overlays, placeScenes(scenes))
+	return placeOverlays(overlays)
 		.filter(
 			(p) =>
 				p.overlay.kind === 'video' &&
@@ -113,15 +114,20 @@ export function overlayAudioClips(
 		}));
 }
 
-/** Every piece of sound in the project: each scene's own sound, layers, music and voiceovers. */
+/**
+ * Every piece of sound in the project: each scene's own sound, video overlays with their sound on,
+ * music and voiceovers. Muted audio tracks and hidden overlay tracks are left out.
+ */
 export function projectAudioClips(
-	project: Pick<Project, 'scenes' | 'sounds'> & { overlays?: Overlay[] },
+	project: Pick<Project, 'scenes' | 'sounds'> & { overlays?: Overlay[]; tracks?: Track[] },
 	hasAudio: (mediaId: string) => boolean
 ): AudioClip[] {
+	const tracks = project.tracks ?? [];
+	const silent = new Set(tracks.filter((t) => (t.kind === 'audio' ? t.muted : t.hidden)).map((t) => t.id));
 	return [
 		...sceneAudioClips(project.scenes, hasAudio),
-		...overlayAudioClips(project.overlays ?? [], project.scenes, hasAudio),
-		...soundAudioClips(project.sounds, totalDuration(project.scenes))
+		...overlayAudioClips((project.overlays ?? []).filter((o) => !silent.has(o.trackId)), project.scenes, hasAudio),
+		...soundAudioClips(project.sounds.filter((s) => !silent.has(s.trackId)), totalDuration(project.scenes))
 	];
 }
 
