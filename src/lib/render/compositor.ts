@@ -399,6 +399,23 @@ export class Compositor {
 		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 	}
 
+	/**
+	 * WebGL ignores UNPACK_FLIP_Y_WEBGL for ImageBitmaps (photos), which would draw them upside
+	 * down. Such an image is copied once into a canvas, which is flipped like every other source.
+	 */
+	private readonly uprightCopies = new WeakMap<ImageBitmap, OffscreenCanvas>();
+
+	private uploadable(image: FrameImage): TexImageSource {
+		if (typeof ImageBitmap === 'undefined' || !(image instanceof ImageBitmap)) return image;
+		let copy = this.uprightCopies.get(image);
+		if (!copy) {
+			copy = new OffscreenCanvas(image.width, image.height);
+			copy.getContext('2d')!.drawImage(image, 0, 0);
+			this.uprightCopies.set(image, copy);
+		}
+		return copy;
+	}
+
 	/** Upload `image` into texture slot `index` unless it's already there, and bind it. */
 	private bindImage(index: number, image: FrameImage): void {
 		const gl = this.gl;
@@ -410,7 +427,7 @@ export class Compositor {
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, slot.texture);
 		if (slot.source !== image) {
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.uploadable(image));
 			slot.source = image;
 		}
 	}

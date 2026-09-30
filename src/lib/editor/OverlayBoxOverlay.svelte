@@ -1,8 +1,9 @@
 <!--
 	@component
 	Layers on the preview: click one to select it, drag to move, drag a handle to resize (snapping
-	to the frame's edges and centre lines, with a live size label). Corners keep a photo's or
-	video's proportions unless Shift is held (for cards, Shift keeps them). The selected layer
+	to the frame's edges and centre lines, with a live size label). Photos and videos keep their
+	own proportions at every handle unless Shift is held (for cards, Shift on a corner keeps them).
+	The selected layer
 	gets a floating toolbar: Crop, Style, Animate, Remove.
 -->
 <script lang="ts">
@@ -96,9 +97,21 @@
 		const o = editor.project.overlays.find((x) => x.id === d.id);
 		if (!o) return;
 		const corner = d.handle.length === 2;
-		// Photos and videos keep their shape at the corners unless Shift is held; cards the
-		// other way round.
-		const keep = o.kind === 'card' ? event.shiftKey : !event.shiftKey;
+		// Photos and videos always scale in their own shape (every handle), unless Shift is held;
+		// cropping is what the Crop tool is for. Cards are free-form; Shift on a corner keeps
+		// their shape.
+		const picture = o.kind === 'card' ? null : editor.sourceSize(o);
+		const pictureRatio = picture
+			? o.crop
+				? o.crop.w / o.crop.h
+				: picture.width / picture.height
+			: null;
+		const ratio =
+			pictureRatio && !event.shiftKey
+				? pictureRatio
+				: o.kind === 'card' && corner && event.shiftKey
+					? d.start.w / d.start.h
+					: null;
 		const box = dragBox(
 			d.start,
 			d.handle,
@@ -108,7 +121,8 @@
 			{
 				bounded: false,
 				min: 16,
-				keepRatio: corner && keep ? d.start.w / d.start.h : null,
+				keepRatio: ratio,
+				keepRatioOnEdges: !!pictureRatio,
 				snapDistance: 8 / scale
 			}
 		);
@@ -242,7 +256,9 @@
 			class="size mono"
 			data-testid="layer-size"
 			style:left="{g.left + g.w / 2}px"
-			style:top="{g.top + g.h + 8 > height - 24 ? Math.max(4, g.top - 28) : g.top + g.h + 8}px"
+			style:top="{g.top + g.h + 8 > height - 24
+				? Math.max(4, Math.min(g.top + g.h, height) - 30)
+				: g.top + g.h + 8}px"
 		>
 			{g.px.w} × {g.px.h}
 		</span>

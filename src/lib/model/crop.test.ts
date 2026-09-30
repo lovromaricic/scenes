@@ -11,6 +11,7 @@ import {
 	sidesOf
 } from './crop';
 import { splitAt } from './edits';
+import { dragBox } from './crop';
 import type { Scene } from './types';
 
 const src = { width: 1280, height: 800 };
@@ -111,5 +112,18 @@ describe('helpers', () => {
 		};
 		const result = splitAt([scene], 4, () => 'b')!;
 		expect(result.scenes.map((s) => s.crop)).toEqual([scene.crop, scene.crop]);
+	});
+});
+
+describe('dragBox keeping the shape on edges', () => {
+	it('an edge scales the whole box, around the opposite edge’s middle', () => {
+		const start = { x: 100, y: 100, w: 400, h: 300 };
+		const area = { width: 1280, height: 720 };
+		const e = dragBox(start, 'e', 80, 0, area, { bounded: false, keepRatio: 4 / 3, keepRatioOnEdges: true });
+		expect(e).toEqual({ x: 100, y: 70, w: 480, h: 360 });
+		const n = dragBox(start, 'n', 0, -60, area, { bounded: false, keepRatio: 4 / 3, keepRatioOnEdges: true });
+		expect(n).toEqual({ x: 60, y: 40, w: 480, h: 360 });
+		// Without the option, edges stay free.
+		expect(dragBox(start, 'e', 80, 0, area, { bounded: false, keepRatio: 4 / 3 }).h).toBe(300);
 	});
 });

@@ -967,6 +967,37 @@ judged on the rendered picture. It's committed as its own section.
     keeps up.
   - The `.scenes` round trip now includes a styled layer with sound, and comes back identical.
 
+## Fix: upside-down photos and scaling photo layers
+
+- **Photos were drawn upside down** everywhere through WebGL: scenes, layers, crop view, Watch
+  and the saved video.
+  - Photos are decoded as `ImageBitmap`, and WebGL ignores `UNPACK_FLIP_Y_WEBGL` for
+    ImageBitmaps. Videos (CanvasSink canvases) and cards (canvases) were flipped correctly, so
+    only photos were affected.
+  - Every earlier test used a solid yellow photo, which looks the same upside down.
+  - Fix: the compositor copies an ImageBitmap once into an OffscreenCanvas (cached per bitmap
+    in a WeakMap) before uploading it, so it's flipped like everything else. It's one place, so
+    preview, Watch and export are all covered. 2D drawing (thumbnails, filmstrips) was never
+    affected.
+  - EXIF-rotated phone photos were already the right size and shape (`from-image`).
+- **Scaling photo and video layers.**
+  - Before: corners kept the box's *current* shape, and edge handles changed the shape with
+    the picture cropped to fill it. Scaling from a side looked like zooming or cropping, and
+    after one edge drag the odd shape stuck.
+  - Now photo and video layers scale in their own (cropped) shape from every handle: a side
+    handle grows the whole picture, anchored on the opposite side's middle (`dragBox`
+    `keepRatioOnEdges`). Shift frees the shape. Cropping is the Crop tool's job. Cards stay
+    free-form (Shift on a corner keeps their shape).
+- The live size label no longer covers the floating toolbar when a layer reaches the bottom of
+  the frame. It moves inside the box's bottom edge instead of above the box.
+- Tests: new fixtures in `make-fixtures.sh` (Pillow): `quads.jpg`, `quads.png`,
+  `quads-large.jpg` (4032×3024) and `quads-exif6.jpg` (sideways with an EXIF rotate tag).
+  - `e2e/photos.test.ts` checks the four quarter colours of each photo as a scene, as a
+    full-frame layer, in crop view, and in the saved MP4.
+  - It also checks side, top and corner resizes keep 4:3, Shift frees the shape, and the next
+    plain drag restores it.
+  - Unit test for edge scaling in `dragBox`.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

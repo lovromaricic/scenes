@@ -109,6 +109,8 @@ function snap(v: number, targets: number[], threshold: number): number {
 export interface DragOptions {
 	/** Keep the box's shape (Shift on a corner, or a locked ratio). */
 	keepRatio?: number | null;
+	/** Edge handles keep the shape too (the box grows in both directions). Default: corners only. */
+	keepRatioOnEdges?: boolean;
 	/** Snap to the area's edges and centre lines within this many pixels (0 = off). */
 	snapDistance?: number;
 	/** Keep the box inside the area (true for crops; card rectangles may overhang the frame). */
@@ -172,6 +174,27 @@ export function dragBox(
 		bottom = Math.max(top + minH, Math.min(hiY, snapIf(bottom + dy, snapY, t)));
 
 	const ratio = options.keepRatio;
+	if (ratio && handle.length === 1 && options.keepRatioOnEdges) {
+		// An edge with a fixed shape: the other side follows, centred on the opposite edge's middle.
+		const horizontal = handle === 'e' || handle === 'w';
+		let w = right - left;
+		let h = bottom - top;
+		if (horizontal) h = w / ratio;
+		else w = h * ratio;
+		const grow = Math.max(1, minW / w, minH / h);
+		w *= grow;
+		h *= grow;
+		if (horizontal) {
+			const cy = start.y + start.h / 2;
+			left = handle === 'w' ? start.x + start.w - w : start.x;
+			top = cy - h / 2;
+		} else {
+			const cx = start.x + start.w / 2;
+			top = handle === 'n' ? start.y + start.h - h : start.y;
+			left = cx - w / 2;
+		}
+		return finish({ x: left, y: top, w, h });
+	}
 	if (ratio && handle.length === 2) {
 		// Corner with a fixed shape: follow the larger movement, anchored at the opposite corner.
 		let w = right - left;

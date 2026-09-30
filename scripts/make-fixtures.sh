@@ -59,3 +59,23 @@ ffmpeg -y -loglevel error -f lavfi -i "color=c=yellow:s=800x600:d=1" -frames:v 1
 ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=220:sample_rate=48000:duration=12" -c:a aac -b:a 64k music.m4a
 printf 'Not a video.\n' > notes.txt
 ls -la
+
+# Photos for orientation checks: red | green over blue | yellow quarters (upright = red top left).
+# quads-exif6.jpg is stored sideways with an EXIF "rotate 90°" tag, like a phone photo.
+python3 - <<'PY'
+from PIL import Image, ImageDraw
+def quads(w, h):
+    im = Image.new('RGB', (w, h))
+    d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, w // 2 - 1, h // 2 - 1], fill=(255, 0, 0))
+    d.rectangle([w // 2, 0, w - 1, h // 2 - 1], fill=(0, 255, 0))
+    d.rectangle([0, h // 2, w // 2 - 1, h - 1], fill=(0, 0, 255))
+    d.rectangle([w // 2, h // 2, w - 1, h - 1], fill=(255, 255, 0))
+    return im
+quads(1600, 900).save('quads.jpg', quality=92)
+quads(1600, 900).save('quads.png')
+quads(4032, 3024).save('quads-large.jpg', quality=85)
+exif = Image.Exif()
+exif[0x0112] = 6
+quads(1600, 900).transpose(Image.Transpose.ROTATE_90).save('quads-exif6.jpg', quality=92, exif=exif.tobytes())
+PY
