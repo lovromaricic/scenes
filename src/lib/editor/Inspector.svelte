@@ -3,18 +3,12 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { Button, ChipGroup, Field, PillStepper, Slider, SwatchPicker } from '$lib/ui';
 	import { MOODS, SPEEDS } from '$lib/model/catalog';
+	import { maxLength, MIN_SCENE } from '$lib/model/edits';
 	import { formatClock, formatSeconds } from '$lib/model/time';
-	import { sceneDuration } from '$lib/model/timeline';
-	import type { MoodId, Scene, Speed } from '$lib/model/types';
+	import type { MoodId, Speed } from '$lib/model/types';
+	import { useEditor } from '$lib/state/context';
 
-	interface Props {
-		scene: Scene | null;
-		index: number;
-		start: number;
-		projectMood: MoodId;
-	}
-
-	let { scene, index, start, projectMood }: Props = $props();
+	const editor = useEditor();
 
 	const moodOptions = MOODS.map((m) => ({
 		value: m.id,
@@ -24,69 +18,98 @@
 	}));
 	const speedOptions = SPEEDS.map((s) => ({ ...s, value: s.value as Speed }));
 
-	// Phase 1: local state only. Phase 3 wires these to the editor model.
-	let length = $state(0);
-	let speed = $state<Speed>(1);
-	let mood = $state<MoodId>('natural');
-	let volume = $state(1);
-
-	$effect.pre(() => {
-		if (!scene) return;
-		length = sceneDuration(scene);
-		speed = scene.speed;
-		mood = scene.mood ?? projectMood;
-		volume = scene.volume;
-	});
+	const placed = $derived(editor.selectedScene);
+	const scene = $derived(placed?.scene ?? null);
+	const max = $derived(scene ? maxLength(scene, editor.bounds(scene)) : 60);
+	const playheadInside = $derived(
+		!!placed &&
+			editor.time > placed.start + MIN_SCENE / 2 &&
+			editor.time < placed.end - MIN_SCENE / 2
+	);
 </script>
 
 <aside class="inspector" aria-label="Settings">
-	{#if scene}
-		<div class="head">
-			<h2 class="serif title">Scene {index + 1}</h2>
-			<p class="subtitle">
-				{scene.name} · starts at <span class="mono">{formatClock(start)}</span>
-			</p>
-		</div>
+	{#if scene && placed}
+		{#key scene.id}
+			<div class="head">
+				<h2 class="serif title">Scene {placed.index + 1}</h2>
+				<p class="subtitle">
+					{scene.name} · starts at <span class="mono">{formatClock(placed.start)}</span>
+				</p>
+			</div>
 
-		<div class="fields">
-			<Field label="Length">
-				<PillStepper
-					label="Length"
-					decreaseLabel="Shorter"
-					increaseLabel="Longer"
-					bind:value={length}
-					min={0.5}
-					max={60}
-					step={0.5}
-					format={formatSeconds}
-				/>
-			</Field>
-
-			{#if scene.kind === 'video'}
-				<Field label="Speed">
-					<ChipGroup label="Speed" options={speedOptions} bind:value={speed} />
+			<div class="fields">
+				<Field label="Length">
+					<PillStepper
+						label="Length"
+						decreaseLabel="Shorter"
+						increaseLabel="Longer"
+						value={Math.round(placed.duration * 10) / 10}
+						min={Math.min(MIN_SCENE, max)}
+						max={Math.floor(max * 10) / 10}
+						step={0.5}
+						format={formatSeconds}
+						onchange={(v) => editor.setSceneLength(scene.id, v)}
+					/>
 				</Field>
-			{/if}
 
-			<Field label="Mood">
-				<SwatchPicker label="Mood" options={moodOptions} bind:value={mood} />
-			</Field>
+				{#if scene.kind === 'video'}
+					<Field label="Speed">
+						<ChipGroup
+							label="Speed"
+							options={speedOptions}
+							value={scene.speed}
+							onchange={(v) => editor.setSceneSpeed(scene.id, v)}
+						/>
+					</Field>
+				{/if}
 
-			{#if scene.kind === 'video'}
-				<Field label="Clip sound">
-					<Slider label="Clip sound volume" bind:value={volume} />
+				<Field label="Mood">
+					<SwatchPicker
+						label="Mood"
+						options={moodOptions}
+						value={scene.mood ?? editor.project.mood}
+						onchange={(v: MoodId) => editor.setSceneMood(scene.id, v)}
+					/>
 				</Field>
-			{/if}
-		</div>
 
-		<div class="actions">
-			<Button variant="soft" size="sm" icon={Scissors}>Split here</Button>
-			<Button variant="ghost" size="sm" icon={Trash2}>Remove</Button>
-		</div>
+				{#if scene.kind === 'video' && editor.media[scene.mediaId]?.hasAudio}
+					<Field label="Clip sound">
+						<Slider
+							label="Clip sound volume"
+							value={scene.volume}
+							oninput={(v) => editor.setSceneVolume(scene.id, v)}
+						/>
+					</Field>
+				{/if}
+			</div>
+
+			<div class="actions">
+				<Button
+					variant="soft"
+					size="sm"
+					icon={Scissors}
+					disabled={!playheadInside}
+					title="Split at the playhead (S)"
+					onclick={() => editor.splitAtPlayhead()}>Split here</Button
+				>
+				<Button
+					variant="ghost"
+					size="sm"
+					icon={Trash2}
+					title="Remove this scene (Delete)"
+					onclick={() => editor.deleteScene(scene.id)}>Remove</Button
+				>
+			</div>
+		{/key}
 	{:else}
 		<div class="head">
 			<h2 class="serif title">Nothing selected</h2>
-			<p class="subtitle">Pick a scene, caption or sound to change it.</p>
+			<p class="subtitle">
+				{editor.project.scenes.length
+					? 'Pick a scene below to change its length, speed or mood.'
+					: 'Add photos or videos to get started.'}
+			</p>
 		</div>
 	{/if}
 </aside>
@@ -98,6 +121,10 @@
 		gap: var(--space-5);
 		padding: var(--space-6) var(--space-6) var(--space-5) var(--space-4);
 		overflow-y: auto;
+	}
+	.head,
+	.fields,
+	.actions {
 		animation: fade-in var(--dur) var(--ease-out);
 	}
 	.title {

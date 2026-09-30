@@ -45,6 +45,8 @@ export class Player {
 	private lastDrawnKey = '';
 	private events: PlayerEvents = {};
 	private startToken = 0;
+	/** While trimming, show this scene's frame at this source time instead of the playhead's. */
+	private peekTarget: { sceneId: string; sourceTime: number } | null = null;
 
 	on(events: PlayerEvents): void {
 		this.events = events;
@@ -138,6 +140,17 @@ export class Player {
 		if (this.playing) void this.startAudio();
 	}
 
+	/** Show a specific frame of a scene without moving the playhead (used while trimming). */
+	peek(sceneId: string, sourceTime: number): void {
+		this.peekTarget = { sceneId, sourceTime };
+		this.dirty = true;
+	}
+
+	endPeek(): void {
+		this.peekTarget = null;
+		this.dirty = true;
+	}
+
 	/** Make sure the audio context exists; call from a click so the browser allows sound. */
 	unlockAudio(): void {
 		void this.audio.ensureContext().catch(() => {});
@@ -207,6 +220,14 @@ export class Player {
 		return source.frameAt(srcT);
 	}
 
+	private peekFrame(target: { sceneId: string; sourceTime: number }) {
+		const scene = this.scenes.find((s) => s.id === target.sceneId);
+		const source = scene && this.sourceFor(scene);
+		if (!source) return null;
+		source.want(target.sourceTime, false);
+		return source.frameAt(target.sourceTime);
+	}
+
 	private placedAt(t: number): PlacedScene | null {
 		const placed = this.placed;
 		if (!placed.length) return null;
@@ -225,7 +246,7 @@ export class Player {
 				const source = this.sourceFor(p.scene);
 				if (source && p !== current)
 					source.want(sourceTimeAt(p, Math.max(p.start, Math.min(t, p.end))), this.playing);
-			} else {
+			} else if (p.scene.id !== this.peekTarget?.sceneId) {
 				this.sources.get(p.scene.id)?.source?.idle();
 			}
 		}
@@ -245,7 +266,9 @@ export class Player {
 		if (!this.compositor || !this.canvas) return;
 
 		this.manageSources(t);
-		const frame = this.frameForTime(t, this.playing);
+		const frame = this.peekTarget
+			? this.peekFrame(this.peekTarget)
+			: this.frameForTime(t, this.playing);
 		const key = `${this.canvas.width}x${this.canvas.height}|${frame ? objectId(frame.image) : 'none'}`;
 		if (!this.dirty && key === this.lastDrawnKey) return;
 		this.dirty = false;

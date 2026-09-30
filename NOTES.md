@@ -95,13 +95,45 @@ npm run check        # svelte-check (TypeScript strict)
   tests and debugging.
 - **Unsupported browsers** (no WebCodecs, WebGL2, Web Audio or IndexedDB) get a friendly page
   pointing to Chrome or Edge.
-- **Not yet persistent.** Media is stored on import, but the project itself is only saved from
-  Phase 3 (autosave), so a reload currently starts a new project.
+
+### Phase 3
+
+- **Edit functions are pure** (`src/lib/model/edits.ts`): move, remove, set length, trim an edge,
+  set speed, split. The store (`src/lib/state/editor.svelte.ts`) only wires them to the UI.
+- **Undo = project snapshots.** `History<Project>` stores before/after snapshots of the whole
+  project (it holds no media, so snapshots are tiny). This can't drift out of sync with the edit
+  code. Quick repeats of the same control (e.g. holding the Length stepper, dragging the volume
+  slider) merge into one step within 1s. A multi-file import is one step. Drags (trim, reorder)
+  record one step when released. Limit: 200 steps. History isn't kept across reloads.
+- **Trimming** by dragging card edges (handles appear on the selected card, or on hover). While
+  dragging, the storyboard scale is frozen, a badge shows the new length, and the preview "peeks" at
+  the exact frame at the new edge, without moving the playhead. Trimming the start moves only that
+  card's left edge until release, then later cards close the gap.
+- **Length stepper** grows/shrinks at the end; if the clip runs out, the extra comes from the start.
+  Steps of 0.5s, min 0.5s, max = whole clip at the current speed (photos: 60s).
+- **Speed** keeps the same part of the clip, so the scene gets longer (0.5×) or shorter (2×).
+- **Split** (S key or "Split here") splits the scene under the playhead, not the selected one; the
+  outgoing transition stays on the second half. Refused within 0.25s of a cut, with a friendly toast.
+- **Reorder** by dragging a card (5px threshold so clicks still select), with auto-scroll near the
+  edges, or with Alt+←/→ on a focused card.
+- **Selecting a scene** moves the playhead to its start if it isn't already inside it, so the
+  preview shows what you picked.
+- **Keyboard:** Space play/pause, S split, Delete/Backspace remove, ←/→ one frame (Shift: 1s),
+  Home/End, Esc deselect, ⌘/Ctrl+Z undo, ⌘/Ctrl+Shift+Z or Ctrl+Y redo.
+- **Autosave** writes the whole project (plus playhead and selection) to IndexedDB at most 300ms
+  after the first unsaved change — a throttle, not a debounce, so a burst of edits can't postpone
+  saving. On page hide/close, an extra synchronous copy goes to `localStorage`, because an async
+  IndexedDB write can be cut off by the unload; on load the newer copy wins and is written back to
+  IndexedDB. The top bar shows "Saved on this device".
+- **Restore** loads the most recently edited project. Scenes whose file is missing (storage cleared)
+  are left out with a toast. Media no project uses any more is deleted at start-up.
+- **Project title** is editable in the top bar (click it; Enter saves, Esc cancels).
 
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
 - Stepper hold-to-repeat works with a pointer; keyboard users press repeatedly.
 - The Words, Sound and Looks panels are still placeholders (Phases 4–6). Clips works.
-- The Inspector controls don't edit the scene yet (Phase 3).
-- Imported media is never deleted from IndexedDB yet; cleanup of unused files comes with autosave (Phase 3).
+- Mood swatches are stored per scene but only change the picture from Phase 6.
+- Only one project exists at a time (no project list). Ideas: a small "Your videos" page.
+- Undo history isn't persisted across reloads.

@@ -28,10 +28,22 @@ export interface MediaRecord extends MediaInfo {
 	blob: Blob;
 }
 
+/** What we remember about where the user was, restored with the project. */
+export interface ProjectView {
+	time: number;
+	selectedId: string | null;
+}
+
+export interface ProjectRecord extends Project {
+	view?: ProjectView;
+	/** When this copy was written (ms). Used to pick the newest copy on load. */
+	savedAt?: number;
+}
+
 interface ScenesDB extends DBSchema {
 	media: { key: string; value: MediaRecord };
 	thumbnails: { key: string; value: { id: string; blob: Blob } };
-	projects: { key: string; value: Project; indexes: { updatedAt: number } };
+	projects: { key: string; value: ProjectRecord; indexes: { updatedAt: number } };
 }
 
 const DB_NAME = 'scenes';
@@ -86,4 +98,37 @@ export async function requestPersistentStorage(): Promise<void> {
 	} catch {
 		// Not supported or denied: data still saves, it just may be evicted under pressure.
 	}
+}
+
+export async function saveProject(record: ProjectRecord): Promise<void> {
+	await (await db()).put('projects', record);
+}
+
+/** The most recently edited project, if any. */
+export async function loadLatestProject(): Promise<ProjectRecord | undefined> {
+	const d = await db();
+	const cursor = await d.transaction('projects').store.index('updatedAt').openCursor(null, 'prev');
+	return cursor?.value;
+}
+
+/** Info for stored media, without touching the file contents. */
+export async function getMediaInfos(ids: string[]): Promise<MediaInfo[]> {
+	const d = await db();
+	const tx = d.transaction('media');
+	const records = await Promise.all(ids.map((id) => tx.store.get(id)));
+	return records.filter((r): r is MediaRecord => !!r).map(({ blob: _blob, ...info }) => info);
+}
+
+/** Delete stored files that no saved project uses any more. Returns how many were removed. */
+export async function deleteUnusedMedia(): Promise<number> {
+	const d = await db();
+	const used = new Set<string>();
+	for (const project of await d.getAll('projects')) {
+		for (const scene of project.scenes) used.add(scene.mediaId);
+		for (const sound of project.sounds) used.add(sound.mediaId);
+	}
+	const ids = await d.getAllKeys('media');
+	const unused = ids.filter((id) => !used.has(id));
+	for (const id of unused) await deleteMedia(id);
+	return unused.length;
 }

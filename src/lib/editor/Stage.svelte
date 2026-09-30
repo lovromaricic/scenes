@@ -22,7 +22,7 @@
 
 	const ratio = $derived(aspectRatioValue(editor.project.aspect));
 	const aspectOptions = ASPECTS.map((a) => ({ value: a.id, label: a.label }));
-	const empty = $derived(editor.project.scenes.length === 0);
+	const empty = $derived(editor.ready && editor.project.scenes.length === 0);
 
 	/** Drawing-buffer size cap, to keep the preview fast on large screens. */
 	const MAX_PREVIEW_WIDTH = 1920;
@@ -48,7 +48,7 @@
 	});
 
 	function setAspect(aspect: AspectRatio) {
-		editor.project.aspect = aspect;
+		editor.setAspect(aspect);
 	}
 </script>
 

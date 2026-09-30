@@ -4,35 +4,47 @@
 	import Redo2 from '@lucide/svelte/icons/redo-2';
 	import Play from '@lucide/svelte/icons/play';
 	import Download from '@lucide/svelte/icons/download';
+	import Check from '@lucide/svelte/icons/check';
 	import { Button, Divider, IconButton } from '$lib/ui';
 	import { formatLength, pluralize } from '$lib/model/time';
+	import { useEditor } from '$lib/state/context';
 
 	interface Props {
-		title: string;
-		sceneCount: number;
-		duration: number;
-		canUndo?: boolean;
-		canRedo?: boolean;
-		onundo?: () => void;
-		onredo?: () => void;
 		onwatch?: () => void;
 		onsave?: () => void;
 	}
 
-	let {
-		title,
-		sceneCount,
-		duration,
-		canUndo = false,
-		canRedo = false,
-		onundo,
-		onredo,
-		onwatch,
-		onsave
-	}: Props = $props();
+	let { onwatch, onsave }: Props = $props();
+
+	const editor = useEditor();
 
 	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 	const mod = isMac ? '⌘' : 'Ctrl+';
+
+	let editing = $state(false);
+	let draft = $state('');
+	let input = $state<HTMLInputElement>();
+
+	function startEditing() {
+		draft = editor.project.title;
+		editing = true;
+		requestAnimationFrame(() => input?.select());
+	}
+
+	function finish(save: boolean) {
+		if (!editing) return;
+		editing = false;
+		if (save) editor.setTitle(draft);
+	}
+
+	const saveLabel = $derived(
+		{
+			idle: '',
+			saving: 'Saving…',
+			saved: 'Saved on this device',
+			error: 'Couldn’t save — retrying'
+		}[editor.saveStatus]
+	);
 </script>
 
 <header class="topbar">
@@ -45,22 +57,72 @@
 				<rect x="15" y="5" width="2" height="22" rx="1" fill="var(--color-accent)" />
 			</svg>
 		</a>
-		<h1 class="serif title">{title}</h1>
-		<p class="meta">{pluralize(sceneCount, 'scene')} · {formatLength(duration)}</p>
+		{#if editing}
+			<input
+				bind:this={input}
+				class="serif title title-input"
+				aria-label="Video title"
+				maxlength="80"
+				bind:value={draft}
+				onblur={() => finish(true)}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') finish(true);
+					else if (e.key === 'Escape') finish(false);
+				}}
+			/>
+		{:else}
+			<h1 class="title-wrap">
+				<button
+					type="button"
+					class="serif title"
+					title="Rename"
+					aria-label="{editor.project.title}, rename"
+					onclick={startEditing}
+				>
+					{editor.project.title}
+				</button>
+			</h1>
+		{/if}
+		<p class="meta">
+			{pluralize(editor.project.scenes.length, 'scene')} · {formatLength(editor.duration)}
+		</p>
+		{#if saveLabel}
+			<p class="save" class:error={editor.saveStatus === 'error'} role="status">
+				{#if editor.saveStatus === 'saved'}<Check
+						size={13}
+						strokeWidth={2}
+						aria-hidden="true"
+					/>{/if}
+				{saveLabel}
+			</p>
+		{/if}
 	</div>
 
 	<div class="actions">
-		<IconButton label="Undo" shortcut="{mod}Z" icon={Undo2} disabled={!canUndo} onclick={onundo} />
+		<IconButton
+			label="Undo"
+			shortcut="{mod}Z"
+			icon={Undo2}
+			disabled={!editor.canUndo}
+			onclick={() => editor.undo()}
+		/>
 		<IconButton
 			label="Redo"
 			shortcut={isMac ? '⇧⌘Z' : 'Ctrl+Shift+Z'}
 			icon={Redo2}
-			disabled={!canRedo}
-			onclick={onredo}
+			disabled={!editor.canRedo}
+			onclick={() => editor.redo()}
 		/>
 		<Divider />
-		<Button variant="outline" icon={Play} onclick={onwatch}>Watch</Button>
-		<Button variant="accent" icon={Download} onclick={onsave}>Save video</Button>
+		<Button variant="outline" icon={Play} disabled={!editor.project.scenes.length} onclick={onwatch}
+			>Watch</Button
+		>
+		<Button
+			variant="accent"
+			icon={Download}
+			disabled={!editor.project.scenes.length}
+			onclick={onsave}>Save video</Button
+		>
 	</div>
 </header>
 
@@ -84,17 +146,50 @@
 		display: grid;
 		border-radius: var(--radius-sm);
 	}
+	.title-wrap {
+		min-width: 0;
+		display: flex;
+	}
 	.title {
+		max-width: 36ch;
+		padding: 2px 6px;
+		margin: 0 -6px;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: none;
 		font-size: var(--text-title);
-		line-height: 1;
+		line-height: 1.1;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		cursor: text;
+	}
+	button.title:hover {
+		background: var(--color-surface);
+	}
+	.title-input {
+		width: 22ch;
+		border: 1px solid var(--color-ink);
+		background: var(--color-bg);
+		outline: none;
 	}
 	.meta {
 		color: var(--color-muted);
 		font-size: var(--text-md);
 		white-space: nowrap;
+	}
+	.save {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--color-muted);
+		font-size: var(--text-sm);
+		white-space: nowrap;
+		animation: fade-in var(--dur) var(--ease-out);
+	}
+	.save.error {
+		color: var(--color-ink);
+		font-weight: var(--weight-medium);
 	}
 	.actions {
 		display: flex;
@@ -103,5 +198,15 @@
 	}
 	.actions :global(.btn) {
 		margin-left: var(--space-1);
+	}
+	@keyframes fade-in {
+		from {
+			opacity: 0;
+		}
+	}
+	@media (max-width: 1279px) {
+		.save {
+			display: none;
+		}
 	}
 </style>

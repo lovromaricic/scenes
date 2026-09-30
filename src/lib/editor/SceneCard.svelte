@@ -11,9 +11,19 @@
 		thumbnail: string;
 		selected?: boolean;
 		onselect?: () => void;
+		onkeydown?: (event: KeyboardEvent) => void;
 	}
 
-	let { index, name, duration, width, thumbnail, selected = false, onselect }: Props = $props();
+	let {
+		index,
+		name,
+		duration,
+		width,
+		thumbnail,
+		selected = false,
+		onselect,
+		onkeydown
+	}: Props = $props();
 </script>
 
 <button
@@ -24,7 +34,9 @@
 	style:width="{width}px"
 	aria-pressed={selected}
 	aria-label="Scene {index + 1}, {name}, {formatShort(duration)}"
+	aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
 	onclick={onselect}
+	{onkeydown}
 >
 	<span class="thumb" style:background-image={thumbnail}></span>
 	<span class="meta">
@@ -36,6 +48,7 @@
 <style>
 	.card {
 		position: relative;
+		cursor: grab;
 		display: flex;
 		flex-direction: column;
 		flex: none;
@@ -48,7 +61,8 @@
 		text-align: left;
 		transition:
 			border-color var(--dur-fast) var(--ease-out),
-			box-shadow var(--dur-fast) var(--ease-out);
+			box-shadow var(--dur-fast) var(--ease-out),
+			transform var(--dur-fast) var(--ease-out);
 	}
 	.card:hover {
 		border-color: var(--color-muted);

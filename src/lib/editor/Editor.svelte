@@ -14,27 +14,19 @@
 
 	const editor = provideEditor(new EditorStore());
 
-	const selectedScene = $derived(
-		editor.placed.find((p) => p.scene.id === editor.selectedId) ?? null
-	);
-	const thumbnails = $derived(
-		Object.fromEntries(
-			editor.project.scenes.map((s) => {
-				const url = editor.thumbnails[s.mediaId];
-				return [s.id, url ? `url("${url}")` : 'none'];
-			})
-		)
-	);
-
-	// Keep the player in step with the project. It gets a plain snapshot, never the reactive proxy.
-	$effect(() => {
-		editor.syncPlayer();
-	});
-
 	onMount(() => {
 		// Handy for tests and debugging in the console.
 		(window as unknown as { __scenes: unknown }).__scenes = editor;
-		return () => editor.player.dispose();
+		void editor.load();
+		const save = () => void editor.flushSave();
+		const onVisibility = () => document.visibilityState === 'hidden' && save();
+		window.addEventListener('pagehide', save);
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => {
+			window.removeEventListener('pagehide', save);
+			document.removeEventListener('visibilitychange', onVisibility);
+			editor.player.dispose();
+		};
 	});
 
 	async function pick() {
@@ -63,8 +55,7 @@
 		if (!dragHasFiles(event)) return;
 		event.preventDefault();
 		dragDepth = 0;
-		const files = Array.from(event.dataTransfer?.files ?? []);
-		void editor.importFiles(files);
+		void editor.importFiles(Array.from(event.dataTransfer?.files ?? []));
 	}
 
 	function isTyping(target: EventTarget | null): boolean {
@@ -73,11 +64,55 @@
 	}
 
 	function onkeydown(event: KeyboardEvent) {
-		if (isTyping(event.target) || event.defaultPrevented) return;
-		if (event.key === ' ' && !event.metaKey && !event.ctrlKey) {
-			// Space always plays/pauses, even when a button has focus (Enter still presses buttons).
+		const mod = event.metaKey || event.ctrlKey;
+		const key = event.key.toLowerCase();
+
+		// Undo/redo work everywhere except inside text fields (which have their own undo).
+		if (mod && !event.altKey && (key === 'z' || key === 'y')) {
+			if (isTyping(event.target)) return;
 			event.preventDefault();
-			if (editor.project.scenes.length) editor.togglePlay();
+			if (key === 'y' || event.shiftKey) editor.redo();
+			else editor.undo();
+			return;
+		}
+		if (mod || event.altKey || isTyping(event.target) || event.defaultPrevented) return;
+
+		switch (event.key) {
+			case ' ':
+				// Space always plays/pauses, even when a button has focus (Enter still presses buttons).
+				event.preventDefault();
+				if (editor.project.scenes.length) editor.togglePlay();
+				break;
+			case 's':
+			case 'S':
+				event.preventDefault();
+				editor.splitAtPlayhead();
+				break;
+			case 'Delete':
+			case 'Backspace':
+				if (editor.selectedId) {
+					event.preventDefault();
+					editor.deleteSelected();
+				}
+				break;
+			case 'ArrowLeft':
+			case 'ArrowRight': {
+				event.preventDefault();
+				const step = event.shiftKey ? 1 : 1 / 30;
+				editor.nudge(event.key === 'ArrowLeft' ? -step : step);
+				break;
+			}
+			case 'Home':
+				event.preventDefault();
+				editor.seek(0);
+				break;
+			case 'End':
+				event.preventDefault();
+				editor.seek(editor.duration);
+				break;
+			case 'Escape':
+				editor.select(null);
+				break;
 		}
 	}
 </script>
@@ -85,36 +120,15 @@
 <svelte:window {ondragenter} {ondragover} {ondragleave} {ondrop} {onkeydown} />
 
 <div class="editor">
-	<TopBar
-		title={editor.project.title}
-		sceneCount={editor.project.scenes.length}
-		duration={editor.duration}
-	/>
+	<TopBar />
 
 	<main class="workspace">
 		<AddColumn onpick={pick} />
 		<Stage onpick={pick} />
-		<Inspector
-			scene={selectedScene?.scene ?? null}
-			index={selectedScene?.index ?? 0}
-			start={selectedScene?.start ?? 0}
-			projectMood={editor.project.mood}
-		/>
+		<Inspector />
 	</main>
 
-	<Storyboard
-		scenes={editor.project.scenes}
-		texts={editor.project.texts}
-		sounds={editor.project.sounds}
-		time={editor.time}
-		selectedId={editor.selectedId}
-		{thumbnails}
-		peaks={{}}
-		importing={editor.importing}
-		onselect={(id) => editor.select(id)}
-		onseek={(t) => editor.seek(t)}
-		onaddscene={pick}
-	/>
+	<Storyboard onaddscene={pick} />
 </div>
 
 {#if dragDepth > 0}
