@@ -232,4 +232,37 @@ test.describe('Editing layers', () => {
 		await s.getByRole('button', { name: 'Add rectangle' }).click();
 		await expect(s.getByRole('spinbutton', { name: 'Rectangle width' })).toBeVisible();
 	});
+
+	test('the toolbar and its popovers stay on top of words on the video', async ({ page }) => {
+		const id = await setup(page);
+		// Words in the middle of the picture, right where the Style popover opens.
+		await page.getByRole('button', { name: /^Words Titles/ }).click();
+		await page.getByRole('button', { name: /^Title/ }).click();
+		await page.keyboard.type('Underneath');
+		await page.keyboard.press('Enter');
+		await page.keyboard.press('Escape');
+		await page.evaluate((id) => (window as unknown as { __scenes: { select(id: string): void } }).__scenes.select(id), id);
+		await toolbar(page).getByRole('button', { name: 'Style' }).click();
+		const popover = page.getByRole('dialog', { name: 'Layer style' });
+		await expect(popover).toBeVisible();
+
+		const words = (await page.locator('.text-box').first().boundingBox())!;
+		const pop = (await popover.boundingBox())!;
+		const x = Math.max(words.x, pop.x) + 10;
+		const y = Math.max(words.y, pop.y) + 5;
+		expect(x < Math.min(words.x + words.width, pop.x + pop.width) && y < Math.min(words.y + words.height, pop.y + pop.height)).toBe(true);
+		// What's under the pointer there is the popover, not the words.
+		expect(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('[aria-label="Layer style"]'), { x, y })).toBe(true);
+
+		// Dragging the border slider (and releasing over the words) and clicking there keep the layer.
+		const slider = (await popover.getByRole('slider', { name: 'Border thickness' }).boundingBox())!;
+		await page.mouse.move(slider.x + 4, slider.y + slider.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(slider.x + slider.width * 0.6, y, { steps: 6 });
+		await page.mouse.up();
+		await page.mouse.click(x, y);
+		expect(await scenes(page, (s) => (s as unknown as { selectedId: string }).selectedId)).toBe(id);
+		await expect(popover).toBeVisible();
+		expect((await layer(page, id)).style.borderWidth).toBeGreaterThan(0);
+	});
 });

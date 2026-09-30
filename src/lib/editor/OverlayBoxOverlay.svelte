@@ -235,22 +235,33 @@
 					onpointercancel={onpointerup}
 				></span>
 			{/each}
-			{#if !dragging}
-				<div class="layer-toolbar" class:below={g.top < 64}>
-					<FloatingToolbar label="Layer options" actions={actions(o)} />
-					{#if popover === 'style'}
-						<div class="popover" role="dialog" aria-label="Layer style">
-							<OverlayStyleFields overlay={o} />
-						</div>
-					{:else if popover === 'animate'}
-						<div class="popover" role="dialog" aria-label="Layer animation">
-							<OverlayAnimationFields overlay={o} />
-						</div>
-					{/if}
-				</div>
-			{/if}
 		{/if}
 	</div>
+	{#if selected && !dragging}
+		<!-- Outside the layer's box, and stacked above the words on the video: the toolbar and its
+			popovers must never have words (or other layers) on top of them, catching clicks. -->
+		<div
+			class="toolbar-anchor"
+			data-on-video
+			style:left="{g.left}px"
+			style:top="{g.top}px"
+			style:width="{g.w}px"
+			style:height="{g.h}px"
+		>
+			<div class="layer-toolbar" class:below={g.top < 64}>
+				<FloatingToolbar label="Layer options" actions={actions(o)} />
+				{#if popover === 'style'}
+					<div class="popover" role="dialog" aria-label="Layer style">
+						<OverlayStyleFields overlay={o} />
+					</div>
+				{:else if popover === 'animate'}
+					<div class="popover" role="dialog" aria-label="Layer animation">
+						<OverlayAnimationFields overlay={o} />
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
 	{#if selected && !popover}
 		<span
 			class="size mono"
@@ -369,7 +380,14 @@
 		white-space: nowrap;
 		pointer-events: none;
 	}
+	/* Above the words (z-index 5) and every layer box; only its toolbar takes clicks. */
+	.toolbar-anchor {
+		position: absolute;
+		z-index: 7;
+		pointer-events: none;
+	}
 	.layer-toolbar {
+		pointer-events: auto;
 		position: absolute;
 		bottom: calc(100% + 12px);
 		left: 50%;

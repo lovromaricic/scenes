@@ -998,6 +998,19 @@ judged on the rendered picture. It's committed as its own section.
     plain drag restores it.
   - Unit test for edge scaling in `dragBox`.
 
+## Fix: layer toolbar under words
+
+- The layer's floating toolbar and its Style/Animate popovers were inside the layer's box on the
+  preview (z-index 4–5). The words' layer (z-index 5) comes later in the page, so words sitting
+  under an open popover were on top of it. They caught clicks, for example while dragging the
+  border slider.
+- The toolbar and popovers now render outside the box, in a `toolbar-anchor` with z-index 7 that
+  only lets its toolbar take clicks. The box's hit area stays below the words, so words over a
+  layer can still be clicked when no popover is in the way.
+- Test: words placed under the open Style popover. The element under the pointer there is the
+  popover; dragging the slider and clicking there keeps the layer selected. The test fails on
+  the old code.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
