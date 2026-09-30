@@ -48,6 +48,8 @@ import type {
 } from '$lib/model/types';
 import { Player } from '$lib/playback/player';
 import { Autosaver, emergencyCopy, type SaveStatus } from './autosave';
+import { exportVideo, type ExportProgress, type ExportResult } from '$lib/export/exporter';
+import { presetById, type PresetId } from '$lib/export/presets';
 import { newId, newProject, sceneFromMedia } from './project';
 import { toasts } from './toasts.svelte';
 
@@ -555,6 +557,26 @@ export class EditorStore {
 			to,
 			sampleRate
 		);
+	}
+
+	// ─── Save video ─────────────────────────────────────────────────────────────────────────
+
+	/** Render and encode the video. The dialog shows progress and can cancel with `signal`. */
+	async saveVideo(
+		presetId: PresetId,
+		onProgress: (p: ExportProgress) => void,
+		signal: AbortSignal
+	): Promise<ExportResult> {
+		this.player.pause();
+		const media = this.media;
+		return exportVideo({
+			project: this.snapshot(),
+			preset: presetById(presetId),
+			bounds: (scene) => this.bounds(scene),
+			hasAudio: (id) => !!media[id]?.hasAudio,
+			onProgress,
+			signal
+		});
 	}
 
 	// ─── Voiceover ──────────────────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ H264="-c:v libx264 -preset veryfast -profile:v high -g 30 -crf 28"
 AAC="-c:a aac -b:a 64k"
 clip red red 4 440 "$H264" "$AAC" mp4
 clip green 0x00ff00 3 660 "$H264" "$AAC" mp4
+clip long magenta 12 550 "$H264" "$AAC" mp4
 clip blue blue 3 880 "-c:v libvpx-vp9 -b:v 200k -g 30 -deadline realtime -cpu-used 8" "-c:a libopus -b:a 48k" webm
 
 # A longer clip whose colour changes every second (for scrubbing accuracy), with sparse keyframes.

@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest';
+import {
+	estimateBytes,
+	exportFileName,
+	formatBytes,
+	formatTimeLeft,
+	outputSize,
+	presetById,
+	videoBitrate
+} from './presets';
+
+describe('outputSize', () => {
+	it('matches the video shape', () => {
+		expect(outputSize('16:9', 1080)).toEqual({ width: 1920, height: 1080 });
+		expect(outputSize('9:16', 1080)).toEqual({ width: 1080, height: 1920 });
+		expect(outputSize('1:1', 1080)).toEqual({ width: 1080, height: 1080 });
+		expect(outputSize('16:9', 720)).toEqual({ width: 1280, height: 720 });
+	});
+});
+
+describe('bitrates and sizes', () => {
+	it('gives sensible bitrates', () => {
+		const best = videoBitrate(presetById('best'), 1920, 1080);
+		const social = videoBitrate(presetById('social'), 1920, 1080);
+		const small = videoBitrate(presetById('small'), 1280, 720);
+		expect(best).toBeGreaterThan(10_000_000);
+		expect(best).toBeLessThan(14_000_000);
+		expect(social).toBeLessThan(best);
+		expect(small).toBeLessThan(social);
+	});
+	it('estimates the file size', () => {
+		const bytes = estimateBytes(presetById('best'), '16:9', 30);
+		expect(bytes / 1e6).toBeGreaterThan(35);
+		expect(bytes / 1e6).toBeLessThan(55);
+		expect(estimateBytes(presetById('small'), '16:9', 30)).toBeLessThan(bytes / 3);
+	});
+	it('formats sizes', () => {
+		expect(formatBytes(500_000)).toBe('under 1 MB');
+		expect(formatBytes(4_560_000)).toBe('4.6 MB');
+		expect(formatBytes(45_600_000)).toBe('46 MB');
+		expect(formatBytes(2_300_000_000)).toBe('2.3 GB');
+	});
+});
+
+describe('formatTimeLeft', () => {
+	it('waits for enough progress before guessing', () => {
+		expect(formatTimeLeft(0.01, 5)).toMatch(/Working out/);
+	});
+	it('rounds to friendly amounts', () => {
+		expect(formatTimeLeft(0.5, 20)).toBe('About 20 seconds left');
+		expect(formatTimeLeft(0.9, 30)).toBe('Almost done');
+		expect(formatTimeLeft(0.36, 2.5)).toBe('A few seconds left');
+		expect(formatTimeLeft(0.25, 60)).toBe('About 3 minutes left');
+		expect(formatTimeLeft(0.5, 50)).toBe('About 50 seconds left');
+		expect(formatTimeLeft(0.5, 70)).toBe('About a minute left');
+	});
+});
+
+describe('exportFileName', () => {
+	it('uses the title without unsafe characters', () => {
+		expect(exportFileName('Summer in Split', 'mp4')).toBe('Summer in Split.mp4');
+		expect(exportFileName('a/b:c?', 'webm')).toBe('a b c.webm');
+		expect(exportFileName('   ', 'mp4')).toBe('My video.mp4');
+	});
+});

@@ -10,9 +10,12 @@
 	import Stage from './Stage.svelte';
 	import Storyboard from './Storyboard.svelte';
 	import Toasts from './Toasts.svelte';
+	import SaveDialog from './SaveDialog.svelte';
 	import TopBar from './TopBar.svelte';
 
 	const editor = provideEditor(new EditorStore());
+
+	let saving = $state(false);
 
 	onMount(() => {
 		// Handy for tests and debugging in the console.
@@ -129,7 +132,7 @@
 <svelte:window {ondragenter} {ondragover} {ondragleave} {ondrop} {onkeydown} />
 
 <div class="editor">
-	<TopBar />
+	<TopBar onsave={() => (saving = true)} />
 
 	<main class="workspace">
 		<AddColumn onpick={pick} />
@@ -142,6 +145,10 @@
 
 {#if dragDepth > 0}
 	<DropOverlay />
+{/if}
+
+{#if saving}
+	<SaveDialog onclose={() => (saving = false)} />
 {/if}
 
 <Toasts />

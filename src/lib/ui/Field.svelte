@@ -18,7 +18,7 @@
 <div class="field">
 	<div class="label-row">
 		<span class="label">{label}</span>
-		{#if hint}<span class="hint mono">{hint}</span>{/if}
+		{#if hint}<span class="hint" class:mono={/\d/.test(hint)}>{hint}</span>{/if}
 	</div>
 	{@render children()}
 </div>

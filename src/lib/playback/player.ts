@@ -5,8 +5,6 @@ import { PhotoFrameSource, VideoFrameSource, type FrameSource } from '$lib/media
 import { placeScenes, type PlacedScene } from '$lib/model/timeline';
 import { compose, type Composition, type LayerRef } from '$lib/model/composition';
 import type { SourceBounds } from '$lib/model/edits';
-import { MOOD_GRADES } from '$lib/model/moods';
-import { textFrameState } from '$lib/model/textAnimation';
 import type { MoodId, Project, Scene, TextItem } from '$lib/model/types';
 import {
 	Compositor,
@@ -15,6 +13,7 @@ import {
 	type TextDraw
 } from '$lib/render/compositor';
 import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
+import { layerInput, textDrawsAt } from '$lib/render/frame';
 import { sourceTimeAt } from './time';
 
 /** What the player needs to know about imported files. */
@@ -277,22 +276,9 @@ export class Player {
 		return source.frameAt(ref.sourceTime);
 	}
 
-	private layerInput(
-		ref: LayerRef,
-		playing: boolean
-	): { input: LayerInput; exact: boolean } | null {
+	private layerInput(ref: LayerRef, playing: boolean): LayerInput | null {
 		const frame = this.layerFrame(ref, playing);
-		if (!frame) return null;
-		const mood = ref.placed.scene.mood ?? this.mood;
-		return {
-			input: {
-				image: frame.image,
-				width: frame.width,
-				height: frame.height,
-				grade: MOOD_GRADES[mood]
-			},
-			exact: frame.exact
-		};
+		return frame ? layerInput(frame, ref.placed.scene, this.mood) : null;
 	}
 
 	/** Whether every frame needed at time `t` is decoded exactly. */
@@ -305,24 +291,7 @@ export class Player {
 
 	/** The text sprites showing at time `t`, with their animation applied. */
 	private textDraws(t: number, width: number, height: number): TextDraw[] {
-		const draws: TextDraw[] = [];
-		for (const item of this.texts) {
-			if (item.id === this.hiddenTextId) continue;
-			const state = textFrameState(item, t);
-			if (!state.visible) continue;
-			const { key, sprite } = this.sprites.get(item, width, height);
-			draws.push({
-				key,
-				image: sprite.canvas,
-				cx: sprite.layout.cx,
-				cy: sprite.layout.cy + state.dy * Math.min(width, height),
-				width: sprite.canvas.width,
-				height: sprite.canvas.height,
-				scale: state.scale,
-				opacity: state.opacity
-			});
-		}
-		return draws;
+		return textDrawsAt(this.texts, t, width, height, this.sprites, this.hiddenTextId);
 	}
 
 	private peekFrame(target: { sceneId: string; sourceTime: number }) {
@@ -377,22 +346,12 @@ export class Player {
 		if (this.peekTarget) {
 			const frame = this.peekFrame(this.peekTarget);
 			const scene = this.scenes.find((s) => s.id === this.peekTarget!.sceneId);
-			composite = {
-				a:
-					frame && scene
-						? {
-								image: frame.image,
-								width: frame.width,
-								height: frame.height,
-								grade: MOOD_GRADES[scene.mood ?? this.mood]
-							}
-						: null
-			};
+			composite = { a: frame && scene ? layerInput(frame, scene, this.mood) : null };
 		} else {
 			const c = this.composition(t);
 			composite = {
-				a: c.a ? (this.layerInput(c.a, this.playing)?.input ?? null) : null,
-				b: c.b ? (this.layerInput(c.b, this.playing)?.input ?? null) : null,
+				a: c.a ? this.layerInput(c.a, this.playing) : null,
+				b: c.b ? this.layerInput(c.b, this.playing) : null,
 				transition: c.transition
 			};
 		}

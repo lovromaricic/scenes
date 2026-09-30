@@ -211,6 +211,33 @@ npm run check        # svelte-check (TypeScript strict)
 - The favicon is now a static file linked from `app.html` (Chrome was requesting `/favicon.ico`
   before JavaScript added the icon link, causing a 404).
 
+### Phase 7
+
+- **Export renders through the preview's compositor.** `src/lib/export/exporter.ts` builds every
+  frame with the same `compose()` + `Compositor` + text sprites as the preview (shared helpers in
+  `src/lib/render/frame.ts`), on an OffscreenCanvas at the output size, and feeds it to a
+  Mediabunny `CanvasSource`. The e2e test compares exported frames (via ffmpeg) with the preview's
+  pixels at the same times, including mid-crossfade, the look and the caption.
+- **Streaming, bounded memory:** each scene is read by one sequential decoder at the size the
+  output needs (never upscaled; freed once passed), sound is mixed offline in 2s chunks with the
+  same mixer as playback, and the file is written straight to disk in OPFS via `StreamTarget`
+  (MP4 with the index at the end, `fastStart: false`). If OPFS isn't available it falls back to
+  memory. Only the latest export is kept in OPFS so its download link keeps working.
+- **Presets:** Best quality (1080p short side, ~12 Mbps at 16:9), For social (1080p, ~5.6 Mbps),
+  Small file (720p, ~2.2 Mbps); bitrate scales with pixel count, so 9:16 and 1:1 get the same
+  quality per pixel. All presets match the project's shape. 30 fps output. Audio AAC 192/128/96 kbps.
+  Decision: "For social" differs from "Best" by file size, since every preset already follows the
+  video's shape.
+- **Format:** MP4 (H.264 + AAC) when `canEncodeVideo/Audio` say so, otherwise WebM (VP9 + Opus),
+  and the dialog says so before saving. `localStorage['scenes:force-webm'] = '1'` forces the
+  fallback (used by the e2e test).
+- **Dialog:** presets with size estimates → progress bar with a friendly time estimate and
+  Cancel (Esc also cancels) → "Your video is ready" with the file name and size; the download
+  starts automatically, with "Download again". The dialog is modal, so the project can't change
+  mid-export.
+- Measured: the 30-second, 3-scene 1080p test project (text, music, crossfade, look) exports in
+  about 8 seconds on this Mac.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
