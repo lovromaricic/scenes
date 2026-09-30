@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { importViaPicker } from './helpers';
 
 test.describe('Phase 1: design system and layout', () => {
 	test('design page shows every component', async ({ page }) => {
@@ -24,6 +25,7 @@ test.describe('Phase 1: design system and layout', () => {
 
 	test('editor layout has every region', async ({ page }) => {
 		await page.goto('/');
+		await importViaPicker(page, ['red.mp4', 'green.mp4', 'blue.webm'], 'Choose photos & videos');
 		// Top bar
 		await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 		await expect(page.getByText(/\d+ scenes · \d+ sec/)).toBeVisible();

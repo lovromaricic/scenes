@@ -12,9 +12,10 @@
 	interface Props {
 		kind: AddKind;
 		onclose: () => void;
+		onpick: () => void;
 	}
 
-	let { kind, onclose }: Props = $props();
+	let { kind, onclose, onpick }: Props = $props();
 
 	let mood = $state<MoodId>('natural');
 	const moodOptions = MOODS.map((m) => ({
@@ -44,7 +45,7 @@
 			<Upload size={22} strokeWidth={1.7} aria-hidden="true" />
 			<p><strong>Drop photos or videos here</strong></p>
 			<p class="muted">MP4, MOV, WebM, JPG, PNG</p>
-			<Button variant="ink" size="sm">Choose files</Button>
+			<Button variant="ink" size="sm" onclick={onpick}>Choose files</Button>
 		</div>
 	{:else if kind === 'words'}
 		<div class="options">

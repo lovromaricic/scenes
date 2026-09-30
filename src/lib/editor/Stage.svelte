@@ -1,74 +1,78 @@
 <script lang="ts">
 	import Play from '@lucide/svelte/icons/play';
 	import Pause from '@lucide/svelte/icons/pause';
-	import Pencil from '@lucide/svelte/icons/pencil';
-	import Paintbrush from '@lucide/svelte/icons/paintbrush';
-	import Sparkles from '@lucide/svelte/icons/sparkles';
-	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { ChipGroup, FloatingToolbar, IconButton } from '$lib/ui';
+	import ImagePlus from '@lucide/svelte/icons/image-plus';
+	import { onMount } from 'svelte';
+	import { Button, ChipGroup, IconButton } from '$lib/ui';
 	import { ASPECTS, aspectRatioValue } from '$lib/model/catalog';
 	import { formatClock } from '$lib/model/time';
-	import type { AspectRatio, TextItem } from '$lib/model/types';
+	import type { AspectRatio } from '$lib/model/types';
+	import { useEditor } from '$lib/state/context';
 
 	interface Props {
-		aspect: AspectRatio;
-		time: number;
-		duration: number;
-		playing?: boolean;
-		/** Background of the placeholder frame (Phase 1 only). */
-		frameBackground?: string;
-		texts?: TextItem[];
-		selectedTextId?: string | null;
-		onaspectchange?: (aspect: AspectRatio) => void;
-		ontoggleplay?: () => void;
+		onpick: () => void;
 	}
 
-	let {
-		aspect = $bindable(),
-		time,
-		duration,
-		playing = false,
-		frameBackground = 'var(--color-ink)',
-		texts = [],
-		selectedTextId = null,
-		onaspectchange,
-		ontoggleplay
-	}: Props = $props();
+	let { onpick }: Props = $props();
 
-	const ratio = $derived(aspectRatioValue(aspect));
+	const editor = useEditor();
+
+	let canvas: HTMLCanvasElement;
+	let preview: HTMLDivElement;
+
+	const ratio = $derived(aspectRatioValue(editor.project.aspect));
 	const aspectOptions = ASPECTS.map((a) => ({ value: a.id, label: a.label }));
-	const visibleTexts = $derived(
-		texts.filter((t) => time >= t.start && time < t.start + t.duration)
-	);
+	const empty = $derived(editor.project.scenes.length === 0);
 
-	const toolbarActions = [
-		{ id: 'edit', label: 'Edit words', icon: Pencil },
-		{ id: 'style', label: 'Style', icon: Paintbrush },
-		{ id: 'animate', label: 'Animate', icon: Sparkles },
-		{ id: 'remove', label: 'Remove', icon: Trash2 }
-	];
+	/** Drawing-buffer size cap, to keep the preview fast on large screens. */
+	const MAX_PREVIEW_WIDTH = 1920;
+
+	onMount(() => {
+		editor.player.attach(canvas);
+		const observer = new ResizeObserver((entries) => {
+			const entry = entries[0];
+			const box = entry.devicePixelContentBoxSize?.[0];
+			let w = box ? box.inlineSize : entry.contentRect.width * devicePixelRatio;
+			let h = box ? box.blockSize : entry.contentRect.height * devicePixelRatio;
+			if (w > MAX_PREVIEW_WIDTH) {
+				h = (h * MAX_PREVIEW_WIDTH) / w;
+				w = MAX_PREVIEW_WIDTH;
+			}
+			editor.player.resize(w, h);
+		});
+		observer.observe(canvas);
+		return () => {
+			observer.disconnect();
+			editor.player.detach();
+		};
+	});
+
+	function setAspect(aspect: AspectRatio) {
+		editor.project.aspect = aspect;
+	}
 </script>
 
 <section class="stage" aria-label="Preview">
 	<div class="viewport">
-		<div class="preview" style:--ar={ratio}>
-			<div class="frame" style:background={frameBackground}></div>
-			{#each visibleTexts as text (text.id)}
-				{@const selected = text.id === selectedTextId}
-				<div
-					class="text-item style-{text.style}"
-					class:selected
-					style:left="{text.x * 100}%"
-					style:top="{text.y * 100}%"
-				>
-					<span class="words">{text.text}</span>
-					{#if selected}
-						<div class="toolbar-anchor">
-							<FloatingToolbar label="Text options" actions={toolbarActions} />
-						</div>
+		<div class="preview" class:empty bind:this={preview} style:--ar={ratio}>
+			<canvas bind:this={canvas} class="frame" aria-label="Video preview" data-testid="preview"
+			></canvas>
+			{#if empty}
+				<div class="empty-state">
+					<span class="glyph"><ImagePlus size={28} strokeWidth={1.5} aria-hidden="true" /></span>
+					{#if editor.importing > 0}
+						<p class="serif big">Adding your clips…</p>
+						<p class="muted">This only takes a moment.</p>
+					{:else}
+						<p class="serif big">Start with your photos & videos</p>
+						<p class="muted">
+							Drop them anywhere on this page, or choose them from your device. Each one becomes a
+							scene.
+						</p>
+						<Button variant="ink" onclick={onpick}>Choose photos & videos</Button>
 					{/if}
 				</div>
-			{/each}
+			{/if}
 		</div>
 	</div>
 
@@ -76,17 +80,18 @@
 		<div class="left"></div>
 		<div class="transport">
 			<IconButton
-				label={playing ? 'Pause' : 'Play'}
+				label={editor.playing ? 'Pause' : 'Play'}
 				shortcut="Space"
-				icon={playing ? Pause : Play}
+				icon={editor.playing ? Pause : Play}
 				variant="ink"
 				size="lg"
-				onclick={ontoggleplay}
+				disabled={empty}
+				onclick={() => editor.togglePlay()}
 			/>
-			<p class="clock mono" aria-live="off">
-				<span class="now">{formatClock(time)}</span>
+			<p class="clock mono" data-testid="clock">
+				<span class="now">{formatClock(editor.time)}</span>
 				<span class="of">of</span>
-				<span class="total">{formatClock(duration)}</span>
+				<span class="total">{formatClock(editor.duration)}</span>
 			</p>
 		</div>
 		<div class="right">
@@ -95,8 +100,8 @@
 				variant="segmented"
 				size="sm"
 				options={aspectOptions}
-				bind:value={aspect}
-				onchange={onaspectchange}
+				value={editor.project.aspect}
+				onchange={setAspect}
 			/>
 		</div>
 	</div>
@@ -124,59 +129,54 @@
 		aspect-ratio: var(--ar);
 		border-radius: var(--radius-preview);
 		box-shadow: var(--shadow-preview);
+		background: var(--color-ink);
+		overflow: hidden;
 		container-type: inline-size;
-		transition: width var(--dur) var(--ease-out);
 	}
 	.frame {
 		position: absolute;
 		inset: 0;
-		border-radius: inherit;
-		overflow: hidden;
+		width: 100%;
+		height: 100%;
+		display: block;
 	}
-
-	.text-item {
+	.preview.empty {
+		background: var(--color-surface);
+		box-shadow: none;
+		border: 1.5px dashed var(--color-border);
+	}
+	.preview.empty .frame {
+		visibility: hidden;
+	}
+	.empty-state {
 		position: absolute;
-		translate: -50% -50%;
-		max-width: 86%;
-		padding: 0.2em 0.35em;
-		border-radius: 6px;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-3);
+		padding: var(--space-6);
 		text-align: center;
-		white-space: pre-wrap;
-		color: var(--color-bg);
-		font-size: 4.2cqw;
-		line-height: 1.15;
-		cursor: move;
+		animation: fade-in var(--dur) var(--ease-out);
 	}
-	.text-item.selected {
-		outline: 2px solid var(--color-accent);
-		outline-offset: 2px;
+	.glyph {
+		display: grid;
+		place-items: center;
+		width: 60px;
+		height: 60px;
+		margin-bottom: var(--space-1);
+		border-radius: 50%;
+		background: var(--color-bg);
 	}
-	.toolbar-anchor {
-		position: absolute;
-		bottom: calc(100% + 14px);
-		left: 50%;
-		translate: -50% 0;
-		font-size: var(--text-md);
-		z-index: 5;
+	.big {
+		font-size: clamp(24px, 4.2cqw, 38px);
+		line-height: 1.05;
 	}
-
-	/* Placeholder text styles; the WebGL compositor draws the real ones from Phase 4 on. */
-	.style-title .words {
-		font-family: var(--font-serif);
-		font-style: italic;
-		font-size: 2.3em;
-		line-height: 1;
-	}
-	.style-boxed .words {
-		padding: 0.15em 0.45em;
-		border-radius: 0.2em;
-		background: var(--color-ink);
-		font-weight: var(--weight-semibold);
-	}
-	.style-serif .words {
-		font-family: var(--font-serif);
-		font-style: italic;
-		font-size: 1.3em;
+	.muted {
+		max-width: 40ch;
+		margin-bottom: var(--space-2);
+		color: var(--color-muted);
 	}
 
 	.controls {
@@ -203,5 +203,10 @@
 	.right {
 		display: flex;
 		justify-content: flex-end;
+	}
+	@keyframes fade-in {
+		from {
+			opacity: 0;
+		}
 	}
 </style>

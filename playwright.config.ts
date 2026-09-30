@@ -12,8 +12,14 @@ export default defineConfig({
 	},
 	projects: [
 		{
-			name: 'chromium',
-			use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }
+			name: 'chrome',
+			use: {
+				...devices['Desktop Chrome'],
+				// Real Chrome: Scenes targets it, and it has the H.264/AAC encoders export needs.
+				channel: 'chrome',
+				viewport: { width: 1440, height: 900 },
+				launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] }
+			}
 		}
 	],
 	webServer: {

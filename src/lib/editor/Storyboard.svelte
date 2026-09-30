@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { formatClock } from '$lib/model/time';
 	import { placeScenes, totalDuration } from '$lib/model/timeline';
 	import type { Scene, SoundItem, TextItem } from '$lib/model/types';
@@ -18,6 +19,8 @@
 		thumbnails: Record<string, string>;
 		/** Waveform peaks per sound id. */
 		peaks: Record<string, number[]>;
+		/** Files still being added; shown as loading cards at the end. */
+		importing?: number;
 		onselect?: (id: string) => void;
 		onseek?: (time: number) => void;
 		onaddscene?: () => void;
@@ -31,12 +34,14 @@
 		selectedId,
 		thumbnails,
 		peaks,
+		importing = 0,
 		onselect,
 		onseek,
 		onaddscene
 	}: Props = $props();
 
 	const CARD_GAP = 10;
+	const LOADING_CARD_W = 120;
 	/** Matches the right padding of `.tracks`. */
 	const TRACK_PAD = 24;
 	const ADD_CARD_W = 104;
@@ -49,7 +54,8 @@
 	const pps = $derived(
 		fitPxPerSec(trackWidth - TRACK_PAD - ADD_CARD_W - END_PAD - CARD_GAP, duration)
 	);
-	const contentWidth = $derived(duration * pps + CARD_GAP + ADD_CARD_W);
+	const loadingWidth = $derived(importing * (LOADING_CARD_W + CARD_GAP));
+	const contentWidth = $derived(duration * pps + loadingWidth + CARD_GAP + ADD_CARD_W);
 	const rulerTicks = $derived(ticks(duration, pps));
 
 	let tracks: HTMLDivElement;
@@ -125,10 +131,27 @@
 						</div>
 					{/if}
 				{/each}
+				{#each { length: importing } as _, i (i)}
+					<div
+						class="loading-card"
+						style:left="{duration * pps + i * (LOADING_CARD_W + CARD_GAP)}px"
+						style:width="{LOADING_CARD_W}px"
+						aria-label="Adding a clip"
+						role="img"
+					>
+						<LoaderCircle size={18} strokeWidth={1.8} aria-hidden="true" />
+						<span>Adding…</span>
+					</div>
+				{/each}
+				{#if placed.length === 0 && importing === 0}
+					<p class="empty-hint" style:left="{ADD_CARD_W + CARD_GAP * 2}px">
+						Your scenes line up here, in the order they play.
+					</p>
+				{/if}
 				<button
 					type="button"
 					class="add-scene"
-					style:left="{duration * pps}px"
+					style:left="{duration * pps + loadingWidth}px"
 					style:width="{ADD_CARD_W}px"
 					onclick={onaddscene}
 				>
@@ -303,6 +326,42 @@
 	.add-scene:hover {
 		border-color: var(--color-ink);
 		color: var(--color-ink);
+	}
+
+	.loading-card {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		border-radius: var(--radius-card);
+		background: var(--color-surface);
+		color: var(--color-muted);
+		font-size: var(--text-sm);
+		animation: pulse 1.2s ease-in-out infinite;
+	}
+	.loading-card :global(svg) {
+		animation: spin 0.9s linear infinite;
+	}
+	.empty-hint {
+		position: absolute;
+		top: 50%;
+		translate: 0 -50%;
+		color: var(--color-muted);
+		white-space: nowrap;
+	}
+	@keyframes spin {
+		to {
+			rotate: 360deg;
+		}
+	}
+	@keyframes pulse {
+		50% {
+			opacity: 0.6;
+		}
 	}
 
 	.lane {

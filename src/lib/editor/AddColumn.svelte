@@ -7,6 +7,8 @@
 	import AddPanel from './AddPanel.svelte';
 	import type { AddKind } from './types';
 
+	let { onpick }: { onpick: () => void } = $props();
+
 	let open = $state<AddKind | null>(null);
 
 	const items = [
@@ -45,7 +47,14 @@
 
 	{#if open}
 		<div class="popover">
-			<AddPanel kind={open} onclose={() => (open = null)} />
+			<AddPanel
+				kind={open}
+				onclose={() => (open = null)}
+				onpick={() => {
+					open = null;
+					onpick();
+				}}
+			/>
 		</div>
 	{/if}
 </aside>

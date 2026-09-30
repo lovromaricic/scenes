@@ -65,8 +65,10 @@
 		min-height: 0;
 		border-radius: calc(var(--radius-card) - 4px);
 		background-color: var(--color-surface);
-		background-size: cover;
-		background-position: center;
+		/* Repeat the thumbnail along long cards, like a filmstrip. */
+		background-size: auto 100%;
+		background-repeat: repeat-x;
+		background-position: left center;
 	}
 	.meta {
 		display: flex;

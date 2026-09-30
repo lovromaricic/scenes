@@ -1,68 +1,127 @@
 <script lang="ts">
-	import { MOODS } from '$lib/model/catalog';
-	import { placeScenes, totalDuration } from '$lib/model/timeline';
-	import type { AspectRatio } from '$lib/model/types';
+	import { onMount } from 'svelte';
+	import { ACCEPT_VISUAL } from '$lib/media/kinds';
+	import { dragHasFiles, pickFiles } from '$lib/media/picker';
+	import { EditorStore } from '$lib/state/editor.svelte';
+	import { provideEditor } from '$lib/state/context';
 	import AddColumn from './AddColumn.svelte';
+	import DropOverlay from './DropOverlay.svelte';
 	import Inspector from './Inspector.svelte';
 	import Stage from './Stage.svelte';
 	import Storyboard from './Storyboard.svelte';
+	import Toasts from './Toasts.svelte';
 	import TopBar from './TopBar.svelte';
-	import { placeholderPeaks, placeholderProject } from './placeholder';
 
-	// Phase 1: a static project to lay out the screen. Later phases swap in the live editor model.
-	const project = placeholderProject;
-	let aspect = $state<AspectRatio>(project.aspect);
-	let time = $state(2);
-	let selectedId = $state<string | null>('s1');
-	let selectedTextId = $state<string | null>('t1');
+	const editor = provideEditor(new EditorStore());
 
-	const duration = $derived(totalDuration(project.scenes));
-	const placed = $derived(placeScenes(project.scenes));
-	const selectedScene = $derived(placed.find((p) => p.scene.id === selectedId) ?? null);
-	const current = $derived(placed.find((p) => time < p.end) ?? placed[placed.length - 1]);
+	const selectedScene = $derived(
+		editor.placed.find((p) => p.scene.id === editor.selectedId) ?? null
+	);
+	const thumbnails = $derived(
+		Object.fromEntries(
+			editor.project.scenes.map((s) => {
+				const url = editor.thumbnails[s.mediaId];
+				return [s.id, url ? `url("${url}")` : 'none'];
+			})
+		)
+	);
 
-	const swatchFor = (mood: string | null) =>
-		MOODS.find((m) => m.id === (mood ?? project.mood))?.swatch ?? 'none';
-	const thumbnails = Object.fromEntries(project.scenes.map((s) => [s.id, swatchFor(s.mood)]));
-	const peaks = { m1: placeholderPeaks(400) };
+	// Keep the player in step with the project. It gets a plain snapshot, never the reactive proxy.
+	$effect(() => {
+		editor.syncPlayer();
+	});
+
+	onMount(() => {
+		// Handy for tests and debugging in the console.
+		(window as unknown as { __scenes: unknown }).__scenes = editor;
+		return () => editor.player.dispose();
+	});
+
+	async function pick() {
+		editor.player.unlockAudio();
+		const files = await pickFiles(ACCEPT_VISUAL);
+		await editor.importFiles(files);
+	}
+
+	// Drag and drop anywhere on the page.
+	let dragDepth = $state(0);
+	function ondragenter(event: DragEvent) {
+		if (!dragHasFiles(event)) return;
+		event.preventDefault();
+		dragDepth++;
+	}
+	function ondragover(event: DragEvent) {
+		if (!dragHasFiles(event)) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+	}
+	function ondragleave(event: DragEvent) {
+		if (!dragHasFiles(event)) return;
+		dragDepth = Math.max(0, dragDepth - 1);
+	}
+	function ondrop(event: DragEvent) {
+		if (!dragHasFiles(event)) return;
+		event.preventDefault();
+		dragDepth = 0;
+		const files = Array.from(event.dataTransfer?.files ?? []);
+		void editor.importFiles(files);
+	}
+
+	function isTyping(target: EventTarget | null): boolean {
+		const el = target as HTMLElement | null;
+		return !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+	}
+
+	function onkeydown(event: KeyboardEvent) {
+		if (isTyping(event.target) || event.defaultPrevented) return;
+		if (event.key === ' ' && !event.metaKey && !event.ctrlKey) {
+			// Space always plays/pauses, even when a button has focus (Enter still presses buttons).
+			event.preventDefault();
+			if (editor.project.scenes.length) editor.togglePlay();
+		}
+	}
 </script>
 
+<svelte:window {ondragenter} {ondragover} {ondragleave} {ondrop} {onkeydown} />
+
 <div class="editor">
-	<TopBar title={project.title} sceneCount={project.scenes.length} {duration} canUndo />
+	<TopBar
+		title={editor.project.title}
+		sceneCount={editor.project.scenes.length}
+		duration={editor.duration}
+	/>
 
 	<main class="workspace">
-		<AddColumn />
-		<Stage
-			bind:aspect
-			{time}
-			{duration}
-			texts={project.texts}
-			{selectedTextId}
-			frameBackground={current ? swatchFor(current.scene.mood) : undefined}
-		/>
+		<AddColumn onpick={pick} />
+		<Stage onpick={pick} />
 		<Inspector
 			scene={selectedScene?.scene ?? null}
 			index={selectedScene?.index ?? 0}
 			start={selectedScene?.start ?? 0}
-			projectMood={project.mood}
+			projectMood={editor.project.mood}
 		/>
 	</main>
 
 	<Storyboard
-		scenes={project.scenes}
-		texts={project.texts}
-		sounds={project.sounds}
-		{time}
-		{selectedId}
+		scenes={editor.project.scenes}
+		texts={editor.project.texts}
+		sounds={editor.project.sounds}
+		time={editor.time}
+		selectedId={editor.selectedId}
 		{thumbnails}
-		{peaks}
-		onselect={(id) => {
-			selectedId = id;
-			selectedTextId = project.texts.some((t) => t.id === id) ? id : null;
-		}}
-		onseek={(t) => (time = t)}
+		peaks={{}}
+		importing={editor.importing}
+		onselect={(id) => editor.select(id)}
+		onseek={(t) => editor.seek(t)}
+		onaddscene={pick}
 	/>
 </div>
+
+{#if dragDepth > 0}
+	<DropOverlay />
+{/if}
+
+<Toasts />
 
 <style>
 	.editor {
