@@ -1,0 +1,107 @@
+/*
+ * Scenes design tokens. Every colour, font, radius, shadow and motion value in the app
+ * comes from here. Components must not hard-code any of these.
+ */
+:root {
+	/* Colour */
+	--color-bg: #ffffff;
+	--color-surface: #f2f2f4;
+	--color-border: #e4e4e7;
+	--color-ink: #141417;
+	--color-muted: #6b6b72;
+	--color-accent: #d63f1f;
+
+	/* Derived tints, all mixed from the palette above */
+	--color-ink-hover: color-mix(in srgb, var(--color-ink) 86%, var(--color-bg));
+	--color-surface-hover: color-mix(in srgb, var(--color-surface) 70%, var(--color-border));
+	--color-accent-hover: color-mix(in srgb, var(--color-accent) 88%, var(--color-ink));
+	--color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg));
+	--color-on-ink: var(--color-bg);
+	--color-on-ink-muted: color-mix(in srgb, var(--color-bg) 68%, var(--color-ink));
+	--color-ink-line: color-mix(in srgb, var(--color-bg) 16%, var(--color-ink));
+	--color-scrim: color-mix(in srgb, var(--color-ink) 45%, transparent);
+
+	/*
+	 * Mood swatches are content, not chrome: they preview each colour mood, so they are
+	 * the one place with colours outside the core palette.
+	 */
+	--mood-natural: linear-gradient(135deg, #8fb3c9, #d9c7a7);
+	--mood-golden: linear-gradient(135deg, #f0b35a, #c9582d);
+	--mood-faded: linear-gradient(135deg, #cfc6bd, #9aa3a8);
+	--mood-cool: linear-gradient(135deg, #7fa7d9, #3d5a8a);
+	--mood-punchy: linear-gradient(135deg, #ff5a3c, #2b7de9);
+	--mood-mono: linear-gradient(135deg, #e8e8e8, #2a2a2a);
+
+	/* Type */
+	--font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+	--font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+	--text-xs: 11.5px;
+	--text-sm: 12.5px;
+	--text-md: 14px;
+	--text-lg: 16px;
+	--text-title: 26px;
+	--text-heading: 28px;
+	--text-display: 44px;
+
+	--weight-regular: 400;
+	--weight-medium: 500;
+	--weight-semibold: 600;
+
+	/* Space (4px grid) */
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 20px;
+	--space-6: 24px;
+	--space-8: 32px;
+	--space-10: 40px;
+
+	/* Radii */
+	--radius-pill: 999px;
+	--radius-sm: 8px;
+	--radius-md: 10px;
+	--radius-card: 14px;
+	--radius-card-lg: 16px;
+	--radius-preview: 20px;
+
+	/* Shadows: rare and soft */
+	--shadow-preview:
+		0 1px 2px color-mix(in srgb, var(--color-ink) 6%, transparent),
+		0 18px 50px -12px color-mix(in srgb, var(--color-ink) 28%, transparent);
+	--shadow-float:
+		0 1px 2px color-mix(in srgb, var(--color-ink) 10%, transparent),
+		0 10px 30px -8px color-mix(in srgb, var(--color-ink) 30%, transparent);
+	--shadow-card: 0 1px 2px color-mix(in srgb, var(--color-ink) 6%, transparent);
+
+	/* Focus */
+	--focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-ink);
+
+	/* Motion */
+	--dur-fast: 150ms;
+	--dur: 200ms;
+	--ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+	/* Layout */
+	--topbar-h: 64px;
+	--add-col-w: 244px;
+	--inspector-w: 296px;
+	--lane-label-w: 80px;
+}
+
+/* Tablet landscape and small laptops: slimmer side columns. */
+@media (max-width: 1279px) {
+	:root {
+		--add-col-w: 208px;
+		--inspector-w: 264px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--dur-fast: 0ms;
+		--dur: 0ms;
+	}
+}
