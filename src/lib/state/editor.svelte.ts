@@ -1783,7 +1783,11 @@ export class EditorStore {
 			toasts.show('Add a photo or video first, then put words on it.');
 			return;
 		}
-		const trackId = this.project.tracks.find((t) => t.kind === 'overlay' && t.name === TEXT_TRACK_NAME)?.id ?? newId();
+		// The "Text" track, unless it's hidden or locked (then a new one, so the words can be seen
+		// and typed).
+		const trackId =
+			this.project.tracks.find((t) => t.kind === 'overlay' && t.name === TEXT_TRACK_NAME && !t.hidden && !t.locked)
+				?.id ?? newId();
 		const item: TextItem = clampTextTiming(
 			{
 				id: newId(),

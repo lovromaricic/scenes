@@ -1334,6 +1334,25 @@ Overlays aren't linked to scenes any more.
   - E2E: ripple off keeps times; on, deleting and shortening scenes move items. One undo step
     each, and the setting survives a reload.
 
+### 5. Text on tracks
+
+- Words are ordinary items on overlay tracks: they move, trim, snap, multi-select, copy and
+  paste like pictures, and can go on any overlay track.
+- Their stacking follows their track, so words on a track under a card are hidden by it.
+  `visualsAt` draws overlay tracks bottom-up with pictures and words together.
+- **Words** (Add column) puts a title or caption on the track named "Text", at the playhead.
+  - If there's no such track, one is made at the top.
+  - If the new words would overlap other words there, they go on a new track just above.
+  - A hidden or locked "Text" track isn't used: a new "Text" track is made, so the words can be
+    seen and typed.
+- **Tests** (`tracks-text.test.ts`):
+  - the Text track is made on the first title and reused later, and a new one is made when it's
+    locked;
+  - with a full-frame green card, the words show over it while the Text track is on top;
+  - dragged into the gap under the card's track, the words are hidden (every sampled pixel is
+    green);
+  - with that track moved to the top, the words show again.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
