@@ -253,4 +253,29 @@ test.describe('Layers in the picture', () => {
 		expect(time - 1).toBeGreaterThan(elapsed - 0.8);
 		expect(await scenes(page, (s) => s.player.isFrameReady())).toBe(true);
 	});
+
+	test('Watch mode shows the layers too', async ({ page }) => {
+		await build(page);
+		await page.getByRole('button', { name: 'Watch' }).click();
+		const watch = page.getByRole('dialog', { name: /^Watch/ });
+		await expect(watch).toBeVisible();
+		await expect.poll(() => scenes(page, (s) => s.playing)).toBe(true);
+		await page.keyboard.press('Space');
+		await expect.poll(() => scenes(page, (s) => s.playing)).toBe(false);
+		await page.evaluate(() => (window as unknown as { __scenes: { seek(t: number): void } }).__scenes.seek(1.5));
+		await expect.poll(() => scenes(page, (s) => s.player.isFrameReady())).toBe(true);
+		// The player now draws into Watch's own (bigger) canvas: read the layer and the scene there.
+		const pixel = (fx: number, fy: number) =>
+			page.evaluate(
+				({ fx, fy }) => {
+					const c = document.querySelector('[role="dialog"] canvas') as HTMLCanvasElement;
+					const s = (window as unknown as { __scenes: { player: { readPixel(x: number, y: number): number[] } } }).__scenes;
+					const p = s.player.readPixel(Math.floor(c.width * fx), Math.floor(c.height * fy));
+					return [p[0], p[1], p[2]] as RGB;
+				},
+				{ fx, fy }
+			);
+		await expect.poll(async () => near(await pixel(0.75, 0.3), BLUE, 30)).toBe(true);
+		expect(near(await pixel(0.25, 0.6), RED, 30)).toBe(true);
+	});
 });

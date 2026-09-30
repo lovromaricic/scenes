@@ -969,6 +969,11 @@ judged on the rendered picture. It's committed as its own section.
 
 ## Known issues / ideas
 
+- Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
+  layers with their used part of the clip at 1×. The home picture shows layers that start at
+  0 s. Waveforms of sounds spanning several short scenes are stretched slightly by the
+  storyboard's minimum widths.
+
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.
 - Stepper hold-to-repeat works with a pointer; keyboard users press repeatedly.
 - The Words, Sound and Looks panels are still placeholders (Phases 4–6). Clips works.
@@ -1006,6 +1011,11 @@ What you can do:
 - Save an MP4 (H.264/AAC; WebM fallback) in three presets, rendered through the same compositor
   as the preview, streamed to disk with progress, time left and cancel.
 - Undo/redo everything; projects autosave continuously on the device.
+- Put videos, photos and cards on top of the scenes on a Layers track: picture-in-picture at any
+  size and position, with crop, rounded corners, border, shadow, opacity, entrance/exit
+  animations and optional sound. Layers stack in rows, follow their scene, and turn into scenes
+  (and back) by dragging. The storyboard zooms (slider, Ctrl/Cmd+scroll, Fit), and short items
+  stay easy to click.
 - Keep any number of projects: a home screen with pictures, rename, duplicate, delete, and
   `.scenes` project files to save, move and reopen a whole project (media and fonts included).
 
