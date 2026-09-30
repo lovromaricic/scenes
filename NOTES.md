@@ -1197,6 +1197,51 @@ Overlays aren't linked to scenes any more.
     preview pixels at four times and the audio clip list match.
   - The existing e2e tests now use track names and `.item-slot`.
 
+### 2. Track headers
+
+- **Header** (`TrackHeader.svelte`): a grip, the name, then Hide (visual tracks, eye) or Mute
+  (audio tracks, speaker), Lock, and a "…" menu. The Scenes header shows only its name: it
+  can't be renamed, hidden, locked, moved or deleted.
+- **Rename.** Double-click the name, or use Rename in the menu. Enter or clicking away keeps the
+  new name, Esc cancels. Names are trimmed and capped at 40 characters.
+- **Hide / Mute.**
+  - A hidden or muted track is dimmed in the storyboard.
+  - It's left out of preview, Watch, export and the home picture. Rendering already skips hidden
+    tracks (`visualsAt`), and `projectAudioClips` drops muted audio tracks and video overlays on
+    hidden tracks.
+  - Both are saved with the project and can be undone.
+- **Lock.**
+  - Items on a locked track can't be selected, dragged or trimmed on the storyboard, and don't
+    get a box on the picture.
+  - Store actions that change an item check the lock too.
+  - Locking deselects anything on that track.
+- **Menu:** Rename, Duplicate track (a copy with all its items, just above, named "… copy"),
+  and Delete track.
+  - Deleting a track that has items asks first ("The 2 items on it will be removed too. You can
+    undo this.").
+  - An empty track goes right away.
+  - The menu is rendered outside the scrolling track list, so it isn't clipped. Its items keep
+    the track they were opened for, because the menu closes before an item runs.
+- **Reorder.**
+  - Drag a header by its grip or name. A line shows where the track will go.
+  - Overlay tracks stay above Scenes and audio tracks below: a drag past Scenes stops at the
+    nearest allowed place (`moveTrack`).
+  - Moving an overlay track changes what's drawn on top.
+- **Adding tracks.** "+ Overlay track" sits above the top track (a new one goes on top) and
+  "+ Audio track" below the last one. New tracks get the lowest free "Overlay N" / "Audio N"
+  name.
+- **Scrolling.** The storyboard scrolls up and down once there are many tracks. The ruler stays
+  at the top, the Scenes track stays in view, and the headers stay on the left when scrolling
+  sideways.
+- **Tests** (`tracks-headers.test.ts`):
+  - adding and renaming, Esc, Scenes not renamable, undo;
+  - hide changes the preview pixel, mute silences the mix, both kept after a reload;
+  - lock blocks select and move, and deselects;
+  - duplicate, delete with a confirmation (and cancel), delete an empty track, undo;
+  - reordering, with the Scenes limits;
+  - eight extra tracks: vertical scroll with the ruler and Scenes in view, headers pinned when
+    scrolled sideways.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

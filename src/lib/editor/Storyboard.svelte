@@ -19,6 +19,11 @@
 	import { formatRatio } from '$lib/model/format';
 	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import { ConfirmDialog, Menu, type MenuItem } from '$lib/ui';
+	import type { Track } from '$lib/model/tracks';
 	import {
 		fitTimeline,
 		mapTicks,
@@ -271,6 +276,68 @@
 		},
 		setSnap: (x) => (snapX = x)
 	};
+
+	// ─── Track headers: menu, rename, delete, move ─────────────────────────────────────────
+	let trackMenu = $state<{ track: Track; anchor: HTMLElement } | null>(null);
+	let renamingId = $state<string | null>(null);
+	let deletingTrack = $state<Track | null>(null);
+	/** A track being dragged by its header, and the gap (index in the list) it would go to. */
+	let reorder = $state<{ id: string; index: number } | null>(null);
+
+	/** The menu's items, for the track it was opened on (it closes before an item runs). */
+	function trackMenuItems(t: Track): MenuItem[] {
+		return [
+			{ label: 'Rename', icon: Pencil, onselect: () => (renamingId = t.id) },
+			{ label: 'Duplicate track', icon: Copy, onselect: () => editor.duplicateTrack(t.id) },
+			{
+				label: 'Delete track',
+				icon: Trash2,
+				separator: true,
+				onselect: () => {
+					if (editor.itemsOnTrack(t.id)) deletingTrack = t;
+					else editor.deleteTrack(t.id);
+				}
+			}
+		];
+	}
+
+	/** The gap a dragged track header is over, kept where that kind of track may go. */
+	function reorderIndexAt(clientY: number, track: Track): number {
+		const rows = [...tracks.querySelectorAll<HTMLElement>('[data-track-row]')];
+		let index = rows.filter((r) => {
+			const b = r.getBoundingClientRect();
+			return b.top + b.height / 2 < clientY;
+		}).length;
+		if (track.kind === 'overlay') index = Math.min(index, mainIndex);
+		else index = Math.max(index, mainIndex + 1);
+		return index;
+	}
+
+	function onHeaderPointerDown(event: PointerEvent, track: Track) {
+		if (event.button !== 0 || track.kind === 'main') return;
+		const y0 = event.clientY;
+		const from = trackList.findIndex((t) => t.id === track.id);
+		let active = false;
+		const handle = drags.start(
+			event,
+			{
+				move: (e) => {
+					if (!active && Math.abs(e.clientY - y0) < DRAG_THRESHOLD) return;
+					if (!active) handle.capture(tracks);
+					active = true;
+					reorder = { id: track.id, index: reorderIndexAt(e.clientY, track) };
+				},
+				end: (_e, cancelled) => {
+					const r = reorder;
+					reorder = null;
+					if (!active || cancelled || !r) return;
+					// The index among the other tracks (this one taken out).
+					editor.moveTrack(track.id, r.index > from ? r.index - 1 : r.index);
+				}
+			},
+			null
+		);
+	}
 
 	const loadingWidth = $derived(importing * (LOADING_CARD_W + CARD_GAP));
 	const contentWidth = $derived(
@@ -554,6 +621,34 @@
 	/>
 {/if}
 
+{#if trackMenu}
+	<Menu
+		label="{trackMenu.track.name} options"
+		items={trackMenuItems(trackMenu.track)}
+		anchor={trackMenu.anchor}
+		onclose={() => (trackMenu = null)}
+	/>
+{/if}
+
+{#if deletingTrack}
+	{@const count = editor.itemsOnTrack(deletingTrack.id)}
+	<ConfirmDialog
+		title="Delete “{deletingTrack.name}”?"
+		message="The {count === 1 ? 'item' : `${count} items`} on it will be removed too. You can undo this."
+		actions={[
+			{
+				label: 'Delete track',
+				onclick: () => {
+					editor.deleteTrack(deletingTrack!.id);
+					deletingTrack = null;
+				}
+			}
+		]}
+		danger
+		oncancel={() => (deletingTrack = null)}
+	/>
+{/if}
+
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc deselects from the keyboard) -->
 <section class="storyboard" class:zooming aria-label="Storyboard" onpointerdown={onEmptyPointerDown}>
 	<!-- One scroller for all tracks: headers stay on the left when scrolling sideways; the ruler
@@ -577,8 +672,16 @@
 				</div>
 			</div>
 
+			<div class="row add-row">
+				<div class="header">
+					<button type="button" class="add-track" onclick={() => editor.addTrack('overlay', 0)}>
+						<Plus size={12} strokeWidth={2.2} aria-hidden="true" />Overlay track
+					</button>
+				</div>
+			</div>
+
 			{#each trackList as track, index (track.id)}
-				{#if dropTarget?.target.kind === 'gap' && dropTarget.target.index === index}
+				{#if (dropTarget?.target.kind === 'gap' && dropTarget.target.index === index) || reorder?.index === index}
 					<div class="gap-line" aria-hidden="true"></div>
 				{/if}
 				{#if track.kind === 'main'}
@@ -687,11 +790,20 @@
 				{:else}
 					<div
 						class="row track-row {track.kind}"
+						class:moving={reorder?.id === track.id}
 						class:target={dropTarget?.target.kind === 'track' && dropTarget.target.id === track.id}
 						data-track-row
 						data-track-id={track.id}
 					>
-						<div class="header"><TrackHeader {track} /></div>
+						<div class="header">
+							<TrackHeader
+								{track}
+								renaming={renamingId === track.id}
+								onrenamedone={() => (renamingId = null)}
+								onmenu={(anchor) => (trackMenu = { track, anchor })}
+								onreorder={(e) => onHeaderPointerDown(e, track)}
+							/>
+						</div>
 						<div
 							class="lane"
 							class:drop-hover={laneDrop?.trackId === track.id}
@@ -719,9 +831,16 @@
 					</div>
 				{/if}
 			{/each}
-			{#if dropTarget?.target.kind === 'gap' && dropTarget.target.index === trackList.length}
+			{#if (dropTarget?.target.kind === 'gap' && dropTarget.target.index === trackList.length) || reorder?.index === trackList.length}
 				<div class="gap-line" aria-hidden="true"></div>
 			{/if}
+			<div class="row add-row">
+				<div class="header">
+					<button type="button" class="add-track" onclick={() => editor.addTrack('audio')}>
+						<Plus size={12} strokeWidth={2.2} aria-hidden="true" />Audio track
+					</button>
+				</div>
+			</div>
 
 			{#if snapX !== null}
 				<!-- A dragged item has snapped here. -->
@@ -866,6 +985,33 @@
 		z-index: 12;
 		background: var(--color-bg);
 		padding: 2px 0;
+	}
+	.add-row .header {
+		height: 22px;
+		display: flex;
+		align-items: center;
+		padding-left: var(--space-5);
+	}
+	.add-track {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		height: 22px;
+		padding: 0 6px 0 4px;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--color-muted);
+		font: inherit;
+		font-size: var(--text-xs);
+		cursor: pointer;
+	}
+	.add-track:hover {
+		background: var(--color-surface);
+		color: var(--color-ink);
+	}
+	.track-row.moving {
+		opacity: 0.5;
 	}
 	.lane {
 		position: relative;

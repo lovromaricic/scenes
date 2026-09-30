@@ -44,9 +44,14 @@ import {
 import {
 	addTrack,
 	allItems,
+	deleteTrack,
+	duplicateTrack,
 	getItem,
 	itemKind,
 	moveItems,
+	moveTrack,
+	renameTrack,
+	setTrackFlags,
 	settle,
 	updateItem
 } from '$lib/model/items';
@@ -889,6 +894,53 @@ export class EditorStore {
 		const at = index ?? (kind === 'overlay' ? 0 : this.project.tracks.length);
 		this.edit(kind === 'overlay' ? 'Add overlay track' : 'Add audio track', (p) => addTrack(p, kind, at, id, name));
 		return id;
+	}
+
+	renameTrack(id: string, name: string): void {
+		const track = this.track(id);
+		if (!track || track.kind === 'main' || !name.trim() || name.trim() === track.name) return;
+		this.edit('Rename track', (p) => renameTrack(p, id, name));
+	}
+
+	/** Hide or show a visual track, mute or unmute an audio track, or lock or unlock one. */
+	setTrackFlag(id: string, flag: 'hidden' | 'muted' | 'locked', on: boolean): void {
+		const track = this.track(id);
+		if (!track || track.kind === 'main' || track[flag] === on) return;
+		const label = { hidden: on ? 'Hide track' : 'Show track', muted: on ? 'Mute track' : 'Unmute track', locked: on ? 'Lock track' : 'Unlock track' }[flag];
+		this.edit(label, (p) => setTrackFlags(p, id, { [flag]: on }));
+		// Items on a locked track can't stay selected.
+		if (on && flag === 'locked') {
+			const keep = this.selectedIds.filter((x) => getItem(this.project, x)?.trackId !== id);
+			if (keep.length !== this.selectedIds.length) {
+				if (this.selectedId && keep.includes(this.selectedId)) this.extraSelected = keep.filter((x) => x !== this.selectedId);
+				else this.selectItems(keep);
+			}
+		}
+	}
+
+	duplicateTrack(id: string): void {
+		if (this.track(id)?.kind === 'main') return;
+		this.edit('Duplicate track', (p) => duplicateTrack(p, id, newId));
+	}
+
+	/** Delete a track and everything on it (the Scenes track stays). */
+	deleteTrack(id: string): void {
+		if (!this.track(id) || this.track(id)!.kind === 'main') return;
+		const gone = new Set(allItems(this.project).filter((i) => i.trackId === id).map((i) => i.id));
+		this.edit('Delete track', (p) => deleteTrack(p, id));
+		if (this.selectedIds.some((x) => gone.has(x))) this.selectItems(this.selectedIds.filter((x) => !gone.has(x)));
+	}
+
+	/** How many items a track holds. */
+	itemsOnTrack(id: string): number {
+		return allItems(this.project).filter((i) => i.trackId === id).length;
+	}
+
+	/** Move a track to `index` in the list (overlay tracks stay above Scenes, audio below). */
+	moveTrack(id: string, index: number): void {
+		const next = moveTrack(this.project, id, index);
+		if (next.tracks.every((t, i) => t.id === this.project.tracks[i].id)) return;
+		this.edit('Move track', (p) => moveTrack(p, id, index));
 	}
 
 	/**
