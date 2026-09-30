@@ -105,8 +105,10 @@
 	}
 	function ondrop(event: DragEvent) {
 		if (!dragHasFiles(event)) return;
-		event.preventDefault();
 		dragDepth = 0;
+		// Already placed by the picture, the Layers track or the Scenes track.
+		if (event.defaultPrevented) return;
+		event.preventDefault();
 		const files = Array.from(event.dataTransfer?.files ?? []);
 		// A project file opens that project; photos, videos and sounds are added to this one.
 		const index = files.findIndex(isProjectFile);

@@ -12,6 +12,8 @@
 	import { rowCount, type Overlay, type PlacedOverlay } from '$lib/model/overlay';
 	import { useEditor } from '$lib/state/context';
 	import type { TimeMap } from './scale';
+	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
+	import { OVERLAY_SECONDS } from '$lib/model/overlay';
 
 	interface Props {
 		map: TimeMap;
@@ -142,6 +144,52 @@
 		height = (rows + (newTopRow ? 1 : 0)) * rowHeight;
 	});
 
+	// ─── Dropping from "Your media", the Cards button or the computer ──────────────────────
+	let layersEl: HTMLDivElement;
+	/** Where a drop would go: time and row. */
+	let drop = $state<{ start: number; row: number } | null>(null);
+	let dropDepth = 0;
+
+	function dropAt(event: DragEvent) {
+		// The track starts at time 0 and scrolls with the storyboard, so its own box gives the time.
+		const rect = layersEl.getBoundingClientRect();
+		const start = Math.max(0, Math.min(map.t(event.clientX - rect.left), Math.max(0, editor.duration - 0.5)));
+		// Rows from the bottom; nothing grows while dragging over, so the track stays put.
+		const row = Math.max(0, Math.min(rows - 1, Math.floor((rect.bottom - event.clientY) / rowHeight)));
+		return { start, row };
+	}
+
+	function ondragenter(event: DragEvent) {
+		if (!dragHasVisual(event)) return;
+		event.preventDefault();
+		dropDepth++;
+		drop = dropAt(event);
+	}
+	function ondragover(event: DragEvent) {
+		if (!dragHasVisual(event)) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+		drop = dropAt(event);
+	}
+	function ondragleave(event: DragEvent) {
+		if (!dragHasVisual(event)) return;
+		dropDepth = Math.max(0, dropDepth - 1);
+		if (dropDepth === 0) drop = null;
+	}
+	function ondrop(event: DragEvent) {
+		if (!dragHasVisual(event)) return;
+		const at = dropAt(event);
+		drop = null;
+		dropDepth = 0;
+		const noScenes = editor.project.scenes.length === 0;
+		const placed = handleVisualDrop(event, {
+			media: (id) => (noScenes ? editor.addSceneFromMedia(id) : editor.addOverlayFromMedia(id, at.start, at.row)),
+			card: () => (noScenes ? editor.addCard() : editor.addCardOverlay(at.start, at.row)),
+			files: (files) => void editor.importAsOverlays(files, at.start, at.row)
+		});
+		if (placed) event.preventDefault();
+	}
+
 	function thumbnail(o: Overlay): string | undefined {
 		if (o.kind === 'card') return undefined;
 		const url = editor.thumbnails[o.mediaId];
@@ -159,11 +207,33 @@
 	});
 </script>
 
-<div class="layers" style:height="{height}px">
+<div
+	class="layers"
+	class:drop-hover={!!drop}
+	bind:this={layersEl}
+	style:height="{height}px"
+	role="presentation"
+	{ondragenter}
+	{ondragover}
+	{ondragleave}
+	{ondrop}
+>
+	{#if drop}
+		<span
+			class="drop-ghost"
+			aria-hidden="true"
+			style:left="{map.x(drop.start)}px"
+			style:width="{map.width(drop.start, OVERLAY_SECONDS) - 3}px"
+			style:top="{(rows - 1 - drop.row) * rowHeight + 2}px"
+			style:height="{rowHeight - 4}px"
+		>
+			<span>Place here</span>
+		</span>
+	{/if}
 	{#if newTopRow}
 		<span class="new-row" style:height="{rowHeight - 4}px" aria-hidden="true"></span>
 	{/if}
-	{#if empty}
+	{#if empty && !drop}
 		<p class="hint">
 			<Layers size={13} strokeWidth={1.8} aria-hidden="true" />
 			Drop videos, images or cards here to place them on top
@@ -254,6 +324,22 @@
 		border-radius: var(--radius-sm);
 		background: color-mix(in srgb, var(--color-surface) 55%, var(--color-bg));
 		transition: height var(--dur) var(--ease-out);
+	}
+	.drop-hover {
+		box-shadow: inset 0 0 0 1.5px var(--color-ink);
+	}
+	.drop-ghost {
+		position: absolute;
+		z-index: 8;
+		display: flex;
+		align-items: flex-end;
+		padding: 4px 6px;
+		border: 2px dashed var(--color-ink);
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
+		pointer-events: none;
 	}
 	.hint {
 		position: absolute;

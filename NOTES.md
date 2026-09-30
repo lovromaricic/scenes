@@ -805,6 +805,46 @@ npm run check        # svelte-check (TypeScript strict)
     scene asks, both answers work and undo.
   - All stress-tested with 4 workers.
 
+### 3. Adding overlays
+
+- **Three drop targets, one routing function.** `handleVisualDrop` (in `media/dragTypes.ts`)
+  sends a drop to the right action, whether it came from "Your media", the Cards button, or
+  photo/video files from the computer:
+  - **The picture** gives a layer on the scene at the playhead, centred and 40% of the frame's
+    width. It lasts 5 s, or the clip's length if that's shorter.
+  - **The Layers track** gives a layer at the pointer's time, in the row under it. If that
+    overlaps something, `assignRow` makes a new row above.
+  - **The Scenes track** gives a scene at the drop position, as before. It now also takes files,
+    via `importFiles(files, index)`.
+  - With no scenes yet, a drop on the picture or Layers makes the first scene instead, since a
+    layer needs something to sit on.
+- **"Clips"** is read as photos and videos dragged in from the computer, the way clips come in.
+  The Clips button opens a file picker and has nothing to drag. Files dropped as layers are
+  stored once (fingerprint) and join "Your media" in the same undo step as the layer.
+- **Drop indicators.**
+  - On the picture: the whole picture dims, a dashed box shows where the layer lands, and a
+    label says "Drop to place on top of this scene".
+  - On the Layers track: an outlined lane and a dashed "Place here" ghost at the drop time and
+    row. The empty-track hint hides meanwhile.
+  - On the Scenes track: the existing insertion marker.
+- **Page-wide hint.** The full-page "Drop to add scenes" cover would have hidden these. While
+  files are dragged over the page, there's now a light dashed border and a pill: "Drop on the
+  picture or the Layers row to place on top · anywhere else adds scenes".
+- **Who handles a drop.** A target claims a drop with `preventDefault()` only when it used it.
+  The editor's page-wide drop handler then just resets its state. So a `.scenes` project file
+  dropped on the picture still opens as a project.
+- `storeVisual` (store once, load info and thumbnail, friendly errors) is now shared by
+  `importFiles` and the new `importAsOverlays`.
+- Tests (e2e): each target is exercised with synthetic drag events, whose indicators can be
+  checked mid-drag, plus one real mouse drag and drop from Your media onto the picture.
+  Covered:
+  - Your media → picture, and the length follows the clip.
+  - Cards button and computer files → Layers at the pointer's time, with a new row on overlap.
+  - Your media and files → Scenes at the drop position.
+  - The page hint shows while dragging files.
+  - No scenes → the first scene.
+  - Stress-tested with 4 workers.
+
 ## Known issues / ideas
 
 - Tablet landscape: the preview gets small at 1024×768 because the storyboard is fixed height. Phase 8.

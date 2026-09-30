@@ -26,7 +26,7 @@
 {#if items.length}
 	<section class="library" aria-labelledby="library-title">
 		<h2 id="library-title" class="serif heading">Your media</h2>
-		<p class="hint">Click to add, or drag onto the storyboard.</p>
+		<p class="hint">Click to add, or drag onto the storyboard or the picture.</p>
 		<ul class="grid">
 			{#each items as info (info.id)}
 				{@const thumb = editor.thumbnails[info.id]}

@@ -900,7 +900,9 @@ export class EditorStore {
 			(p) => {
 				const scenes = placeScenes(p.scenes);
 				const overlay: Overlay = { ...o, ...moveOverlayTo({ ...o, row: target } as Overlay, at, scenes), row: target };
-				return { ...p, overlays: assignRow([...p.overlays, overlay], overlay.id, target, scenes) };
+				// A photo or video used as a layer is part of "Your media".
+				const library = o.mediaId && !p.library.includes(o.mediaId) ? [...p.library, o.mediaId] : p.library;
+				return { ...p, library, overlays: assignRow([...p.overlays, overlay], overlay.id, target, scenes) };
 			},
 			{ select: o.id }
 		);
@@ -1342,7 +1344,74 @@ export class EditorStore {
 	// ─── Import ─────────────────────────────────────────────────────────────────────────────
 
 	/** Add photos and videos as scenes at the end, in the order given. */
-	async importFiles(files: File[]): Promise<void> {
+	/**
+	 * Store a photo or video file (once, however often it's imported) and load its info and
+	 * thumbnail. Returns null (after saying why) for sound files and files that can't be read.
+	 */
+	private async storeVisual(file: File): Promise<MediaInfo | null> {
+		try {
+			// The same file again (in this or another project) is stored only once.
+			const hash = await fingerprint(file);
+			let info = await findMediaByHash(hash);
+			if (info && info.kind === 'audio') {
+				toasts.show(`“${file.name}” is a sound file. Add it from Sound instead.`, 'error');
+				return null;
+			}
+			if (info) {
+				void this.loadThumbnails([info.id]);
+			} else {
+				const { info: probed, thumbnail } = await probeFile(file);
+				if (probed.kind === 'audio') {
+					toasts.show(`“${file.name}” is a sound file. Add it from Sound instead.`, 'error');
+					return null;
+				}
+				info = { ...probed, id: newId(), hash, createdAt: Date.now() };
+				await putMedia({ ...info, blob: file });
+				registerBlob(info, file);
+				if (thumbnail) {
+					await putThumbnail(info.id, thumbnail);
+					this.thumbnails[info.id] = URL.createObjectURL(thumbnail);
+				}
+			}
+			this.media[info.id] = info;
+			return info;
+		} catch (error) {
+			const message =
+				error instanceof MediaImportError
+					? error.message
+					: `“${file.name}” couldn’t be added. ${
+							error instanceof DOMException && error.name === 'QuotaExceededError'
+								? 'Your browser is out of storage space.'
+								: 'Please try another file.'
+						}`;
+			if (!(error instanceof MediaImportError)) console.error(error);
+			toasts.show(message, 'error');
+			return null;
+		}
+	}
+
+	/**
+	 * Photos and videos from the computer as overlays at `start` (each also joins "Your media").
+	 * Without any scenes yet there's nothing to put them on, so they become scenes.
+	 */
+	async importAsOverlays(files: File[], start: number, row?: number): Promise<void> {
+		if (files.length === 0) return;
+		await this.load();
+		if (this.project.scenes.length === 0) return this.importFiles(files);
+		this.importing += files.length;
+		try {
+			for (const file of files) {
+				const info = await this.storeVisual(file);
+				this.importing--;
+				if (info) this.addOverlayFromMedia(info.id, start, row);
+			}
+		} finally {
+			this.importing = Math.max(0, this.importing);
+		}
+	}
+
+	/** Photos and videos from the computer as scenes, at `index` (default: the end). */
+	async importFiles(files: File[], index?: number): Promise<void> {
 		if (files.length === 0) return;
 		void requestPersistentStorage();
 		// Let the last project finish restoring first, so the new scenes join it.
@@ -1353,52 +1422,20 @@ export class EditorStore {
 		const before = this.snapshot();
 		for (const file of files) {
 			try {
-				// The same file again (in this or another project) is stored only once.
-				const hash = await fingerprint(file);
-				let info = await findMediaByHash(hash);
-				if (info && info.kind === 'audio') {
-					toasts.show(`“${file.name}” is a sound file. Add it from Sound instead.`, 'error');
-					continue;
-				}
-				if (info) {
-					void this.loadThumbnails([info.id]);
-				} else {
-					const { info: probed, thumbnail } = await probeFile(file);
-					if (probed.kind === 'audio') {
-						toasts.show(`“${file.name}” is a sound file. Add it from Sound instead.`, 'error');
-						continue;
-					}
-					info = { ...probed, id: newId(), hash, createdAt: Date.now() };
-					await putMedia({ ...info, blob: file });
-					registerBlob(info, file);
-					if (thumbnail) {
-						await putThumbnail(info.id, thumbnail);
-						this.thumbnails[info.id] = URL.createObjectURL(thumbnail);
-					}
-				}
-				this.media[info.id] = info;
+				const info = await this.storeVisual(file);
+				if (!info) continue;
 				const scene = sceneFromMedia(info);
 				// A new project takes its format from the first clip.
 				if (!this.project.formatSet && this.project.scenes.length === 0) {
 					this.project.format = formatFromClip(info.width, info.height, info.fps);
 					this.project.formatSet = true;
 				}
-				this.project.scenes.push(scene);
+				if (index === undefined) this.project.scenes.push(scene);
+				else this.project.scenes.splice(Math.min(index + added, this.project.scenes.length), 0, scene);
 				if (!this.project.library.includes(info.id)) this.project.library.push(info.id);
 				this.selectedId = scene.id;
 				this.syncPlayer();
 				added++;
-			} catch (error) {
-				const message =
-					error instanceof MediaImportError
-						? error.message
-						: `“${file.name}” couldn’t be added. ${
-								error instanceof DOMException && error.name === 'QuotaExceededError'
-									? 'Your browser is out of storage space.'
-									: 'Please try another file.'
-							}`;
-				if (!(error instanceof MediaImportError)) console.error(error);
-				toasts.show(message, 'error');
 			} finally {
 				this.importing--;
 			}

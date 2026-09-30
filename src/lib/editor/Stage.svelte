@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
 	import Play from '@lucide/svelte/icons/play';
 	import Pause from '@lucide/svelte/icons/pause';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
@@ -62,6 +63,44 @@
 		if (target === event.currentTarget || target.matches('.viewport, .controls, .clock')) editor.deselect();
 	}
 
+	// ─── Dropping onto the picture: a layer on the scene at the playhead ──────────────────────
+	let dropHover = $state(0);
+	const dropBox = $derived.by(() => {
+		// Where a new layer goes: centred, 40% of the width (shown with the frame's proportions).
+		const w = 0.4;
+		return { x: (1 - w) / 2, y: (1 - w) / 2, w, h: w };
+	});
+
+	function ondragenter(event: DragEvent) {
+		if (!dragHasVisual(event) || editor.cropping) return;
+		event.preventDefault();
+		dropHover++;
+	}
+	function ondragover(event: DragEvent) {
+		if (!dragHasVisual(event) || editor.cropping) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+	}
+	function ondragleave(event: DragEvent) {
+		if (!dragHasVisual(event)) return;
+		dropHover = Math.max(0, dropHover - 1);
+	}
+	function ondrop(event: DragEvent) {
+		if (!dragHasVisual(event) || editor.cropping) return;
+		dropHover = 0;
+		const at = editor.time;
+		// With no scenes yet there's nothing to put a layer on: it becomes the first scene.
+		const noScenes = editor.project.scenes.length === 0;
+		const placed = handleVisualDrop(event, {
+			media: (id) => (noScenes ? editor.addSceneFromMedia(id) : editor.addOverlayFromMedia(id, at)),
+			card: () => (noScenes ? editor.addCard() : editor.addCardOverlay(at)),
+			files: (files) => void editor.importAsOverlays(files, at)
+		});
+		// Handled here, so the page doesn't also add it as a scene. (A project file isn't a
+		// picture: it's left for the page to open.)
+		if (placed) event.preventDefault();
+	}
+
 	onMount(() => {
 		editor.player.attach(canvas);
 		const observer = new ResizeObserver((entries) => {
@@ -96,6 +135,11 @@
 			class:cropping={!!editor.cropping}
 			role="presentation"
 			onpointerdown={onpreviewpointerdown}
+			{ondragenter}
+			{ondragover}
+			{ondragleave}
+			{ondrop}
+			class:drop-hover={dropHover > 0}
 			ondblclick={() => {
 				// Double-click the picture to crop the scene under the playhead.
 				if (!editor.cropping && !empty) editor.enterCrop();
@@ -139,6 +183,20 @@
 				<TextOverlay width={previewW} height={previewH} />
 			{/if}
 			<RecordingOverlay />
+			{#if dropHover > 0}
+				<div class="drop-target" aria-hidden="true">
+					<span
+						class="drop-box"
+						style:left="{dropBox.x * 100}%"
+						style:top="{dropBox.y * 100}%"
+						style:width="{dropBox.w * 100}%"
+						style:height="{dropBox.h * 100}%"
+					></span>
+					<span class="drop-label">
+						{editor.project.scenes.length ? 'Drop to place on top of this scene' : 'Drop to add a scene'}
+					</span>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -161,6 +219,34 @@
 </section>
 
 <style>
+	/* Dropping onto the picture: where the new layer will go. */
+	.drop-target {
+		position: absolute;
+		inset: 0;
+		z-index: 12;
+		border-radius: inherit;
+		background: color-mix(in srgb, var(--color-ink) 18%, transparent);
+		pointer-events: none;
+	}
+	.drop-box {
+		position: absolute;
+		border: 2px dashed var(--color-bg);
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, var(--color-bg) 22%, transparent);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink) 40%, transparent);
+	}
+	.drop-label {
+		position: absolute;
+		left: 50%;
+		bottom: var(--space-4);
+		translate: -50% 0;
+		padding: 6px 12px;
+		border-radius: var(--radius-pill);
+		background: var(--color-ink);
+		color: var(--color-on-ink);
+		font-size: var(--text-sm);
+		white-space: nowrap;
+	}
 	.stage {
 		display: flex;
 		flex-direction: column;

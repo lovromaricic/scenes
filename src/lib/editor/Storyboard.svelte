@@ -14,7 +14,7 @@
 	import LayersTrack from './LayersTrack.svelte';
 	import { stackRows } from '$lib/model/edits';
 	import { formatRatio } from '$lib/model/format';
-	import { dragHasCard, dragHasMedia, MEDIA_DRAG_TYPE } from '$lib/media/dragTypes';
+	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
 	import {
 		fitTimeline,
@@ -314,26 +314,22 @@
 	}
 
 	function onMediaDragOver(event: DragEvent) {
-		if (!dragHasMedia(event) && !dragHasCard(event)) return;
+		if (!dragHasVisual(event)) return;
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
 		dropIndex = insertIndexAt(contentX(event.clientX));
 	}
 
 	function onMediaDrop(event: DragEvent) {
-		if (dragHasCard(event)) {
-			event.preventDefault();
-			const index = insertIndexAt(contentX(event.clientX));
-			dropIndex = null;
-			editor.addCard(index);
-			return;
-		}
-		if (!dragHasMedia(event)) return;
-		event.preventDefault();
-		const id = event.dataTransfer?.getData(MEDIA_DRAG_TYPE);
+		if (!dragHasVisual(event)) return;
 		const index = insertIndexAt(contentX(event.clientX));
 		dropIndex = null;
-		if (id) editor.addSceneFromMedia(id, index);
+		const placed = handleVisualDrop(event, {
+			media: (id) => editor.addSceneFromMedia(id, index),
+			card: () => editor.addCard(index),
+			files: (files) => void editor.importFiles(files, index)
+		});
+		if (placed) event.preventDefault();
 	}
 
 	let suppressClick = false;

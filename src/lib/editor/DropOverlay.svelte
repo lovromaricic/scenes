@@ -2,40 +2,39 @@
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 </script>
 
+<!-- While files are dragged over the page: where they can go (each target highlights itself). -->
 <div class="overlay" aria-hidden="true">
-	<div class="message">
-		<ImagePlus size={32} strokeWidth={1.5} />
-		<p class="serif">Drop to add scenes</p>
-		<p class="hint">Photos and videos go to the end of your storyboard.</p>
-	</div>
+	<p class="message">
+		<ImagePlus size={16} strokeWidth={1.8} />
+		Drop on the picture or the Layers row to place on top · anywhere else adds scenes
+	</p>
 </div>
 
 <style>
 	.overlay {
 		position: fixed;
-		inset: var(--space-3);
+		inset: var(--space-2);
 		z-index: 90;
-		display: grid;
-		place-items: center;
-		border: 2px dashed var(--color-ink);
+		border: 2px dashed color-mix(in srgb, var(--color-ink) 45%, transparent);
 		border-radius: var(--radius-preview);
-		background: color-mix(in srgb, var(--color-bg) 88%, transparent);
-		backdrop-filter: blur(2px);
 		pointer-events: none;
 		animation: fade-in var(--dur-fast) var(--ease-out);
 	}
 	.message {
+		position: absolute;
+		top: var(--space-3);
+		left: 50%;
+		translate: -50% 0;
 		display: flex;
-		flex-direction: column;
 		align-items: center;
 		gap: var(--space-2);
-	}
-	.serif {
-		font-size: 44px;
-		line-height: 1;
-	}
-	.hint {
-		color: var(--color-muted);
+		padding: 8px 14px;
+		border-radius: var(--radius-pill);
+		background: var(--color-ink);
+		color: var(--color-on-ink);
+		font-size: var(--text-md);
+		white-space: nowrap;
+		box-shadow: var(--shadow-float);
 	}
 	@keyframes fade-in {
 		from {
