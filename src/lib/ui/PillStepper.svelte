@@ -4,6 +4,8 @@
 	Holding a button repeats the step.
 -->
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	import { startDrag, type Drag } from './drag';
 	import Minus from '@lucide/svelte/icons/minus';
 	import Plus from '@lucide/svelte/icons/plus';
 
@@ -55,8 +57,14 @@
 		nudge(direction);
 	}
 
-	function startRepeat(direction: -1 | 1) {
+	/** The hold ends however the button is released (see drag.ts); nothing is captured, so the
+	 * release still clicks the button. */
+	let hold: Drag | null = null;
+
+	function startRepeat(event: PointerEvent, direction: -1 | 1) {
+		if (event.button !== 0) return;
 		stopRepeat();
+		hold = startDrag(event, { move: () => {}, end: stopRepeat }, null);
 		repeated = false;
 		const tick = (delay: number) => {
 			repeatTimer = setTimeout(() => {
@@ -71,7 +79,12 @@
 	function stopRepeat() {
 		clearTimeout(repeatTimer);
 		repeatTimer = undefined;
+		const h = hold;
+		hold = null;
+		h?.stop();
 	}
+
+	onDestroy(stopRepeat);
 </script>
 
 <div class="stepper" role="group" aria-label={label} class:disabled>
@@ -80,10 +93,8 @@
 		aria-label={decreaseLabel}
 		disabled={disabled || value <= min}
 		onclick={() => click(-1)}
-		onpointerdown={() => startRepeat(-1)}
-		onpointerup={stopRepeat}
+		onpointerdown={(e) => startRepeat(e, -1)}
 		onpointerleave={stopRepeat}
-		onpointercancel={stopRepeat}
 	>
 		<Minus size={16} strokeWidth={2} aria-hidden="true" />
 	</button>
@@ -93,10 +104,8 @@
 		aria-label={increaseLabel}
 		disabled={disabled || value >= max}
 		onclick={() => click(1)}
-		onpointerdown={() => startRepeat(1)}
-		onpointerup={stopRepeat}
+		onpointerdown={(e) => startRepeat(e, 1)}
 		onpointerleave={stopRepeat}
-		onpointercancel={stopRepeat}
 	>
 		<Plus size={16} strokeWidth={2} aria-hidden="true" />
 	</button>

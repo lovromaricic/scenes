@@ -4,6 +4,12 @@
 	Drag a sound to move it in time.
 -->
 <script lang="ts">
+	import { DragScope } from '$lib/ui/drag';
+	import { onDestroy } from 'svelte';
+
+	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
+	const drags = new DragScope();
+	onDestroy(() => drags.dispose());
 	import Music from '@lucide/svelte/icons/music';
 	import Mic from '@lucide/svelte/icons/mic';
 	import { soundEnd } from '$lib/audio/clips';
@@ -40,7 +46,7 @@
 			start0: sound.start,
 			active: false
 		};
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		drags.start(event, { move: onpointermove, end: onend });
 	}
 
 	function onpointermove(event: PointerEvent) {
@@ -59,9 +65,9 @@
 		});
 	}
 
-	function onpointerup(event: PointerEvent) {
+	function onend() {
 		const g = gesture;
-		if (!g || event.pointerId !== g.pointerId) return;
+		if (!g) return;
 		gesture = null;
 		if (g.active) editor.endGesture('Move sound');
 		else editor.select(g.id);
@@ -89,9 +95,6 @@
 		)}"
 		aria-pressed={selected}
 		onpointerdown={(e) => onpointerdown(e, sound)}
-		{onpointermove}
-		{onpointerup}
-		onpointercancel={onpointerup}
 		onclick={(e) => {
 			if (e.detail === 0) editor.select(sound.id);
 		}}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
+	import { preventNativeDrag } from '$lib/ui/drag';
 	import Play from '@lucide/svelte/icons/play';
 	import Pause from '@lucide/svelte/icons/pause';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
@@ -136,6 +137,7 @@
 			class:cropping={!!editor.cropping}
 			role="presentation"
 			onpointerdown={onpreviewpointerdown}
+			ondragstart={preventNativeDrag}
 			{ondragenter}
 			{ondragover}
 			{ondragleave}

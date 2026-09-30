@@ -15,6 +15,8 @@
 	import { dragBox, type Crop as Box, type CropHandle } from '$lib/model/crop';
 	import type { Overlay, OverlayBox, PlacedOverlay } from '$lib/model/overlay';
 	import { useEditor } from '$lib/state/context';
+	import { DragScope } from '$lib/ui/drag';
+	import { onDestroy } from 'svelte';
 	import OverlayStyleFields from './OverlayStyleFields.svelte';
 	import OverlayAnimationFields from './OverlayAnimationFields.svelte';
 
@@ -54,6 +56,9 @@
 	});
 
 	let popover = $state<'style' | 'animate' | null>(null);
+	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
+	const drags = new DragScope();
+	onDestroy(() => drags.dispose());
 	let dragging = $state<{
 		id: string;
 		handle: CropHandle;
@@ -68,7 +73,6 @@
 		if (event.button !== 0) return;
 		event.preventDefault();
 		event.stopPropagation();
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		// Clicking a layer selects it; it can be dragged straight away.
 		if (editor.selectedId !== o.id) {
 			editor.select(o.id);
@@ -83,6 +87,7 @@
 			start: toPixels(o.box),
 			moved: false
 		};
+		drags.start(event, { move: onpointermove, end: onend });
 	}
 
 	function onpointermove(event: PointerEvent) {
@@ -132,9 +137,9 @@
 		});
 	}
 
-	function onpointerup(event: PointerEvent) {
+	function onend() {
 		const d = dragging;
-		if (!d || d.pointerId !== event.pointerId) return;
+		if (!d) return;
 		dragging = null;
 		if (d.moved) editor.endGesture(d.handle === 'move' ? 'Move layer' : 'Resize layer');
 	}
@@ -215,9 +220,6 @@
 			aria-pressed={selected}
 			aria-label="Layer {o.name} on the video, {g.px.w} by {g.px.h}. Drag to move, arrow keys to nudge."
 			onpointerdown={(e) => onpointerdown(e, o, 'move')}
-			{onpointermove}
-			{onpointerup}
-			onpointercancel={onpointerup}
 			onkeydown={(e) => onkeydown(e, o)}
 			onclick={(e) => {
 				if (e.detail === 0) editor.select(o.id);
@@ -230,9 +232,6 @@
 					data-layer-handle={handle}
 					aria-hidden="true"
 					onpointerdown={(e) => onpointerdown(e, o, handle)}
-					{onpointermove}
-					{onpointerup}
-					onpointercancel={onpointerup}
 				></span>
 			{/each}
 		{/if}

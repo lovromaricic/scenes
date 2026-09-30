@@ -7,6 +7,12 @@
 	linked to (it moves with that scene).
 -->
 <script lang="ts">
+	import { DragScope } from '$lib/ui/drag';
+	import { onDestroy } from 'svelte';
+
+	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
+	const drags = new DragScope();
+	onDestroy(() => drags.dispose());
 	import Layers from '@lucide/svelte/icons/layers';
 	import { formatShort } from '$lib/model/time';
 	import { rowCount, type Overlay, type PlacedOverlay } from '$lib/model/overlay';
@@ -83,7 +89,7 @@
 			toScene: null,
 			dy: 0
 		};
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		drags.start(event, { move: onpointermove, end: onend });
 	}
 
 	function onpointermove(event: PointerEvent) {
@@ -123,9 +129,9 @@
 		}
 	}
 
-	function onpointerup(event: PointerEvent) {
+	function onend() {
 		const g = gesture;
-		if (!g || event.pointerId !== g.pointerId) return;
+		if (!g) return;
 		gesture = null;
 		if (!g.active) {
 			editor.select(g.id);
@@ -304,9 +310,6 @@
 				aria-pressed={selected}
 				aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
 				onpointerdown={(e) => onpointerdown(e, placed, 'move')}
-				{onpointermove}
-				{onpointerup}
-				onpointercancel={onpointerup}
 				onclick={(e) => {
 					// Keyboard activation only; pointer clicks are handled on pointerup.
 					if (e.detail === 0) editor.select(o.id);
@@ -333,9 +336,6 @@
 					class:visible={selected}
 					aria-hidden="true"
 					onpointerdown={(e) => onpointerdown(e, placed, edge)}
-					{onpointermove}
-					{onpointerup}
-					onpointercancel={onpointerup}
 				></span>
 			{/each}
 			{#if active}

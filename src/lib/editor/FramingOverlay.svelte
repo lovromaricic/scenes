@@ -4,6 +4,8 @@
 	frame, so you can see what's outside it; drag to move, scroll or pinch to zoom.
 -->
 <script lang="ts">
+	import { DragScope } from '$lib/ui/drag';
+	import { onDestroy } from 'svelte';
 	import Move from '@lucide/svelte/icons/move';
 	import { onMount } from 'svelte';
 	import { clampFrame, DEFAULT_FRAME, frameRect, type SceneFrame } from '$lib/model/framing';
@@ -94,6 +96,10 @@
 		});
 	}
 
+	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
+	const drags = new DragScope();
+	onDestroy(() => drags.dispose());
+
 	function distance(): number {
 		const [a, b] = [...pointers.values()];
 		return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
@@ -101,8 +107,10 @@
 
 	function onpointerdown(event: PointerEvent) {
 		if (event.button !== 0) return;
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+		// Each finger (or the mouse) is its own drag, so a second finger can pinch.
+		const id = event.pointerId;
+		drags.start(event, { move: onpointermove, end: () => onend(id) });
 		if (!start) editor.beginGesture();
 		const [p] = [...pointers.values()];
 		start = { frame: { ...frame }, x: p.x, y: p.y, distance: distance() };
@@ -124,8 +132,8 @@
 		});
 	}
 
-	function onpointerup(event: PointerEvent) {
-		pointers.delete(event.pointerId);
+	function onend(pointerId: number) {
+		if (!pointers.delete(pointerId)) return;
 		if (pointers.size > 0 && start) {
 			const [p] = [...pointers.values()];
 			start = { frame: { ...(scene?.frame ?? frame) }, x: p.x, y: p.y, distance: 0 };
@@ -187,9 +195,6 @@
 		style:width="{Math.max(width, rect.x + rect.w) - Math.min(0, rect.x)}px"
 		style:height="{Math.max(height, rect.y + rect.h) - Math.min(0, rect.y)}px"
 		{onpointerdown}
-		{onpointermove}
-		{onpointerup}
-		onpointercancel={onpointerup}
 		{onwheel}
 		{onkeydown}
 	></button>

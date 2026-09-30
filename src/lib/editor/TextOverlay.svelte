@@ -5,6 +5,8 @@
 	WebGL compositor underneath; only the text being typed is shown in HTML.
 -->
 <script lang="ts">
+	import { DragScope } from '$lib/ui/drag';
+	import { onDestroy } from 'svelte';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Paintbrush from '@lucide/svelte/icons/paintbrush';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
@@ -56,6 +58,9 @@
 	let guides = $state({ x: false, y: false });
 
 	// ─── Dragging ───────────────────────────────────────────────────────────────────────────
+	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
+	const drags = new DragScope();
+	onDestroy(() => drags.dispose());
 	let drag = $state<{
 		id: string;
 		pointerId: number;
@@ -83,7 +88,7 @@
 			y0: item.y,
 			moved: false
 		};
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		drags.start(event, { move: onpointermove, end: onend });
 	}
 
 	function onpointermove(event: PointerEvent) {
@@ -111,9 +116,9 @@
 		});
 	}
 
-	function onpointerup(event: PointerEvent) {
+	function onend() {
 		const d = drag;
-		if (!d || event.pointerId !== d.pointerId) return;
+		if (!d) return;
 		drag = null;
 		guides = { x: false, y: false };
 		if (d.moved) editor.endGesture('Move words');
@@ -272,9 +277,6 @@
 					aria-label="Words: {item.text}"
 					aria-pressed={isSelected}
 					onpointerdown={(e) => onpointerdown(e, item)}
-					{onpointermove}
-					{onpointerup}
-					onpointercancel={onpointerup}
 					ondblclick={(e) => {
 						e.stopPropagation();
 						startEditing(item.id);

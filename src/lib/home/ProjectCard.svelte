@@ -61,7 +61,7 @@
 <article class="card" aria-label={project.title}>
 	<a class="thumb" {href} tabindex="-1" aria-hidden="true">
 		{#if project.thumbnail}
-			<img src={project.thumbnail} alt="" />
+			<img src={project.thumbnail} alt="" draggable="false" />
 		{:else}
 			<span class="blank"><Film size={28} strokeWidth={1.4} /></span>
 		{/if}

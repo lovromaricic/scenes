@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { DragScope, preventNativeDrag, type Drag as PointerDrag } from '$lib/ui/drag';
+	import { onDestroy } from 'svelte';
 	import Plus from '@lucide/svelte/icons/plus';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { trimEdge } from '$lib/model/edits';
@@ -51,6 +53,9 @@
 	const importing = $derived(editor.importing);
 
 	// ─── Gestures ───────────────────────────────────────────────────────────────────────────
+	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
+	const drags = new DragScope();
+	onDestroy(() => drags.dispose());
 	interface Drag {
 		id: string;
 		from: number;
@@ -265,7 +270,11 @@
 			toLayers: null,
 			dy: 0
 		};
+		// Nothing is captured yet, so a plain click still selects the card.
+		cardDrag = drags.start(event, { move: onCardPointerMove, end: onCardDragEnd }, null);
 	}
+
+	let cardDrag: PointerDrag | null = null;
 
 	function onCardPointerMove(event: PointerEvent) {
 		const d = drag;
@@ -274,7 +283,9 @@
 			if (Math.hypot(event.clientX - d.startX, event.clientY - d.startY) < DRAG_THRESHOLD) return;
 			d.active = true;
 			frozenPps = pps;
-			(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+			// Captured by the tracks, which stay put: the card's own element is moved around the
+			// page as the order changes, which would lose the capture.
+			cardDrag?.capture(tracks);
 		}
 		autoScroll(event.clientX);
 		const x = contentX(event.clientX);
@@ -306,9 +317,10 @@
 		d.to = to;
 	}
 
-	function onCardPointerUp(event: PointerEvent) {
+	function onCardDragEnd() {
+		cardDrag = null;
 		const d = drag;
-		if (!d || event.pointerId !== d.pointerId) return;
+		if (!d) return;
 		drag = null;
 		frozenPps = null;
 		if (d.active) {
@@ -391,9 +403,9 @@
 		if (event.button !== 0) return;
 		event.stopPropagation();
 		event.preventDefault();
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		frozenPps = pps;
 		trim = { id: item.scene.id, edge, startX: event.clientX, delta: 0 };
+		drags.start(event, { move: (e) => onTrimPointerMove(e, item), end: onTrimPointerUp });
 		if (editor.selectedId !== item.scene.id) editor.selectedId = item.scene.id;
 		peekTrim(item.scene);
 	}
@@ -429,15 +441,9 @@
 	}
 
 	function onRulerDown(event: PointerEvent) {
-		const target = event.currentTarget as HTMLElement;
-		target.setPointerCapture(event.pointerId);
+		if (event.button !== 0) return;
 		editor.seek(timeFromPointer(event));
-	}
-
-	function onRulerMove(event: PointerEvent) {
-		const target = event.currentTarget as HTMLElement;
-		if (!target.hasPointerCapture(event.pointerId)) return;
-		editor.seek(timeFromPointer(event));
+		drags.start(event, { move: (e) => editor.seek(timeFromPointer(e)), end: () => {} });
 	}
 
 	function onPlayheadKey(event: KeyboardEvent) {
@@ -491,14 +497,14 @@
 		<span class="label sound-label" style:height="{soundH}px">Sound</span>
 	</div>
 
-	<div class="tracks" bind:this={tracks} bind:clientWidth={trackWidth}>
+	<!-- The browser's own drag of pictures or selected text would swallow a drag's release. -->
+	<div class="tracks" ondragstart={preventNativeDrag} role="presentation" bind:this={tracks} bind:clientWidth={trackWidth}>
 		<div class="content" style:width="{contentWidth}px">
 			<!-- Ruler: click or drag to move the playhead -->
 			<div
 				class="ruler"
 				role="presentation"
 				onpointerdown={onRulerDown}
-				onpointermove={onRulerMove}
 			>
 				{#each rulerTicks as t (t)}
 					<span class="tick mono" style:left="{map.x(t)}px">{formatClock(t)}</span>
@@ -549,9 +555,6 @@
 						style:width="{item.width}px"
 						role="presentation"
 						onpointerdown={(e) => onCardPointerDown(e, item)}
-						onpointermove={onCardPointerMove}
-						onpointerup={onCardPointerUp}
-						onpointercancel={onCardPointerUp}
 					>
 						<SceneCard
 							index={item.index}
@@ -574,9 +577,6 @@
 									aria-hidden="true"
 									title={edge === 'start' ? 'Drag to trim the start' : 'Drag to trim the end'}
 									onpointerdown={(e) => onTrimPointerDown(e, item, edge)}
-									onpointermove={(e) => onTrimPointerMove(e, item)}
-									onpointerup={onTrimPointerUp}
-									onpointercancel={onTrimPointerUp}
 								></span>
 							{/each}
 						{/if}
@@ -643,7 +643,6 @@
 					class="handle"
 					aria-label="Playhead at {formatClock(editor.time)}. Use arrow keys to move."
 					onpointerdown={onRulerDown}
-					onpointermove={onRulerMove}
 					onkeydown={onPlayheadKey}
 				></button>
 			</div>

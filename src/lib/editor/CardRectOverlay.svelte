@@ -5,6 +5,8 @@
 	pixels; the rectangle may overhang the frame.
 -->
 <script lang="ts">
+	import { DragScope } from '$lib/ui/drag';
+	import { onDestroy } from 'svelte';
 	import { dragBox, type Crop, type CropHandle } from '$lib/model/crop';
 	import { MIN_RECT, rectFromPixels, rectToPixels } from '$lib/model/card';
 	import { useEditor } from '$lib/state/context';
@@ -62,7 +64,6 @@
 		event.stopPropagation();
 		// Clicking the rectangle selects its card; it can be dragged straight away.
 		if (!selected) editor.select(scene.id);
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		editor.beginGesture();
 		dragging = {
 			handle,
@@ -71,6 +72,7 @@
 			y: event.clientY,
 			start: { ...px }
 		};
+		drags.start(event, { move: onpointermove, end: onend });
 	}
 
 	function onpointermove(event: PointerEvent) {
@@ -94,8 +96,8 @@
 		);
 	}
 
-	function onpointerup(event: PointerEvent) {
-		if (dragging?.pointerId !== event.pointerId) return;
+	function onend() {
+		if (!dragging) return;
 		dragging = null;
 		editor.endGesture('Change rectangle');
 	}
@@ -120,6 +122,10 @@
 			`rect-nudge:${scene.id}`
 		);
 	}
+
+	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
+	const drags = new DragScope();
+	onDestroy(() => drags.dispose());
 </script>
 
 {#if active && px}
@@ -142,9 +148,6 @@
 			aria-pressed={selected}
 			aria-label="Rectangle, {px.w} by {px.h}. Drag to move, arrow keys to nudge."
 			onpointerdown={(e) => onpointerdown(e, 'move')}
-			{onpointermove}
-			{onpointerup}
-			onpointercancel={onpointerup}
 			{onkeydown}
 		></button>
 		{#each selected ? HANDLES : [] as handle (handle)}
@@ -153,9 +156,6 @@
 				data-rect-handle={handle}
 				aria-hidden="true"
 				onpointerdown={(e) => onpointerdown(e, handle)}
-				{onpointermove}
-				{onpointerup}
-				onpointercancel={onpointerup}
 			></span>
 		{/each}
 	</div>

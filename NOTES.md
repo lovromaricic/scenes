@@ -1011,6 +1011,74 @@ judged on the rendered picture. It's committed as its own section.
   popover; dragging the slider and clicking there keeps the layer selected. The test fails on
   the old code.
 
+## Fix: drags that kept going after the mouse was released
+
+**Symptom.** Resizing an image layer from its left handle: press, drag, release, and the box kept
+following the mouse.
+
+**Root cause.** Every drag listened for its release only as a `pointerup` on the handle, and
+nothing else could end it.
+- When the release never reaches the page, every later mouse move with no button held was
+  still treated as part of the drag. Pointer capture was still active, so the moves kept going
+  to the handle, and the box followed the mouse.
+- Nothing checked `event.buttons`, `lostpointercapture` or the window losing focus. On macOS
+  the release goes missing when the window loses focus mid-drag (a notification, Cmd-Tab, Mission
+  Control), and with some trackpad gestures.
+- Reproduced exactly with Chrome's DevTools input API (press, move, no release, then moves with
+  `button: 'none'`). The new test fails on the old code on this case only.
+
+**The four suspected causes, checked:**
+1. *Release listener only on the handle.* Pointer capture delivered the release to the handle
+   everywhere tested: inside the preview, over the right column, and outside the browser window
+   (DevTools input). Not the cause here, but fragile, so releases are now heard on the window.
+2. *Handle re-created mid-drag.* Not for layer handles: the event log showed capture and the
+   release on the same element, and they're in keyed blocks that don't reorder. **It was real
+   for storyboard reordering**, though: Svelte moves a scene card's node as the order changes,
+   and moving a node releases pointer capture. That drag now captures on the stable tracks
+   container.
+3. *Native image drag.* No `dragstart` ever fired (there are no `<img>` elements on the preview;
+   the picture is a canvas). Guarded anyway.
+4. *Mixed events, cancel and lost capture.* Everything used pointer events. `pointercancel` was
+   handled, but `lostpointercapture` wasn't, and neither was a move with no button held. **This is
+   the cause**: nothing could end a drag whose release was lost.
+
+**Fix: one shared helper, `ui/drag.ts`** (`startDrag`, `DragScope`, `preventNativeDrag`), used by
+every drag:
+- moving and all 8 handles of layers;
+- crop handles and the crop box;
+- card rectangle handles;
+- words on the video;
+- reframing (per pointer, so pinch still works);
+- storyboard reordering, edge trims, and ruler/playhead scrubbing;
+- Layers, Words and Sound lane items and their edges;
+- holding a stepper button (it would keep repeating if the release were lost).
+
+The helper:
+- captures the pointer on an element that stays in the page. Reordering captures on the tracks
+  only once the drag really moves (`drag.capture(el)`), so a plain click still selects the card;
+- listens on the window (capture phase) for `pointermove`, `pointerup` and `pointercancel`, on
+  the captured element for `lostpointercapture`, and for window `blur`. Any of the last four
+  ends the drag, as does a move with `buttons === 0`;
+- ignores other pointers, ends a drag exactly once, and removes every listener when it ends.
+  `DragScope.dispose()` (on component destroy) ends any drag still running.
+
+Also: `dragstart` is prevented on the preview and the storyboard tracks, the home card image is
+`draggable="false"`, and all handles keep `touch-action: none`.
+
+**Tests.**
+- `e2e/drag-release.test.ts` presses through the DevTools protocol, and releases four ways:
+  inside, outside the preview, outside the browser window (x < 0), or not at all (lost). After
+  the release, more moves must change nothing. It covers:
+  - all 8 handles and moving, on image, video and card layers;
+  - crop handles;
+  - words on the video;
+  - storyboard trims, ruler scrubbing and reordering;
+  - card rectangle handles.
+- Unit tests for the helper: release anywhere, no-button move, cancel, lost capture, blur, other
+  pointers, scope disposal.
+- Test gotcha: in `Input.dispatchMouseEvent`, `button: 'left'` on a move means the button is
+  held. Moves after a release must use `button: 'none'`, or they're still drags.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

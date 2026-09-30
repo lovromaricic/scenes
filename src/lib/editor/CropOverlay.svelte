@@ -4,6 +4,8 @@
 	moves it, the outside is dimmed, and a thirds grid shows while dragging. Measured in source pixels.
 -->
 <script lang="ts">
+	import { DragScope } from '$lib/ui/drag';
+	import { onDestroy } from 'svelte';
 	import { DEFAULT_FRAME, frameRect } from '$lib/model/framing';
 	import { cropRatioValue, dragCrop, type Crop, type CropHandle } from '$lib/model/crop';
 	import { useEditor } from '$lib/state/context';
@@ -48,7 +50,6 @@
 		if (event.button !== 0 || !draft) return;
 		event.preventDefault();
 		event.stopPropagation();
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		dragging = {
 			handle,
 			pointerId: event.pointerId,
@@ -56,6 +57,7 @@
 			y: event.clientY,
 			start: { ...draft }
 		};
+		drags.start(event, { move: onpointermove, end: onend });
 	}
 
 	function onpointermove(event: PointerEvent) {
@@ -78,8 +80,8 @@
 		);
 	}
 
-	function onpointerup(event: PointerEvent) {
-		if (dragging?.pointerId === event.pointerId) dragging = null;
+	function onend() {
+		dragging = null;
 	}
 
 	function onkeydown(event: KeyboardEvent) {
@@ -108,6 +110,10 @@
 				}
 			: null
 	);
+
+	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
+	const drags = new DragScope();
+	onDestroy(() => drags.dispose());
 </script>
 
 {#if box && clip && draft}
@@ -141,9 +147,6 @@
 			class="move"
 			aria-label="Crop box, {draft.w} by {draft.h}. Drag to move, arrow keys to nudge."
 			onpointerdown={(e) => onpointerdown(e, 'move')}
-			{onpointermove}
-			{onpointerup}
-			onpointercancel={onpointerup}
 			ondblclick={() => editor.applyCrop()}
 			{onkeydown}
 		></button>
@@ -156,9 +159,6 @@
 				data-handle={h}
 				aria-hidden="true"
 				onpointerdown={(e) => onpointerdown(e, h)}
-				{onpointermove}
-				{onpointerup}
-				onpointercancel={onpointerup}
 			></span>
 		{/each}
 	</div>

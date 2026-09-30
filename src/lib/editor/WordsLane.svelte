@@ -4,6 +4,12 @@
 	drag its ends to change when it starts or stops. Overlapping items stack into rows.
 -->
 <script lang="ts">
+	import { DragScope } from '$lib/ui/drag';
+	import { onDestroy } from 'svelte';
+
+	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
+	const drags = new DragScope();
+	onDestroy(() => drags.dispose());
 	import { formatShort } from '$lib/model/time';
 	import type { TextItem } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
@@ -40,7 +46,7 @@
 			original: $state.snapshot(item) as TextItem,
 			active: false
 		};
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		drags.start(event, { move: onpointermove, end: onend });
 	}
 
 	function onpointermove(event: PointerEvent) {
@@ -81,9 +87,9 @@
 		);
 	}
 
-	function onpointerup(event: PointerEvent) {
+	function onend() {
 		const g = gesture;
-		if (!g || event.pointerId !== g.pointerId) return;
+		if (!g) return;
 		gesture = null;
 		if (g.active) editor.endGesture(g.mode === 'move' ? 'Move words' : 'Timing');
 		else editor.select(g.id);
@@ -121,9 +127,6 @@
 			aria-pressed={selected}
 			aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
 			onpointerdown={(e) => onpointerdown(e, item, 'move')}
-			{onpointermove}
-			{onpointerup}
-			onpointercancel={onpointerup}
 			onclick={(e) => {
 				// Keyboard activation only; pointer clicks are handled on pointerup.
 				if (e.detail === 0) editor.select(item.id);
@@ -137,9 +140,6 @@
 				class="edge {edge}"
 				aria-hidden="true"
 				onpointerdown={(e) => onpointerdown(e, item, edge)}
-				{onpointermove}
-				{onpointerup}
-				onpointercancel={onpointerup}
 			></span>
 		{/each}
 		{#if active}
