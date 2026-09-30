@@ -115,6 +115,8 @@ test.describe('Phase 4: words', () => {
 		await page.mouse.move(v.x + v.width / 2, v.y + v.height / 2 - 150, { steps: 8 });
 		await page.mouse.up();
 		expect((await texts(page))[0].y).toBeLessThan(0.7);
+		// The drawn words moved too, not just the selection box.
+		expect((await textAreaPixels(page)).some(isYellowish)).toBe(true);
 
 		// Every step can be undone: add, two word edits, style, animation, lane move, lane resize,
 		// move on the preview.

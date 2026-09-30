@@ -37,8 +37,10 @@ export function textDrawsAt(
 		draws.push({
 			key,
 			image: sprite.canvas,
-			cx: sprite.layout.cx,
-			cy: sprite.layout.cy + state.dy * Math.min(width, height),
+			// Position comes from the item itself, not the cached sprite (which is only keyed by
+			// words, style and size), so moving words shows up immediately.
+			cx: item.x * width,
+			cy: item.y * height + state.dy * Math.min(width, height),
 			width: sprite.canvas.width,
 			height: sprite.canvas.height,
 			scale: state.scale,

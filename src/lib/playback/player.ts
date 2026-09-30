@@ -392,7 +392,10 @@ export class Player {
 				? `${composite.transition.kind}:${composite.transition.progress.toFixed(4)}`
 				: '',
 			texts
-				.map((d) => `${d.key}:${d.opacity.toFixed(3)}:${d.scale.toFixed(3)}:${d.cy.toFixed(1)}`)
+				.map(
+					(d) =>
+						`${d.key}:${d.opacity.toFixed(3)}:${d.scale.toFixed(3)}:${d.cx.toFixed(1)}:${d.cy.toFixed(1)}`
+				)
 				.join(',')
 		].join('|');
 		if (!this.dirty && key === this.lastDrawnKey) return;
