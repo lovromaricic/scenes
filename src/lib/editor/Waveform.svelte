@@ -1,7 +1,8 @@
 <!--
 	@component
 	Draws a stretch of audio peaks as mirrored bars on a canvas (canvas keeps long songs cheap).
-	`from` and `length` pick the part of the sound (in source seconds) the box shows.
+	`from` and `length` pick the part of the sound (in source seconds) the box shows; `gain` scales
+	the bars (so the volume line shows in the drawing).
 -->
 <script lang="ts">
 	interface Props {
@@ -9,9 +10,11 @@
 		perSecond: number;
 		from?: number;
 		length?: number;
+		/** Loudness across the box (0 = left edge, 1 = right edge), e.g. its volume points. */
+		gain?: (fraction: number) => number;
 	}
 
-	let { peaks, perSecond, from = 0, length }: Props = $props();
+	let { peaks, perSecond, from = 0, length, gain }: Props = $props();
 
 	let canvas: HTMLCanvasElement;
 	let width = $state(0);
@@ -38,7 +41,9 @@
 			const b = Math.max(a + 1, Math.floor((from + ((i + 1) / count) * seconds) * perSecond));
 			let peak = 0;
 			for (let j = a; j < b && j < peaks.length; j++) peak = Math.max(peak, peaks[j]);
-			const h = Math.max(1, peak * (height - 2));
+			// Quieter parts (volume points) look smaller.
+			const g = gain ? Math.min(1, gain((i + 0.5) / count)) : 1;
+			const h = Math.max(1, peak * g * (height - 2));
 			ctx.fillRect(i * (bar + gap), mid - h / 2, bar, h);
 		}
 	});

@@ -81,6 +81,7 @@ import {
 	type Keyframe
 } from '$lib/model/keyframes';
 import { mediaNoun } from '$lib/model/labels';
+import { VOLUME_EASINGS, volumeAt, volumePoint, type VolumeValues } from '$lib/model/volume';
 import { TEXT_TRACK_NAME, accepts, fits, freeTrack, type ItemKind, type Track } from '$lib/model/tracks';
 import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
 import { computePeaks, PEAKS_PER_SECOND } from '$lib/media/waveform';
@@ -145,15 +146,17 @@ import { toasts } from './toasts.svelte';
  * An overlay or words with new timing. Trimmed from the left (the end stays put), its keyframes
  * move the other way, so the motion stays where it was on the timeline. Moved, they go with it.
  */
-function retimed<T extends { start: number; duration: number; keyframes?: Keyframe<ItemValues>[] }>(
-	item: T,
-	next: Partial<T> & { start: number; duration: number }
-): T {
+function retimed<
+	T extends { start: number; duration: number; keyframes?: Keyframe<ItemValues>[]; volumePoints?: Keyframe<VolumeValues>[] }
+>(item: T, next: Partial<T> & { start: number; duration: number }): T {
 	const out = { ...item, ...next };
 	const endBefore = item.start + item.duration;
 	const endAfter = next.start + next.duration;
-	if (item.keyframes?.length && Math.abs(endBefore - endAfter) < 1e-6 && Math.abs(next.start - item.start) > 1e-9)
-		out.keyframes = shiftKeyframes(item.keyframes, item.start - next.start);
+	if (Math.abs(endBefore - endAfter) < 1e-6 && Math.abs(next.start - item.start) > 1e-9) {
+		// Keyframes and volume points both stay where they were on the timeline.
+		if (item.keyframes?.length) out.keyframes = shiftKeyframes(item.keyframes, item.start - next.start);
+		if (item.volumePoints?.length) out.volumePoints = shiftKeyframes(item.volumePoints, item.start - next.start);
+	}
 	return out;
 }
 
@@ -181,12 +184,19 @@ function convertValues(
 export interface KeyframeRef {
 	itemId: string;
 	id: string;
+	/** Motion keyframes (default) or volume points. */
+	channel?: KeyframeChannel;
 }
+
+/** What a list of keyframes animates: an item's motion (or framing), or its sound's volume. */
+export type KeyframeChannel = 'motion' | 'volume';
+type AnyValues = ItemValues | FrameValues | VolumeValues;
 
 /** An item's keyframes and how their times map to the timeline (see `keyframeTrack`). */
 export interface KeyframeTrack {
-	kind: 'overlay' | 'text' | 'scene';
-	list: Keyframe<ItemValues | FrameValues>[];
+	kind: 'overlay' | 'text' | 'scene' | 'sound';
+	channel: KeyframeChannel;
+	list: Keyframe<AnyValues>[];
 	toTimeline: (time: number) => number;
 	fromTimeline: (t: number) => number;
 	/** Where the item shows on the timeline. */
@@ -1668,11 +1678,13 @@ export class EditorStore {
 	 * conversions between keyframe times and the timeline, and the part of the timeline where the
 	 * item shows (keyframes outside it are kept but hidden).
 	 */
-	keyframeTrack(id: string): KeyframeTrack | null {
+	keyframeTrack(id: string, channel: KeyframeChannel = 'motion'): KeyframeTrack | null {
+		if (channel === 'volume') return this.volumeTrack(id);
 		const o = this.project.overlays.find((x) => x.id === id) ?? this.project.texts.find((x) => x.id === id);
 		if (o) {
 			return {
 				kind: this.project.overlays.some((x) => x.id === id) ? 'overlay' : 'text',
+				channel,
 				list: o.keyframes ?? [],
 				toTimeline: (time) => o.start + time,
 				fromTimeline: (t) => t - o.start,
@@ -1684,7 +1696,42 @@ export class EditorStore {
 		if (placed && placed.scene.frame?.mode === 'custom') {
 			return {
 				kind: 'scene',
+				channel,
 				list: placed.scene.keyframes ?? [],
+				toTimeline: (time) => sceneKeyframeTimelineTime(placed, time),
+				fromTimeline: (t) => sceneContentTime(placed, t),
+				start: placed.start,
+				end: placed.end
+			};
+		}
+		return null;
+	}
+
+	/**
+	 * An item's volume points (sounds, video layers with their sound on, video scenes with sound),
+	 * on the same times as its other keyframes.
+	 */
+	volumeTrack(id: string): KeyframeTrack | null {
+		const sound = this.project.sounds.find((x) => x.id === id);
+		const o = this.project.overlays.find((x) => x.id === id && x.kind === 'video');
+		const item = sound ?? o;
+		if (item) {
+			return {
+				kind: sound ? 'sound' : 'overlay',
+				channel: 'volume',
+				list: item.volumePoints ?? [],
+				toTimeline: (time) => item.start + time,
+				fromTimeline: (t) => t - item.start,
+				start: item.start,
+				end: item.start + item.duration
+			};
+		}
+		const placed = this.placed.find((p) => p.scene.id === id && p.scene.kind === 'video');
+		if (placed) {
+			return {
+				kind: 'scene',
+				channel: 'volume',
+				list: placed.scene.volumePoints ?? [],
 				toTimeline: (time) => sceneKeyframeTimelineTime(placed, time),
 				fromTimeline: (t) => sceneContentTime(placed, t),
 				start: placed.start,
@@ -1698,11 +1745,18 @@ export class EditorStore {
 	updateKeyframes(
 		id: string,
 		label: string,
-		change: (list: Keyframe<ItemValues | FrameValues>[]) => Keyframe<ItemValues | FrameValues>[],
-		key?: string
+		change: (list: Keyframe<AnyValues>[]) => Keyframe<AnyValues>[],
+		key?: string,
+		channel: KeyframeChannel = 'motion'
 	): void {
 		if (this.trackOfItem(id)?.locked) return;
 		const tidy = <K>(list: K[]): K[] | undefined => (list.length ? list : undefined);
+		if (channel === 'volume') {
+			const v = <T extends { id: string; volumePoints?: Keyframe<VolumeValues>[] }>(x: T): T =>
+				x.id === id ? { ...x, volumePoints: tidy(change(x.volumePoints ?? []) as Keyframe<VolumeValues>[]) } : x;
+			this.edit(label, (p) => ({ ...p, sounds: p.sounds.map(v), overlays: p.overlays.map(v), scenes: p.scenes.map(v) }), { key });
+			return;
+		}
 		this.edit(
 			label,
 			(p) => ({
@@ -1722,7 +1776,7 @@ export class EditorStore {
 	}
 
 	/** The keyframe at the playhead on an item, if there is one. */
-	keyframeAtPlayhead(id: string): Keyframe<ItemValues | FrameValues> | undefined {
+	keyframeAtPlayhead(id: string): Keyframe<AnyValues> | undefined {
 		const track = this.keyframeTrack(id);
 		return track ? keyframeAt(track.list, track.fromTimeline(this.time)) : undefined;
 	}
@@ -1754,10 +1808,14 @@ export class EditorStore {
 	 * Remove keyframes. Removing the last one leaves the item as it is at the playhead (like
 	 * "Remove all keyframes").
 	 */
-	removeKeyframes(id: string, keyframeIds: string[]): void {
-		const track = this.keyframeTrack(id);
+	removeKeyframes(id: string, keyframeIds: string[], channel: KeyframeChannel = 'motion'): void {
+		const track = this.keyframeTrack(id, channel);
 		if (!track) return;
 		const gone = new Set(keyframeIds);
+		if (channel === 'volume') {
+			this.updateKeyframes(id, keyframeIds.length > 1 ? 'Remove volume points' : 'Remove volume point', (list) => list.filter((k) => !gone.has(k.id)), undefined, 'volume');
+			return;
+		}
 		if (track.list.every((k) => gone.has(k.id))) {
 			this.removeAllKeyframes(id, keyframeIds.length > 1 ? 'Remove keyframes' : 'Remove keyframe');
 			return;
@@ -1874,22 +1932,28 @@ export class EditorStore {
 	}
 
 	/** The selected keyframes grouped by item. */
-	private keyframeGroups(refs = this.selectedKeyframes): Map<string, string[]> {
-		const groups = new Map<string, string[]>();
-		for (const r of refs) groups.set(r.itemId, [...(groups.get(r.itemId) ?? []), r.id]);
-		return groups;
+	private keyframeGroups(refs = this.selectedKeyframes): { itemId: string; channel: KeyframeChannel; ids: string[] }[] {
+		const groups = new Map<string, { itemId: string; channel: KeyframeChannel; ids: string[] }>();
+		for (const r of refs) {
+			const channel = r.channel ?? 'motion';
+			const k = `${r.itemId}|${channel}`;
+			const g = groups.get(k) ?? { itemId: r.itemId, channel, ids: [] };
+			g.ids.push(r.id);
+			groups.set(k, g);
+		}
+		return [...groups.values()];
 	}
 
 	/** Delete the selected keyframes (one undo step per item). */
 	deleteSelectedKeyframes(): void {
 		const groups = this.keyframeGroups();
 		this.selectedKeyframes = [];
-		for (const [itemId, ids] of groups) this.removeKeyframes(itemId, ids);
+		for (const g of groups) this.removeKeyframes(g.itemId, g.ids, g.channel);
 	}
 
 	/** Give every selected keyframe an easing. */
 	setSelectedKeyframesEasing(easing: Easing, key?: string): void {
-		for (const [itemId, ids] of this.keyframeGroups()) this.setKeyframeEasing(itemId, ids, easing, key);
+		for (const g of this.keyframeGroups()) this.setKeyframeEasing(g.itemId, g.ids, easing, key, g.channel);
 	}
 
 	/**
@@ -1898,8 +1962,8 @@ export class EditorStore {
 	 */
 	moveSelectedKeyframes(delta: number): void {
 		if (Math.abs(delta) < 1e-6) return;
-		for (const [itemId, ids] of this.keyframeGroups()) {
-			const track = this.keyframeTrack(itemId);
+		for (const { itemId, ids, channel } of this.keyframeGroups()) {
+			const track = this.keyframeTrack(itemId, channel);
 			if (!track) continue;
 			const moving = new Set(ids);
 			this.updateKeyframes(itemId, ids.length > 1 ? 'Move keyframes' : 'Move keyframe', (list) => {
@@ -1910,7 +1974,7 @@ export class EditorStore {
 					(k) => !moving.has(k.id) && !moved.some((m) => Math.abs(m.time - k.time) < SAME_TIME)
 				);
 				return sortKeyframes([...staying, ...moved]);
-			});
+			}, undefined, channel);
 		}
 	}
 
@@ -1922,8 +1986,10 @@ export class EditorStore {
 			...this.project.texts.map((t) => t.id),
 			...this.project.scenes.map((s) => s.id)
 		];
-		for (const id of ids) {
-			const track = this.keyframeTrack(id);
+		const tracks = [...ids, ...this.project.sounds.map((x) => x.id)].flatMap((id) =>
+			(['motion', 'volume'] as const).map((c) => ({ id, track: this.keyframeTrack(id, c) }))
+		);
+		for (const { id, track } of tracks) {
 			if (!track) continue;
 			for (const k of track.list) {
 				if (except.some((r) => r.itemId === id && r.id === k.id)) continue;
@@ -1938,25 +2004,28 @@ export class EditorStore {
 
 	/** Keyframes copied (Ctrl/Cmd+C with keyframes selected): when, relative to the first. */
 	private keyframeClipboard: {
-		kind: 'item' | 'frame';
-		keyframes: { offset: number; values: ItemValues | FrameValues; easing: Easing }[];
+		kind: 'item' | 'frame' | 'volume';
+		keyframes: { offset: number; values: AnyValues; easing: Easing }[];
 	} | null = null;
 
 	/** Copy the selected keyframes (of one item: the first one's, if several are selected). */
 	copyKeyframes(): boolean {
 		const first = this.selectedKeyframes[0];
 		if (!first) return false;
-		const track = this.keyframeTrack(first.itemId);
+		const channel = first.channel ?? 'motion';
+		const track = this.keyframeTrack(first.itemId, channel);
 		if (!track) return false;
-		const ids = new Set(this.selectedKeyframes.filter((r) => r.itemId === first.itemId).map((r) => r.id));
+		const ids = new Set(
+			this.selectedKeyframes.filter((r) => r.itemId === first.itemId && (r.channel ?? 'motion') === channel).map((r) => r.id)
+		);
 		const chosen = sortKeyframes(track.list.filter((k) => ids.has(k.id)));
 		if (!chosen.length) return false;
 		const t0 = track.toTimeline(chosen[0].time);
 		this.keyframeClipboard = {
-			kind: track.kind === 'scene' ? 'frame' : 'item',
+			kind: channel === 'volume' ? 'volume' : track.kind === 'scene' ? 'frame' : 'item',
 			keyframes: chosen.map((k) => ({
 				offset: track.toTimeline(k.time) - t0,
-				values: structuredClone($state.snapshot(k.values)) as ItemValues | FrameValues,
+				values: structuredClone($state.snapshot(k.values)) as AnyValues,
 				easing: structuredClone($state.snapshot(k.easing)) as Easing
 			}))
 		};
@@ -1972,18 +2041,24 @@ export class EditorStore {
 	pasteKeyframes(): boolean {
 		const clip = this.keyframeClipboard;
 		const id = this.selectedId;
+		if (clip?.kind === 'volume') return this.pasteVolumePoints();
 		const track = id ? this.keyframeTrack(id) : null;
 		if (!clip || !id || !track) {
 			if (clip) toasts.show('Select a layer, words, or a scene with Custom framing to paste the keyframes on.');
 			return false;
 		}
 		const target = track.kind === 'scene' ? 'frame' : 'item';
-		const pasted: { time: number; values: ItemValues | FrameValues; easing: Easing; id: string }[] = [];
+		const pasted: { time: number; values: AnyValues; easing: Easing; id: string }[] = [];
 		for (const k of clip.keyframes) {
 			const t = this.time + k.offset;
 			const own = target === 'frame' ? this.frameValues(id, t) : this.itemValues(id, t);
 			if (!own) continue;
-			pasted.push({ time: track.fromTimeline(t), values: convertValues(k.values, clip.kind, target, own), easing: k.easing, id: newId() });
+			pasted.push({
+				time: track.fromTimeline(t),
+				values: convertValues(k.values as ItemValues | FrameValues, clip.kind as 'item' | 'frame', target, own),
+				easing: k.easing,
+				id: newId()
+			});
 		}
 		if (!pasted.length) return false;
 		this.updateKeyframes(id, pasted.length > 1 ? 'Paste keyframes' : 'Paste keyframe', (list) => {
@@ -2014,6 +2089,7 @@ export class EditorStore {
 		const secondId = newId();
 		if (o) {
 			const [left, right] = splitKeyframeList(o.keyframes, local, overlayBaseValues(o), newId);
+			const [vLeft, vRight] = splitKeyframeList(o.volumePoints, local, { gain: 1 }, newId);
 			this.edit(
 				'Split layer',
 				(p) => ({
@@ -2022,7 +2098,7 @@ export class EditorStore {
 						x.id !== id
 							? [x]
 							: [
-									{ ...x, duration: local, exit: 'none' as const, keyframes: left },
+									{ ...x, duration: local, exit: 'none' as const, keyframes: left, volumePoints: vLeft },
 									{
 										...structuredClone($state.snapshot(x) as Overlay),
 										id: secondId,
@@ -2030,7 +2106,8 @@ export class EditorStore {
 										duration: x.duration - local,
 										sourceStart: x.sourceStart + (x.kind === 'video' ? local : 0),
 										enter: 'none' as const,
-										keyframes: right
+										keyframes: right,
+										volumePoints: vRight
 									}
 								]
 					)
@@ -2059,10 +2136,73 @@ export class EditorStore {
 		return true;
 	}
 
+	/** Paste copied volume points onto the selected sound (or video), first at the playhead. */
+	private pasteVolumePoints(): boolean {
+		const clip = this.keyframeClipboard;
+		const id = this.selectedId;
+		const track = id ? this.volumeTrack(id) : null;
+		if (!clip || !id || !track) {
+			toasts.show('Select a sound, or a video with sound, to paste the volume points on.');
+			return false;
+		}
+		const pasted = clip.keyframes.map((k) => ({
+			id: newId(),
+			time: track.fromTimeline(this.time + k.offset),
+			values: { ...(k.values as VolumeValues) },
+			easing: { ...k.easing }
+		}));
+		this.updateKeyframes(
+			id,
+			pasted.length > 1 ? 'Paste volume points' : 'Paste volume point',
+			(list) => sortKeyframes([...list.filter((k) => !pasted.some((p) => Math.abs(p.time - k.time) < SAME_TIME)), ...pasted]),
+			undefined,
+			'volume'
+		);
+		this.selectKeyframes(pasted.map((p) => ({ itemId: id, id: p.id, channel: 'volume' as const })));
+		return true;
+	}
+
+	/** Add a volume point on an item at timeline time `t` with `gain`; returns its id. */
+	addVolumePoint(id: string, t: number, gain: number): string | null {
+		const track = this.volumeTrack(id);
+		if (!track) return null;
+		const pointId = newId();
+		const time = track.fromTimeline(t);
+		const preset = VOLUME_EASINGS.includes(this.defaultEasing) ? this.defaultEasing : 'linear';
+		this.updateKeyframes(
+			id,
+			'Add volume point',
+			(list) => sortKeyframes([...list.filter((k) => Math.abs(k.time - time) >= SAME_TIME), volumePoint(pointId, time, gain, preset)]),
+			undefined,
+			'volume'
+		);
+		return pointId;
+	}
+
+	/** Change a volume point's time and gain (as during a drag: `key` merges the steps). */
+	setVolumePoint(id: string, pointId: string, t: number, gain: number, key?: string): void {
+		const track = this.volumeTrack(id);
+		if (!track) return;
+		const time = track.fromTimeline(t);
+		this.updateKeyframes(
+			id,
+			'Volume',
+			(list) => sortKeyframes(list.map((k) => (k.id === pointId ? { ...k, time, values: { gain } } : k))),
+			key,
+			'volume'
+		);
+	}
+
+	/** An item's volume (its points' gain) at timeline time `t`. */
+	volumeAtTime(id: string, t: number): number {
+		const track = this.volumeTrack(id);
+		return track ? volumeAt(track.list as Keyframe<VolumeValues>[], track.fromTimeline(t)) : 1;
+	}
+
 	/** Give keyframes (the stretches that start at them) an easing. */
-	setKeyframeEasing(id: string, keyframeIds: string[], easing: Easing, key?: string): void {
+	setKeyframeEasing(id: string, keyframeIds: string[], easing: Easing, key?: string, channel: KeyframeChannel = 'motion'): void {
 		const ids = new Set(keyframeIds);
-		this.updateKeyframes(id, 'Easing', (list) => list.map((k) => (ids.has(k.id) ? { ...k, easing: { ...easing } } : k)), key);
+		this.updateKeyframes(id, 'Easing', (list) => list.map((k) => (ids.has(k.id) ? { ...k, easing: { ...easing } } : k)), key, channel);
 	}
 
 	/** The easing new keyframes get (remembered on this device). */
@@ -2274,7 +2414,7 @@ export class EditorStore {
 		};
 		this.edit(
 			label,
-			(p) => settle({ ...p, sounds: p.sounds.map((x) => (x.id === id ? { ...x, ...next } : x)) }, id, newId),
+			(p) => settle({ ...p, sounds: p.sounds.map((x) => (x.id === id ? retimed(x, next) : x)) }, id, newId),
 			{ key }
 		);
 	}
@@ -2288,6 +2428,10 @@ export class EditorStore {
 			toasts.show('Move the playhead into the sound to split it there.');
 			return;
 		}
+		// The volume line stays exactly as it was across the split.
+		const [left, right] = splitKeyframeList(sound.volumePoints, this.player.time - sound.start, { gain: 1 }, newId);
+		parts[0] = { ...parts[0], volumePoints: left };
+		parts[1] = { ...parts[1], volumePoints: right };
 		this.edit(
 			'Split sound',
 			(p) => ({ ...p, sounds: p.sounds.flatMap((x) => (x.id === sound.id ? parts : [x])) }),

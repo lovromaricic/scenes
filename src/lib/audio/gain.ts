@@ -13,6 +13,11 @@ export function scheduleClipGain(
 	from: number,
 	ctxTime: (t: number) => number
 ): void {
+	// With volume points, follow the whole curve (fades and points multiplied) closely.
+	if (clip.envelope?.length) {
+		scheduleSampled(param, clip, from, ctxTime);
+		return;
+	}
 	const fadeIn = Math.max(EDGE_RAMP, clip.fadeIn);
 	const fadeOut = Math.max(EDGE_RAMP, clip.fadeOut);
 	const fadeInEnd = clip.start + fadeIn;
@@ -23,4 +28,30 @@ export function scheduleClipGain(
 	if (fadeOutStart > from)
 		param.setValueAtTime(clipGainAt(clip, fadeOutStart, EDGE_RAMP), ctxTime(fadeOutStart));
 	param.linearRampToValueAtTime(0, ctxTime(clip.end));
+}
+
+/** How often a volume curve is sampled for the audio clock (seconds). */
+const STEP = 0.02;
+
+/**
+ * Schedule a clip's loudness as short straight ramps through samples of `clipGainAt`, plus its
+ * exact corners (point times, fade ends, a Hold's jump), so any easing is followed closely.
+ */
+function scheduleSampled(param: AudioParam, clip: AudioClip, from: number, ctxTime: (t: number) => number) {
+	const times = new Set<number>();
+	for (let t = from; t < clip.end; t += STEP) times.add(t);
+	times.add(clip.end);
+	const corner = (t: number) => {
+		if (t > from && t < clip.end) times.add(t);
+	};
+	corner(clip.start + Math.max(EDGE_RAMP, clip.fadeIn));
+	corner(clip.end - Math.max(EDGE_RAMP, clip.fadeOut));
+	for (const p of clip.envelope ?? []) {
+		corner(p.time);
+		// A Hold jumps at the next point: hold the value until just before it.
+		corner(p.time - 1e-3);
+	}
+	const sorted = [...times].sort((a, b) => a - b);
+	param.setValueAtTime(clipGainAt(clip, from, EDGE_RAMP), ctxTime(from));
+	for (const t of sorted.slice(1)) param.linearRampToValueAtTime(clipGainAt(clip, t, EDGE_RAMP), ctxTime(t));
 }

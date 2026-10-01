@@ -12,6 +12,7 @@ import type { TextColors, TextFont } from './textStyle';
 import type { Overlay } from './overlay';
 import type { Track } from './tracks';
 import type { FrameValues, ItemValues, Keyframe } from './keyframes';
+import type { VolumeValues } from './volume';
 
 /** Shapes offered by the design-page demo switch. Projects use `ProjectFormat`. */
 export type AspectRatio = '16:9' | '9:16' | '1:1';
@@ -57,6 +58,8 @@ export interface Scene {
 	card?: CardContent;
 	/** Custom framing animation (see keyframes.ts); times are the clip's own (source) seconds. */
 	keyframes?: Keyframe<FrameValues>[];
+	/** Volume points for the clip's own sound; times are the clip's own (source) seconds. */
+	volumePoints?: Keyframe<VolumeValues>[];
 }
 
 export interface TextItem {
@@ -101,6 +104,8 @@ export interface SoundItem {
 	duration: number;
 	volume: number;
 	kind: 'music' | 'voice';
+	/** Volume points (the rubber band); times are seconds from `start`. */
+	volumePoints?: Keyframe<VolumeValues>[];
 	/** Fade in and out lengths in seconds (0–5), at the clip's (trimmed) edges. */
 	fadeIn: number;
 	fadeOut: number;

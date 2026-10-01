@@ -23,6 +23,7 @@
 	import { DragScope } from '$lib/ui/drag';
 	import Waveform from './Waveform.svelte';
 	import KeyframeMarkers from './KeyframeMarkers.svelte';
+	import VolumeLine from './VolumeLine.svelte';
 	import type { TimeMap } from './scale';
 	import type { DropTarget, LaneServices } from './lanes';
 
@@ -366,6 +367,7 @@
 								perSecond={wave.perSecond}
 								from={g ? g.sourceStart : e.item.sourceStart}
 								{length}
+								gain={(f) => editor.volumeAtTime(e.item.id, start + f * length)}
 							/>
 						{/if}
 						<svg class="fades" aria-hidden="true" {width} height={h}>
@@ -413,6 +415,17 @@
 						>
 					{/if}
 				</button>
+				{#if !track.locked && !g && (e.kind === 'sound' || (e.kind === 'overlay' && e.item.kind === 'video' && e.item.sound.on))}
+					<!-- The volume line (rubber band) across anything with sound. -->
+					<VolumeLine
+						itemId={e.item.id}
+						{width}
+						height={height - 4}
+						xOf={(t) => map.x(t) - map.x(start)}
+						tOf={(px) => map.t(px + map.x(start))}
+						{services}
+					/>
+				{/if}
 				{#if e.kind !== 'sound' && !track.locked}
 					<KeyframeMarkers
 						itemId={e.item.id}
@@ -665,7 +678,8 @@
 		background: var(--color-bg);
 		box-shadow: 0 0 0 1.5px var(--color-ink);
 		cursor: ew-resize;
-		z-index: 3;
+		/* Above the volume line, which runs near the top at full volume. */
+		z-index: 5;
 		touch-action: none;
 	}
 	.fade-dot.out {

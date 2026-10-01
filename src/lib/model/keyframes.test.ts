@@ -177,3 +177,33 @@ describe('splitting keyframes', () => {
 		expect(interpolate(r!, 1, v(0)).x).toBeCloseTo(0.8);
 	});
 });
+
+describe('volume points', () => {
+	it('map gain to a dB line and back; hold before and after; format dB', async () => {
+		const { gainToLevel, levelToGain, volumeAt, formatDb, volumePoint } = await import('./volume');
+		expect(levelToGain(gainToLevel(1))).toBeCloseTo(1, 4);
+		expect(levelToGain(gainToLevel(0.25))).toBeCloseTo(0.25, 4);
+		expect(gainToLevel(0)).toBe(0);
+		expect(levelToGain(0)).toBe(0);
+		expect(formatDb(1)).toBe('0.0 dB');
+		expect(formatDb(0.5)).toBe('−6.0 dB');
+		expect(formatDb(0)).toBe('−∞ dB');
+		const pts = [volumePoint('a', 1, 1), volumePoint('b', 2, 0.5)];
+		expect(volumeAt(undefined, 3)).toBe(1);
+		expect(volumeAt(pts, 0)).toBe(1);
+		expect(volumeAt(pts, 1.5)).toBeCloseTo(0.75);
+		expect(volumeAt(pts, 9)).toBeCloseTo(0.5);
+	});
+
+	it('multiply with the clip’s volume and fades in the mix', async () => {
+		const { clipGainAt } = await import('$lib/audio/clips');
+		const { volumePoint } = await import('./volume');
+		const clip = {
+			id: 'c', mediaId: 'm', start: 0, end: 10, sourceStart: 0, speed: 1, volume: 0.8,
+			fadeIn: 2, fadeOut: 0, envelope: [volumePoint('a', 4, 1), volumePoint('b', 6, 0.5)]
+		};
+		expect(clipGainAt(clip, 1)).toBeCloseTo(0.8 * 0.5 * 1);
+		expect(clipGainAt(clip, 5)).toBeCloseTo(0.8 * 0.75);
+		expect(clipGainAt(clip, 8)).toBeCloseTo(0.8 * 0.5);
+	});
+});

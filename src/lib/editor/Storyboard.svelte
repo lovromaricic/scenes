@@ -14,6 +14,7 @@
 	import TrackLane from './TrackLane.svelte';
 	import TrackHeader from './TrackHeader.svelte';
 	import KeyframeMarkers from './KeyframeMarkers.svelte';
+	import VolumeLine from './VolumeLine.svelte';
 	import type { DropTarget, LaneServices } from './lanes';
 	import { accepts, type ItemKind } from '$lib/model/tracks';
 	import { allItems, itemKind } from '$lib/model/items';
@@ -48,6 +49,8 @@
 	const editor = useEditor();
 
 	const CARD_GAP = 10;
+	/** Height of a scene card's picture (the card is 104 px with its name below). */
+	const CARD_PICTURE_H = 70;
 	/** Width of the track headers on the left (matches --track-header-w). */
 	const HEADER_W = 172;
 	const ADD_CARD_W = 104;
@@ -872,6 +875,23 @@
 										onselect={() => onCardClick(item.scene.id)}
 										onkeydown={(e) => onCardKeydown(e, item)}
 									/>
+									{#if item.scene.kind === 'video' && item.scene.volume > 0 && editor.media[item.scene.mediaId]?.hasAudio && !drag?.active && !trim}
+										{@const p = editor.placed.find((x) => x.scene.id === item.scene.id)}
+										{@const w = Math.max(24, item.width - CARD_GAP)}
+										{#if p}
+											<!-- The clip's own sound: its volume line across the picture. -->
+											<div class="card-volume">
+												<VolumeLine
+													itemId={item.scene.id}
+													width={w}
+													height={CARD_PICTURE_H}
+													xOf={(t) => ((t - p.start) / p.duration) * w}
+													tOf={(px) => p.start + (px / w) * p.duration}
+													{services}
+												/>
+											</div>
+										{/if}
+									{/if}
 									{#if item.scene.keyframes?.length && item.scene.frame?.mode === 'custom' && !drag?.active}
 										{@const p = editor.placed.find((x) => x.scene.id === item.scene.id)}
 										{@const w = Math.max(24, item.width - CARD_GAP)}
@@ -1303,6 +1323,14 @@
 	.scenes-row {
 		height: var(--scenes-h);
 		background: none;
+	}
+	.card-volume {
+		position: absolute;
+		left: 0;
+		top: 3px;
+		width: 100%;
+		height: 70px;
+		pointer-events: none;
 	}
 	/* Scene keyframes: along the bottom of the picture, above the name. */
 	.card-keyframes {

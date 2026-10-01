@@ -4,6 +4,8 @@ import { placeOverlays, type Overlay } from '$lib/model/overlay';
 import type { Track } from '$lib/model/tracks';
 
 import { effectiveFades, soundEnd } from '$lib/model/sound';
+import { volumeAt, volumeEnvelope, type VolumePoint } from '$lib/model/volume';
+import { sceneKeyframeTimelineTime } from '$lib/model/keyframes';
 export { MUSIC_FADE_IN, MUSIC_FADE_OUT, soundEnd } from '$lib/model/sound';
 
 /** A piece of sound placed on the timeline: which part of which file, when, and how loud. */
@@ -20,6 +22,8 @@ export interface AudioClip {
 	/** Fade in/out lengths in seconds (0 = just a click-free 10ms ramp). */
 	fadeIn: number;
 	fadeOut: number;
+	/** Volume points on the timeline (times in timeline seconds), multiplying the rest. */
+	envelope?: VolumePoint[];
 }
 
 /** The clip sound of every video scene, as timeline audio clips. */
@@ -38,7 +42,8 @@ export function sceneAudioClips(
 			speed: p.scene.speed,
 			volume: p.scene.volume,
 			fadeIn: 0,
-			fadeOut: 0
+			fadeOut: 0,
+			envelope: volumeEnvelope(p.scene.volumePoints, (time) => sceneKeyframeTimelineTime(p, time))
 		}));
 }
 
@@ -79,7 +84,8 @@ export function soundAudioClips(sounds: SoundItem[], videoLength: number): Audio
 			speed: 1,
 			volume: sound.volume,
 			fadeIn: fades.fadeIn,
-			fadeOut: fades.fadeOut
+			fadeOut: fades.fadeOut,
+			envelope: volumeEnvelope(sound.volumePoints, (time) => sound.start + time)
 		});
 	}
 	return clips;
@@ -110,7 +116,8 @@ export function overlayAudioClips(
 			speed: 1,
 			volume: p.overlay.sound.volume,
 			fadeIn: 0,
-			fadeOut: 0
+			fadeOut: 0,
+			envelope: volumeEnvelope(p.overlay.volumePoints, (time) => p.start + time)
 		}));
 }
 
@@ -132,8 +139,8 @@ export function projectAudioClips(
 }
 
 /**
- * Loudness (0–1 multiplier) of a clip at timeline time `t`, including its fades and the short
- * ramps at its edges. Shared by live playback and the offline mix so they sound the same.
+ * Loudness (multiplier) of a clip at timeline time `t`, including its fades, its volume points and
+ * the short ramps at its edges. Shared by live playback and the offline mix so they sound the same.
  */
 export function clipGainAt(clip: AudioClip, t: number, edgeRamp = 0.01): number {
 	if (t < clip.start || t > clip.end) return 0;
@@ -141,5 +148,5 @@ export function clipGainAt(clip: AudioClip, t: number, edgeRamp = 0.01): number 
 	const fadeOut = Math.max(edgeRamp, clip.fadeOut);
 	const inF = Math.min(1, (t - clip.start) / fadeIn);
 	const outF = Math.min(1, (clip.end - t) / fadeOut);
-	return clip.volume * Math.max(0, Math.min(inF, outF));
+	return clip.volume * Math.max(0, Math.min(inF, outF)) * volumeAt(clip.envelope, t);
 }

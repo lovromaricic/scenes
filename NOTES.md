@@ -1839,6 +1839,54 @@ playhead sets the keyframe there.
     - Words split with the same motion, no fade at the split, and no entrance on the second
       half.
 
+### 7. Volume points on audio
+
+- **Model** (`model/volume.ts`):
+  - Volume points are keyframes of one value, `gain` (a loudness multiplier: 1 = as it is,
+    0 = silent, up to +6 dB).
+  - They're stored as `volumePoints` on sounds, video layers and scenes, on the same times as
+    the item's other keyframes: from the item's start, or the clip's time for scenes, so they
+    stay with the content when the speed changes.
+  - Easing choices: Linear, Ease in, Ease out, Ease in and out, Hold.
+  - The line's height is a dB scale from −40 dB to +6 dB, with the very bottom silent
+    (`gainToLevel` / `levelToGain`).
+- **Same tools as keyframes:**
+  - The store's keyframe functions take a `channel` ('motion' or 'volume'). `volumeTrack(id)`
+    gives any audio item's points with time conversions.
+  - So selection (click, Shift-click), Delete, easing from the right-click menu, snapping, and
+    Ctrl/Cmd+C/V (onto the selected sound or video, first point at the playhead) work the same
+    way. Volume and motion keyframes don't paste onto each other.
+- **The line** (`VolumeLine.svelte`):
+  - It's drawn across every song and voiceover, every video layer with its sound on, and every
+    video scene card with sound.
+  - It's sampled from the same function the mix uses, so it follows each easing exactly.
+  - Clicking the line adds a point there at the line's level and starts dragging it. Dragging a
+    point changes its gain (up/down) and its time (left/right, snapping; Alt to place freely),
+    with a dB label.
+  - The waveform takes a `gain` function, so quieter parts are drawn smaller.
+  - Sound clips' fade dots sit above the line (at full volume it runs near their height).
+- **The mix:**
+  - `AudioClip.envelope` holds the points in timeline time. `clipGainAt` multiplies them with
+    the clip's volume and fades.
+  - `scheduleClipGain` follows a clip with points by ramping through samples every 20 ms plus
+    its exact corners (point times, just before them for Hold, fade ends).
+  - Live playback, `mixdown` and export all use it, so they sound the same. Changing points
+    while playing retunes the playing sound.
+- **Editing:**
+  - Trimming a sound or video layer from the left shifts its points like keyframes, so the line
+    stays put on the timeline.
+  - Splitting a sound or video layer splits the line exactly (`splitKeyframeList`).
+- **Tests:**
+  - Unit: the dB mapping, holding, dB text, multiplying with volume and fades.
+  - E2E (`volume-points.test.ts`):
+    - Points added by clicking the line, and one dragged down with the "−x.x dB" label. The mix
+      is much quieter there and halves with the clip volume; the waveform is smaller there; the
+      saved MP4's loudness ratio matches (ffmpeg).
+    - Hold and Ease in from the right-click menu; select, copy, delete, paste at the playhead.
+    - A split keeps the line at 40 times and the loudness.
+    - Video scenes and sound-on video layers have the line, and a point silences a scene's own
+      sound.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

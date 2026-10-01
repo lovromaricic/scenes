@@ -8,6 +8,7 @@ import type { CardContent } from './card';
 import type { Crop } from './crop';
 import type { TextAnimation } from './types';
 import type { ItemValues, Keyframe } from './keyframes';
+import type { VolumeValues } from './volume';
 
 export type OverlayKind = 'video' | 'photo' | 'card';
 export type OverlayShadow = 'off' | 'soft' | 'strong';
@@ -64,6 +65,8 @@ export interface Overlay {
 	rotation?: number;
 	/** Animation (see keyframes.ts); times are seconds from `start`. */
 	keyframes?: Keyframe<ItemValues>[];
+	/** Video layers: volume points for their sound; times are seconds from `start`. */
+	volumePoints?: Keyframe<VolumeValues>[];
 }
 
 
