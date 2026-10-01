@@ -1,7 +1,8 @@
 <!--
 	@component
 	Interactive layer over the preview for words: click to select, drag to move (snapping to the
-	centre), double-click or "Edit words" to type in place. The words themselves are drawn by the
+	centre), double-click or "Edit words" to type in place (live: the words, the settings and the
+	timeline follow every change; Enter is a new line, Esc or a click elsewhere stops). The words themselves are drawn by the
 	WebGL compositor underneath; only the text being typed is shown in HTML.
 -->
 <script lang="ts">
@@ -240,22 +241,39 @@
 		});
 	});
 
-	function commit(save: boolean) {
+	/**
+	 * The typing box starts with the words, once: after that it's the typing that changes the
+	 * words (live), never the other way round, so the caret stays put.
+	 */
+	function initialText(node: HTMLElement, text: string) {
+		node.textContent = text;
+	}
+
+	/** What's typed, as plain text (new lines as \n). */
+	const typed = (el: HTMLElement) => el.innerText.replace(/\n$/, '');
+
+	/** Every change shows straight away (but not halfway through a composed character, like č). */
+	function onEditorInput(event: Event) {
+		const id = editor.editingTextId;
+		if (!id || !editorEl || (event as InputEvent).isComposing) return;
+		editor.typeTextWords(id, typed(editorEl));
+	}
+
+	/** Stop typing (Esc, or a click elsewhere), keeping what was typed. */
+	function finish() {
 		const id = editor.editingTextId;
 		if (!id || !editorEl) return;
-		const text = editorEl.innerText;
+		const text = typed(editorEl);
 		editor.stopEditingText();
-		if (save) editor.setTextWords(id, text);
+		editor.finishTextWords(id, text);
 	}
 
 	function onEditorKeydown(event: KeyboardEvent) {
+		// Typing keys are for the words, not the editor's shortcuts. Enter is a new line.
 		event.stopPropagation();
-		if (event.key === 'Enter' && !event.shiftKey) {
+		if (event.key === 'Escape') {
 			event.preventDefault();
-			commit(true);
-		} else if (event.key === 'Escape') {
-			event.preventDefault();
-			commit(false);
+			finish();
 		}
 	}
 
@@ -327,11 +345,12 @@
 					tabindex="0"
 					spellcheck="true"
 					style={textCss(item, b.layout.fontSize)}
+					use:initialText={item.text}
 					onkeydown={onEditorKeydown}
-					onblur={() => commit(true)}
-				>
-					{item.text}
-				</div>
+					oninput={onEditorInput}
+					oncompositionend={onEditorInput}
+					onblur={finish}
+				></div>
 			{:else}
 				<button
 					type="button"

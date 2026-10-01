@@ -29,7 +29,8 @@ test.describe('Phase 4: words', () => {
 		const typing = page.getByRole('textbox', { name: 'Type the words on the video' });
 		await expect(typing).toBeFocused();
 		await page.keyboard.type('Hello from Split');
-		await page.keyboard.press('Enter');
+		// Live: it's in as it's typed (Enter would be a new line); Esc stops typing.
+		await page.keyboard.press('Escape');
 		await expect.poll(async () => (await texts(page))[0]?.text).toBe('Hello from Split');
 		// Typing "S" must not have split a scene.
 		await expect(page.getByRole('button', { name: /^Scene \d, / })).toHaveCount(3);
@@ -43,7 +44,7 @@ test.describe('Phase 4: words', () => {
 		await words.dblclick();
 		await expect(typing).toBeFocused();
 		await page.keyboard.type('Split at noon');
-		await page.keyboard.press('Enter');
+		await page.keyboard.press('Escape');
 		await expect.poll(async () => (await texts(page))[0].text).toBe('Split at noon');
 
 		// Restyle with the floating toolbar: Highlighter draws a yellow band.
@@ -134,7 +135,7 @@ test.describe('Phase 4: words', () => {
 		await page.getByRole('button', { name: /^Words/ }).click();
 		await page.getByRole('button', { name: /^Title/ }).click();
 		await page.keyboard.type('Big day');
-		await page.keyboard.press('Enter');
+		await page.keyboard.press('Escape');
 		const [title] = await texts(page);
 		expect(title).toMatchObject({ text: 'Big day', style: 'title', x: 0.5, y: 0.5 });
 		await page.getByRole('button', { name: 'Words: Big day' }).first().click();

@@ -54,3 +54,20 @@ describe('History', () => {
 		expect(h.canUndo).toBe(false);
 	});
 });
+
+describe('ending a run of merged edits', () => {
+	it('seal: the next edit with the same key is a new step, even right away', () => {
+		const h = new History<string>();
+		h.record('Type', 'a', 'ab', 'words:1', 0);
+		h.record('Type', 'ab', 'abc', 'words:1', 100);
+		h.seal('words:1');
+		h.record('Type', 'abc', 'abcd', 'words:1', 200);
+		expect(h.undo()?.state).toBe('abc');
+		expect(h.undo()?.state).toBe('a');
+		// Another key isn't affected.
+		h.record('Size', 's1', 's2', 'size', 300);
+		h.seal('words:1');
+		h.record('Size', 's2', 's3', 'size', 400);
+		expect(h.undo()?.state).toBe('s1');
+	});
+});

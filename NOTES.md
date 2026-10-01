@@ -2411,6 +2411,59 @@ Words have an editable drop shadow (`TextShadowSettings`, below Color in the tex
       picture;
     - a 900 px glowing title, turning and growing, playing over 20 fps with no sprite redrawn.
 
+## Typing words, live
+
+Words change as they're typed, in the settings' Words field and on the preview. Nothing needs
+confirming.
+
+- **Live:** every input calls `EditorStore.typeTextWords`.
+  - It keeps the words exactly as typed, trailing spaces and new lines too, so the field and the
+    words don't fight.
+  - The preview, the timeline's label and the other field follow straight away.
+  - Only that text item's sprite is redrawn (the sprite cache is per item).
+  - Words emptied while typing keep their last text until typing ends, then they're removed (as
+    before).
+- **Enter is a new line** on the preview too. It used to confirm; Shift + Enter made a new
+  line.
+- **Esc or a click elsewhere stops typing** and keeps what was typed. Esc used to cancel.
+  - Focusing the Words field while typing on the preview stops the preview's typing. Typing on
+    the preview updates the field.
+  - So the two are always in step.
+  - `finishTextWords` tidies the words (extra blank lines, trailing space) as part of the same
+    undo step.
+- **The preview's typing box** gets the words once, when it opens (`initialText`). After that only
+  the typing changes them, so the live updates never move the caret.
+- **Undo in bursts.**
+  - Typing uses one undo key per item (`words:<id>`). Changes less than a second apart merge, as
+    `History` already did.
+  - A pause of over a second starts a new step.
+  - So does ending typing: `History.seal` closes the run, on blur, Esc, a click elsewhere or
+    selecting something else.
+  - Inside the field itself, the browser's own undo still works letter by letter.
+- **Composed characters:** input events with `isComposing` are skipped, and `compositionend`
+  applies the result. So an input method never puts half a character (c before č) into the words.
+- **Autosave is now debounced:** 500 ms after the last change, and at most 2 s after the first
+  (`Autosaver`). It used to be 300 ms after the first.
+  - A burst of typing is one or two saves, not one per keystroke.
+  - Nothing is lost on an immediate reload: changes are in the project as they're typed, and
+    leaving the page writes the synchronous emergency copy (`pagehide` → `flushSave`).
+- **Tests:**
+  - Unit:
+    - `History.seal`;
+    - typing applied as typed, one step per burst, tidied and removed when empty at the end;
+    - the autosaver's debounce and its 2 s cap.
+  - E2E (`text-live.test.ts`):
+    - the field: the box widens per keystroke, the timeline label follows, Enter makes two
+      lines, Esc keeps it;
+    - the preview: live, Enter, the field and timeline follow, Esc and a click elsewhere keep it,
+      and the field takes over;
+    - undo by bursts (a 1.3 s pause splits them; Esc ends one) in both places;
+    - at most one save during quick typing, then one shortly after, and reloading right after
+      typing (field or preview) keeps it;
+    - Croatian letters typed, and composed through the input method (CDP `imeSetComposition`):
+      nothing halfway, the whole letter at the end.
+  - `phase4-words.test.ts` now stops typing with Esc, since Enter makes a new line.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

@@ -42,13 +42,26 @@
 
 <div class="fields">
 	<Field label="Words">
+		<!-- Live: every change shows on the preview and the timeline as it's typed (but not halfway
+			through a character being composed, like č). Enter is a new line; Esc or a click
+			elsewhere just stops typing. -->
 		<textarea
 			class="words"
 			rows="2"
 			value={item.text}
 			aria-label="Words"
-			oninput={(e) => editor.setTextWords(item.id, e.currentTarget.value, `words:${item.id}`)}
-			onblur={(e) => editor.setTextWords(item.id, e.currentTarget.value)}></textarea>
+			oninput={(e) => {
+				if (!(e as unknown as InputEvent).isComposing) editor.typeTextWords(item.id, e.currentTarget.value);
+			}}
+			oncompositionend={(e) => editor.typeTextWords(item.id, e.currentTarget.value)}
+			onkeydown={(e) => {
+				if (e.key === 'Escape') {
+					e.preventDefault();
+					e.stopPropagation();
+					e.currentTarget.blur();
+				}
+			}}
+			onblur={(e) => editor.finishTextWords(item.id, e.currentTarget.value)}></textarea>
 	</Field>
 
 	<Field label="Style">

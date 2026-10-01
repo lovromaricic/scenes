@@ -43,8 +43,8 @@
 		{
 			title: 'Words',
 			items: [
-				[['Enter'], 'Type into the selected words'],
-				[['Shift', 'Enter'], 'New line while typing'],
+				[['Enter'], 'Type into the selected words (while typing: a new line)'],
+				[['Esc'], 'Stop typing (what’s typed is kept; it shows as you type)'],
 				[['↑', '↓'], 'Nudge the selected words (Shift for bigger steps)']
 			]
 		},

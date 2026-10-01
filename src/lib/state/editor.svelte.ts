@@ -259,6 +259,11 @@ interface EditOptions {
  */
 let hashesBackfilled = false;
 
+/** Typing words: one undo key per text item (see typeTextWords). */
+const TextTyping = {
+	key: (id: string) => `words:${id}`
+};
+
 export class EditorStore {
 	project = $state<Project>(newProject());
 	selectedId = $state<string | null>(null);
@@ -2856,6 +2861,31 @@ export class EditorStore {
 		});
 	}
 
+	/**
+	 * Words being typed (in the settings or on the preview), on every change: kept exactly as
+	 * typed (spaces and new lines at the end too), so the preview and the timeline follow along.
+	 * A burst of typing is one undo step: changes less than a second apart merge, until typing
+	 * ends (finishTextWords). While the words are empty, the last ones stay until typing ends.
+	 */
+	typeTextWords(id: string, text: string): void {
+		const current = this.project.texts.find((t) => t.id === id);
+		const raw = text.replace(/\r/g, '');
+		if (!current || !raw.trim() || raw === current.text) return;
+		this.updateText('Type words', id, (t) => ({ ...t, text: raw }), TextTyping.key(id));
+	}
+
+	/**
+	 * Typing ended (Esc, a click elsewhere, the field losing focus): tidy the words (as part of
+	 * the same undo step), or remove them if they're empty, and end the undo step.
+	 */
+	finishTextWords(id: string, text?: string): void {
+		const current = this.project.texts.find((t) => t.id === id);
+		if (!current) return;
+		this.setTextWords(id, text ?? current.text, TextTyping.key(id));
+		if (!(text ?? current.text).trim()) this.deleteText(id);
+		this.history.seal(TextTyping.key(id));
+	}
+
 	/** Change the words. Empty text removes the item. */
 	setTextWords(id: string, text: string, key?: string): void {
 		const current = this.project.texts.find((t) => t.id === id);
@@ -2951,9 +2981,12 @@ export class EditorStore {
 	}
 
 	stopEditingText(): void {
-		if (!this.editingTextId) return;
+		const id = this.editingTextId;
+		if (!id) return;
 		this.editingTextId = null;
 		this.player.hideText(null);
+		// Whatever was typed is already in (it's applied as it's typed); just end the undo step.
+		this.history.seal(TextTyping.key(id));
 	}
 
 	/** Change the project's shape, size or frame rate. */

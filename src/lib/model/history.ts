@@ -50,6 +50,15 @@ export class History<T> {
 		this.future = [];
 	}
 
+	/**
+	 * End a run of merged edits with this key (e.g. typing stopped), so the next one starts a new
+	 * step even if it comes quickly.
+	 */
+	seal(key: string): void {
+		const last = this.past.at(-1);
+		if (last?.key === key) last.key = undefined;
+	}
+
 	/** Returns the state to restore, or null if there is nothing to undo. */
 	undo(): { state: T; label: string } | null {
 		const entry = this.past.pop();

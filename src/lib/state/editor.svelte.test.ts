@@ -258,3 +258,35 @@ describe('EditorStore text shadows', () => {
 	});
 });
 
+describe('EditorStore typing words', () => {
+	it('applies every change as typed, one undo step per burst, tidied when typing ends', () => {
+		const store = setup();
+		store.addText('caption');
+		const id = store.selectedId!;
+		store.finishTextWords(id, 'Hi');
+		store.stopEditingText();
+		for (const t of ['Hi ', 'Hi t', 'Hi th', 'Hi there\n']) {
+			store.typeTextWords(id, t);
+			expect(store.project.texts[0].text).toBe(t); // as typed, trailing space and line too
+		}
+		// Empty while typing: the last words stay (they're only removed when typing ends).
+		store.typeTextWords(id, '');
+		expect(store.project.texts[0].text).toBe('Hi there\n');
+		store.finishTextWords(id, 'Hi there\n');
+		expect(store.project.texts[0].text).toBe('Hi there');
+		// The whole burst (and the tidying) is one step.
+		store.undo();
+		expect(store.project.texts[0].text).toBe('Hi');
+		store.redo();
+		expect(store.project.texts[0].text).toBe('Hi there');
+		// After it ended, more typing is a new step.
+		store.typeTextWords(id, 'Hi there!');
+		store.undo();
+		expect(store.project.texts[0].text).toBe('Hi there');
+		store.redo();
+		// Typing ending with nothing left removes the words.
+		store.finishTextWords(id, '  ');
+		expect(store.project.texts).toHaveLength(0);
+	});
+});
+

@@ -54,31 +54,39 @@ export const emergencyCopy = {
 };
 
 /**
- * Saves the project to IndexedDB shortly after every change (within `delayMs`, even during a burst of
- * edits), and immediately when the page is hidden or closed. Saves never overlap; the newest
- * snapshot always wins.
+ * Saves the project to IndexedDB shortly after changes stop (`delayMs` after the last one, so a
+ * burst of typing is one save), but never more than `maxWaitMs` after the first unsaved change
+ * (so a long burst still gets saved), and immediately when the page is hidden or closed. Saves
+ * never overlap; the newest snapshot always wins.
  */
 export class Autosaver {
 	private timer: ReturnType<typeof setTimeout> | undefined;
+	/** When the oldest unsaved change was made. */
+	private firstAt: number | null = null;
 	private pending: ProjectRecord | null = null;
 	private inFlight: Promise<void> | null = null;
 
 	constructor(
 		private readonly onStatus: (status: SaveStatus) => void,
-		private readonly delayMs = 300,
-		private readonly save: (record: ProjectRecord) => Promise<void> = saveProject
+		private readonly delayMs = 500,
+		private readonly save: (record: ProjectRecord) => Promise<void> = saveProject,
+		private readonly maxWaitMs = 2000
 	) {}
 
 	schedule(record: ProjectRecord): void {
 		this.pending = record;
-		// Save at most `delayMs` after the first unsaved change, even while changes keep coming.
-		this.timer ??= setTimeout(() => void this.flush(), this.delayMs);
+		const now = Date.now();
+		this.firstAt ??= now;
+		clearTimeout(this.timer);
+		const wait = Math.max(0, Math.min(this.delayMs, this.firstAt + this.maxWaitMs - now));
+		this.timer = setTimeout(() => void this.flush(), wait);
 	}
 
 	/** Save now if anything is waiting. Resolves when everything scheduled so far is stored. */
 	async flush(): Promise<void> {
 		clearTimeout(this.timer);
 		this.timer = undefined;
+		this.firstAt = null;
 		if (this.inFlight) await this.inFlight;
 		const record = this.pending;
 		if (!record) return;
