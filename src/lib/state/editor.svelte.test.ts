@@ -159,6 +159,50 @@ describe('EditorStore animatable values', () => {
 		expect(store.itemValues(id, 3)!.rotation).toBe(90);
 	});
 
+	it('moves a layer just outside each edge, keeping the other coordinate (a keyframe when animated)', () => {
+		const store = setup();
+		const { width: W, height: H } = store.project.format;
+		const id = store.addCardOverlay(1)!;
+		store.setOverlayStyle(id, { ...store.project.overlays[0].style, shadow: 'off' });
+		store.setOverlayBox(id, { x: 0.3, y: 0.2, w: 0.2, h: 0.1 });
+		store.seek(2);
+		store.moveOffscreen(id, 'left');
+		let v = store.itemValues(id)!;
+		expect(v.x).toBeCloseTo(-0.1);
+		expect(v.y).toBeCloseTo(0.25);
+		store.moveOffscreen(id, 'bottom');
+		v = store.itemValues(id)!;
+		expect(v.x).toBeCloseTo(-0.1);
+		expect(v.y).toBeCloseTo(1.05);
+		// Turned a quarter, it's as wide as it was tall: its on-screen box sits outside.
+		store.setItemValues(id, { rotation: 90 });
+		store.moveOffscreen(id, 'right');
+		expect(store.itemValues(id)!.x * W).toBeCloseTo(W + (0.1 * H) / 2);
+		// A shadow is counted too, so it doesn't peek in.
+		store.setOverlayStyle(id, { ...store.project.overlays[0].style, shadow: 'soft' });
+		store.moveOffscreen(id, 'top');
+		const e = store.itemExtent(id)!;
+		expect(e.hh).toBeGreaterThan((0.2 * W) / 2);
+		expect(store.itemValues(id)!.y * H + e.hh).toBeCloseTo(0);
+		expect(store.project.overlays[0].keyframes).toBeUndefined();
+
+		// Animated: the keyframe at the playhead changes, nothing else.
+		store.edit('Keyframes', (p) => ({
+			...p,
+			overlays: p.overlays.map((x) => ({
+				...x,
+				keyframes: [{ id: 'a', time: 0, values: { ...store.itemValues(id, 1)!, x: 0.5, y: 0.5 }, easing: { kind: 'bezier', x1: 0, y1: 0, x2: 1, y2: 1 } }]
+			}))
+		}));
+		store.seek(3);
+		store.moveOffscreen(id, 'left');
+		const kfs = store.project.overlays[0].keyframes!;
+		expect(kfs.map((k) => k.time)).toEqual([0, 2]);
+		expect(kfs[0].values.x).toBe(0.5);
+		expect(kfs[1].values.x).toBeLessThan(0);
+		expect(kfs[1].values.y).toBe(0.5);
+	});
+
 	it('trimming from the left keeps the motion where it was; moving takes it along', () => {
 		const store = setup();
 		const id = store.addCardOverlay(1)!;

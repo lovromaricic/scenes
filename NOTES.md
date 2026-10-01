@@ -2199,8 +2199,109 @@ project (undo history, autosave, playhead) once, when the drag ends.
     - A scene's end trimmed: the card shrinks smoothly to whole frames, one save, one undo step.
   - `sound-editing`'s label check now expects "10.0 s" instead of "0:10".
 - **Not part of this fix:** a lint pass over `src/lib` found 25 older errors (unused imports,
-  `goto` without `resolve`, plain Map/Set in the store), flagged as a separate cleanup task. The
-  files touched here lint clean.
+  `goto` without `resolve`, plain Map/Set in the store), flagged as a separate cleanup task (since
+  done). The files touched here lint clean.
+
+## Objects outside the frame (the pasteboard)
+
+Layers, cards and words can sit anywhere, also completely outside the frame, so they can slide
+in from off-screen with keyframes.
+
+### Limits removed
+
+- Words were held between 4% and 96% of the frame (dragging and arrow keys in `TextOverlay`).
+  That was the only limit: layers (`dragBox` with `bounded: false`), card rectangles and the
+  position fields already took any value. Keyframe values were never clamped (only opacity, and
+  scale above 0.01).
+
+### The stage is a pasteboard
+
+- **How it's drawn.** The preview canvas stays exactly the frame, as before. Behind it, a second,
+  transparent canvas covers the whole stage (`canvas.pasteboard`, its own `Compositor`).
+  - After each preview frame, the player draws on it only the pictures and words that reach
+    outside the frame (`reachesOutside` in `render/visuals.ts`, counting rotation and shadows),
+    at 30% of their opacity (`Player.PASTEBOARD_FADE`).
+  - It uses the same draws as the preview, placed with a view transform (`uView` in the overlay
+    and sprite shaders; `Compositor.renderPasteboard`).
+  - The opaque frame canvas covers the middle, so what shows is the faded part outside.
+  - When nothing is outside, it's cleared once and then left alone, so ordinary projects cost
+    nothing extra.
+- **Only in the editor.** Watch draws on its own canvas (the pasteboard is skipped while that's
+  attached). Exports, GIFs, frames, overlays-only and home pictures are drawn on frame-sized
+  canvases, so they show only what's inside the frame.
+- **Pan and zoom** (`Stage.svelte`):
+  - The view is Fit (`view = null`: the old CSS sizing, unchanged) or a zoom in screen pixels per
+    project pixel plus the frame centre's offset.
+  - Scroll pans; Ctrl/Cmd + scroll (or a pinch) zooms around the pointer. The wheel listener isn't
+    passive, so the page doesn't scroll or zoom instead. The reframe view keeps its own
+    scroll-to-zoom.
+  - Space + drag (or the middle button) pans.
+  - The zoom menu at the right of the play controls has Fit, 50%, 100%, Zoom in and Zoom out.
+  - Zoom is limited to 1/8 of Fit up to 800%, and the frame can go about one frame-width past
+    the stage's edges.
+- **Space still plays.** Held over the stage, Space waits for the release: if there was no drag
+  in between, it plays or pauses. Anywhere else (and in dialogs, text fields, crop mode or while
+  recording) Space works as before.
+- **Frame edge.** A thin outline marks the frame. The preview's corners are now nearly square
+  (3 px), so the rounded corners don't hide what's at the frame's edge. The empty-project drop
+  area keeps its round dashed look.
+- **Clipping to the stage.** The preview, outline and the boxes, handles, motion path and card
+  rectangle are cut off at the stage's edges (a `clip-path` from `StageView`,
+  `editor/stageView.svelte.ts`).
+  - Otherwise a box far outside the frame would sit over the storyboard or the side panels and
+    catch their clicks. (Card rectangles overhanging the frame used to do this.)
+  - Toolbars and popovers are not cut off. The words' toolbar moved out of the words' box, so it
+    is also no longer scaled or turned with them.
+  - A selected object's toolbar is pinned inside the stage, so it's reachable wherever the object
+    is (`StageView.pin`).
+- **Selecting outside the frame.** Boxes are positioned in frame coordinates and simply extend
+  past the preview. So selecting, dragging, resizing, turning and the motion path work the same
+  outside it. Clicking the empty pasteboard deselects.
+
+### Snapping and "Move off-screen"
+
+- **Snapping just outside each edge.**
+  - Layers: moving already snapped any edge (left, middle or right) to the frame's edges. So the
+    right edge also snaps onto the frame's left edge: the layer is then just outside.
+  - Words: they now snap the same way (`snapOutside`), within 8 screen pixels, as well as to the
+    centre.
+  - Alt turns snapping off for both.
+- **Move off-screen** (layer and words settings: Left, Right, Top, Bottom).
+  - It puts the object just outside that edge, keeping its other coordinate
+    (`EditorStore.moveOffscreen`, `model/offscreen.ts`).
+  - "Just outside" uses the on-screen size at the playhead (`itemExtent`). That's the scale,
+    the rotation's bounding box, and a layer's shadow or the words' outline and shadow, so
+    nothing peeks in.
+  - It's an ordinary `setItemValues`: with keyframes it sets the one at the playhead.
+
+### Tests
+
+- **Unit:**
+  - `offscreen.test.ts`: the turned box, the off-screen centre, snapping just outside, and
+    layers dragged anywhere with the far edge snapping onto the frame.
+  - `visuals.test.ts`: `reachesOutside`.
+  - The store: `moveOffscreen` on each side, turned, with a shadow, and with keyframes.
+- **E2E (`pasteboard.test.ts`):**
+  - Words dragged completely off the left edge: x < 0, about 30% opacity on the pasteboard,
+    still selectable there.
+    - Keyframed from there to the centre, they straddle the edge on the way.
+    - In the saved MP4, the left edge is pure red at the start, the box arrives in the middle,
+      and it crosses the edge in between.
+  - A card (Right), a photo (Top) and a video (Bottom) moved off-screen with the buttons:
+    - each keyframe at the playhead is updated, not added, and each shows faded outside;
+    - in the saved MP4, nothing is visible at the start (right up to the edges), all three are
+      in place at 2 s, and the card is half-way in at 1 s.
+  - Snapping just outside the left and bottom edges (a card) and the right edge (words).
+  - Pan and zoom:
+    - Ctrl + scroll keeps the point under the pointer.
+    - Scroll and Space + drag pan by exactly the drag, and Space alone still plays and pauses.
+    - 50% and 100% are true sizes; at 100% the frame is cut off at the stage. Fit restores the
+      exact original box.
+  - A box past the stage's edge doesn't catch clicks there.
+- **Existing tests changed:**
+  - `selection.test.ts` clicks the visible corner of a card rectangle: it's been resized to
+    reach past the stage, where it's now cut off.
+  - The zoom button's name is "Stage zoom: …", so the storyboard's "Fit" button stays unique.
 
 ## Known issues / ideas
 
@@ -2213,6 +2314,8 @@ project (undo history, autosave, playhead) once, when the drag ends.
 - Stepper hold-to-repeat works with a pointer; keyboard users press repeatedly.
 - The Words, Sound and Looks panels are still placeholders (Phases 4–6). Clips works.
 - Mood swatches are stored per scene but only change the picture from Phase 6.
+- Pasteboard ideas: guides at the frame's edges while snapping words, a "show everything" zoom
+  that fits all objects, and keeping the zoom per project.
 - Framing ideas: rotate, "follow the subject" pan over time (Ken Burns), per-scene background colour.
 - The reframe ghost uses the preview-quality frame (≤1280px); fine for positioning, soft when
   zoomed far in.
@@ -2263,6 +2366,9 @@ What you can do:
   - a motion path on the preview that can be dragged to move the whole animation;
   - markers on the timeline to select, drag, delete, ease and copy/paste;
   - volume points (a rubber band) on anything with sound, shaping the mix and the waveform.
+- Put layers and words anywhere, also outside the frame: the stage around the preview is a
+  pasteboard showing them faded, it pans and zooms, edges snap just outside the frame, and "Move
+  off-screen" sets up slide-ins. Saved videos show only the frame.
 - Save the whole video or a range (I/O) as a video, a GIF (or animated WebP), just the sound
   (WAV, M4A, MP3), the current frame (PNG/JPG, also with F or a right-click), or only the
   overlays on a transparent background (WebM with alpha where possible, or PNG frames). Every

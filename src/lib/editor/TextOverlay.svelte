@@ -23,6 +23,8 @@
 	import { useEditor } from '$lib/state/context';
 	import TextStylePicker from './TextStylePicker.svelte';
 	import KeyframeButtons from './KeyframeButtons.svelte';
+	import { useStageView } from './stageView.svelte';
+	import { snapOutside, turnedHalf } from '$lib/model/offscreen';
 
 	interface Props {
 		width: number;
@@ -32,8 +34,11 @@
 	let { width, height }: Props = $props();
 
 	const editor = useEditor();
+	const stage = useStageView();
 
 	const SNAP = 0.015;
+	/** Snapping just outside the frame's edges, in screen pixels. */
+	const SNAP_OUTSIDE_PX = 8;
 
 	const visible = $derived(
 		width > 0
@@ -122,11 +127,27 @@
 			editor.beginGesture();
 			popover = null;
 		}
-		let x = clamp(d.x0 + dx, 0.04, 0.96);
-		let y = clamp(d.y0 + dy, 0.04, 0.96);
+		// Anywhere, also outside the frame (to slide in from off-screen).
+		let x = d.x0 + dx;
+		let y = d.y0 + dy;
 		guides = { x: Math.abs(x - 0.5) < SNAP, y: Math.abs(y - 0.5) < SNAP };
 		if (guides.x) x = 0.5;
 		if (guides.y) y = 0.5;
+		// Just outside an edge: its far edge on the frame's edge (a clean off-screen start).
+		const item = editor.project.texts.find((t) => t.id === d.id);
+		if (item && !event.altKey) {
+			const b = box(item);
+			const v = b.values;
+			const half = turnedHalf(
+				b.width * (v?.scaleX ?? 1),
+				b.height * (v?.scaleY ?? 1),
+				v?.rotation ?? 0
+			);
+			const sx = guides.x ? null : snapOutside(x * width, half.hw, width, SNAP_OUTSIDE_PX);
+			const sy = guides.y ? null : snapOutside(y * height, half.hh, height, SNAP_OUTSIDE_PX);
+			if (sx !== null) x = sx / width;
+			if (sy !== null) y = sy / height;
+		}
 		// At the playhead: with keyframes, only the keyframe there moves.
 		editor.liveItemValues(d.id, { x, y }, d.kfId);
 	}
@@ -186,11 +207,7 @@
 		event.preventDefault();
 		const step = event.shiftKey ? 0.05 : 0.01;
 		const v = editor.itemValues(item.id) ?? item;
-		editor.setTextPosition(
-			item.id,
-			clamp(v.x + dir[0] * step, 0.04, 0.96),
-			clamp(v.y + dir[1] * step, 0.04, 0.96)
-		);
+		editor.setTextPosition(item.id, v.x + dir[0] * step, v.y + dir[1] * step);
 	}
 
 	// ─── Typing in place ────────────────────────────────────────────────────────────────────
@@ -275,15 +292,12 @@
 	}
 
 	const animationOptions = TEXT_ANIMATIONS.map((a) => ({ value: a.id, label: a.label }));
-
-	function clamp(v: number, lo: number, hi: number) {
-		return Math.min(hi, Math.max(lo, v));
-	}
 </script>
 
 <svelte:window onpointerdown={onWindowPointerDown} onkeydowncapture={onWindowKeydown} />
 
-<div class="overlay" class:dragging={!!drag}>
+<!-- Words may sit outside the frame: their boxes are cut off at the stage's edges. -->
+<div class="overlay" class:dragging={!!drag} style:clip-path={stage.clipPath}>
 	{#if guides.x}<span class="guide vertical" aria-hidden="true"></span>{/if}
 	{#if guides.y}<span class="guide horizontal" aria-hidden="true"></span>{/if}
 
@@ -352,37 +366,62 @@
 					Font missing
 				</button>
 			{/if}
-			{#if isSelected && !isEditing && !drag && selected}
-				<div class="toolbar-anchor" class:below={b.top < 92}>
-					<div class="toolbar-row">
-						<FloatingToolbar label="Text options" actions={actions(selected)} />
-						<KeyframeButtons id={selected.id} dark />
-					</div>
-					{#if popover === 'style'}
-						<div class="popover" role="dialog" aria-label="Text style">
-							<TextStylePicker
-								compact
-								value={selected.style}
-								onchange={(style) => editor.setTextStyle(selected.id, style)}
-							/>
-						</div>
-					{:else if popover === 'animate'}
-						<div class="popover narrow" role="dialog" aria-label="Animation">
-							<p class="popover-label">How the words appear</p>
-							<ChipGroup
-								label="Animation"
-								size="sm"
-								options={animationOptions}
-								value={selected.animation}
-								onchange={(a: TextAnimation) => editor.setTextAnimation(selected.id, a)}
-							/>
-						</div>
-					{/if}
-				</div>
-			{/if}
 		</div>
 	{/each}
 </div>
+
+{#each visible as item (item.id)}
+	{@const isSelected = editor.selectedId === item.id}
+	{@const isEditing = editor.editingTextId === item.id}
+	{#if isSelected && !isEditing && !drag && selected}
+		{@const b = box(item)}
+		{@const sx = b.values?.scaleX ?? 1}
+		{@const sy = b.values?.scaleY ?? 1}
+		{@const pinned = stage.pin(
+			b.left + (b.width * (1 - sx)) / 2,
+			b.top + (b.height * (1 - sy)) / 2,
+			b.width * sx,
+			b.height * sy
+		)}
+		{@const left = pinned.left}
+		{@const top = pinned.top}
+		<!-- Outside the words' box: not cut off with it at the stage's edges, and not turned. -->
+		<div
+			class="toolbar-holder"
+			style:left="{left}px"
+			style:top="{top}px"
+			style:width="{b.width * sx}px"
+			style:height="{b.height * sy}px"
+		>
+			<div class="toolbar-anchor" class:below={stage.cramped(top)}>
+				<div class="toolbar-row">
+					<FloatingToolbar label="Text options" actions={actions(selected)} />
+					<KeyframeButtons id={selected.id} dark />
+				</div>
+				{#if popover === 'style'}
+					<div class="popover" role="dialog" aria-label="Text style">
+						<TextStylePicker
+							compact
+							value={selected.style}
+							onchange={(style) => editor.setTextStyle(selected.id, style)}
+						/>
+					</div>
+				{:else if popover === 'animate'}
+					<div class="popover narrow" role="dialog" aria-label="Animation">
+						<p class="popover-label">How the words appear</p>
+						<ChipGroup
+							label="Animation"
+							size="sm"
+							options={animationOptions}
+							value={selected.animation}
+							onchange={(a: TextAnimation) => editor.setTextAnimation(selected.id, a)}
+						/>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+{/each}
 
 <style>
 	.toolbar-row {
@@ -475,7 +514,13 @@
 	.typing:focus-visible {
 		box-shadow: none;
 	}
+	.toolbar-holder {
+		position: absolute;
+		z-index: 7;
+		pointer-events: none;
+	}
 	.toolbar-anchor {
+		pointer-events: auto;
 		position: absolute;
 		/* Clear of the rotation handle above the box. */
 		bottom: calc(100% + 40px);

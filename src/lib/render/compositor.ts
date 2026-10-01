@@ -173,11 +173,13 @@ uniform vec2 uViewport;
 uniform vec2 uCenter;
 uniform vec2 uHalf;
 uniform vec2 uRotation; // cos, sin (clockwise on screen)
+uniform vec3 uView; // where the frame is on this canvas: offset x, y and scale (see renderPasteboard)
 out vec2 vUv;
 void main() {
 	vUv = vec2(aPos.x * 0.5 + 0.5, aPos.y * 0.5 + 0.5);
 	vec2 local = vec2(aPos.x, -aPos.y) * uHalf;
 	vec2 px = uCenter + vec2(local.x * uRotation.x - local.y * uRotation.y, local.x * uRotation.y + local.y * uRotation.x);
+	px = uView.xy + px * uView.z;
 	gl_Position = vec4(px.x / uViewport.x * 2.0 - 1.0, 1.0 - px.y / uViewport.y * 2.0, 0.0, 1.0);
 }`;
 
@@ -203,10 +205,12 @@ uniform vec2 uCenter;
 uniform vec2 uHalf;
 uniform float uMargin;
 uniform vec2 uRotation; // cos, sin (clockwise on screen)
+uniform vec3 uView; // where the frame is on this canvas: offset x, y and scale (see renderPasteboard)
 out vec2 vLocal;
 void main() {
 	vLocal = aPos * (uHalf + vec2(uMargin));
 	vec2 px = uCenter + vec2(vLocal.x * uRotation.x - vLocal.y * uRotation.y, vLocal.x * uRotation.y + vLocal.y * uRotation.x);
+	px = uView.xy + px * uView.z;
 	gl_Position = vec4(px.x / uViewport.x * 2.0 - 1.0, 1.0 - px.y / uViewport.y * 2.0, 0.0, 1.0);
 }`;
 
@@ -290,12 +294,13 @@ export class Compositor {
 	private blur!: { program: WebGLProgram; u: Uniforms<'rect' | 'image' | 'texel'> };
 	private sprite!: {
 		program: WebGLProgram;
-		u: Uniforms<'viewport' | 'center' | 'half' | 'rotation' | 'opacity' | 'image'>;
+		u: Uniforms<'viewport' | 'view' | 'center' | 'half' | 'rotation' | 'opacity' | 'image'>;
 	};
 	private overlay!: {
 		program: WebGLProgram;
 		u: Uniforms<
 			| 'viewport'
+			| 'view'
 			| 'center'
 			| 'half'
 			| 'rotation'
@@ -320,6 +325,13 @@ export class Compositor {
 	private spriteTextures = new Map<string, { texture: WebGLTexture; used: number }>();
 	private frameCount = 0;
 	lost = false;
+
+	/**
+	 * Where frame pixels go on this canvas (x, y, scale) and how much visuals are faded: the
+	 * identity and 1, except while drawing the editor's pasteboard.
+	 */
+	private view: [number, number, number] = [0, 0, 1];
+	private fade = 1;
 
 	/** Clear to transparent (not black) where nothing is drawn: "Overlays only" exports. */
 	private readonly transparent: boolean;
@@ -386,6 +398,7 @@ export class Compositor {
 		this.blur = this.program(RECT_VS, BLUR_FS, { rect: 'uRect', image: 'uImage', texel: 'uTexel' });
 		this.sprite = this.program(SPRITE_VS, SPRITE_FS, {
 			viewport: 'uViewport',
+			view: 'uView',
 			center: 'uCenter',
 			half: 'uHalf',
 			rotation: 'uRotation',
@@ -395,6 +408,7 @@ export class Compositor {
 
 		this.overlay = this.program(OVERLAY_VS, OVERLAY_FS, {
 			viewport: 'uViewport',
+			view: 'uView',
 			center: 'uCenter',
 			half: 'uHalf',
 			rotation: 'uRotation',
@@ -528,6 +542,32 @@ export class Compositor {
 		gl.bindVertexArray(null);
 	}
 
+	/**
+	 * The editor's pasteboard (a transparent canvas behind the frame, covering the stage): only
+	 * the given pictures and words, faded by `fade`, with a frame pixel p drawn at
+	 * view.x + p × view.scale here. The frame itself (drawn by the preview's own compositor) covers
+	 * the middle, so what shows is the parts outside it. Never used for Watch or saving.
+	 */
+	renderPasteboard(visuals: VisualDraw[], view: { x: number; y: number; scale: number }, fade: number): void {
+		if (this.lost) return;
+		const gl = this.gl;
+		this.frameCount++;
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+		gl.clearColor(0, 0, 0, 0);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+		gl.bindVertexArray(this.quad);
+		this.view = [view.x, view.y, view.scale];
+		this.fade = fade;
+		try {
+			this.drawVisuals(visuals);
+		} finally {
+			this.view = [0, 0, 1];
+			this.fade = 1;
+			gl.bindVertexArray(null);
+		}
+	}
+
 	/** Texture slots for overlays start after the scenes' (0, 1). */
 	private static readonly OVERLAY_SLOT = 8;
 
@@ -556,6 +596,7 @@ export class Compositor {
 		const { program, u } = this.overlay;
 		gl.useProgram(program);
 		gl.uniform2f(u.viewport, W, H);
+		gl.uniform3f(u.view, ...this.view);
 		gl.uniform1i(u.image, 0);
 		this.bindImage(slot, o.image);
 		const s = o.shadow;
@@ -575,7 +616,7 @@ export class Compositor {
 		const oy = s?.offsetY ?? 0;
 		gl.uniform2f(u.shadowOffset, ox * cos + oy * sin, -ox * sin + oy * cos);
 		gl.uniform1f(u.shadowAlpha, s?.alpha ?? 0);
-		gl.uniform1f(u.opacity, o.opacity);
+		gl.uniform1f(u.opacity, o.opacity * this.fade);
 		gl.uniform4f(u.uv, ...o.uv);
 		const g = o.grade;
 		gl.uniform3f(u.gain, g.gain[0], g.gain[1], g.gain[2]);
@@ -669,11 +710,12 @@ export class Compositor {
 		gl.uniform1i(u.image, 0);
 		gl.bindTexture(gl.TEXTURE_2D, this.spriteTexture(t.key, t.image));
 		gl.uniform2f(u.viewport, W, H);
+		gl.uniform3f(u.view, ...this.view);
 		gl.uniform2f(u.center, t.cx, t.cy);
 		gl.uniform2f(u.half, (t.width * t.scale * (t.scaleX ?? 1)) / 2, (t.height * t.scale * (t.scaleY ?? 1)) / 2);
 		const r = t.rotation ?? 0;
 		gl.uniform2f(u.rotation, Math.cos(r), Math.sin(r));
-		gl.uniform1f(u.opacity, t.opacity);
+		gl.uniform1f(u.opacity, t.opacity * this.fade);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 	}
 

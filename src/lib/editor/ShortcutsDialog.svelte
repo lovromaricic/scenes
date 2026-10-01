@@ -49,6 +49,15 @@
 			]
 		},
 		{
+			title: 'Around the picture',
+			items: [
+				[['Scroll'], 'Move around the stage (things can sit outside the frame)'],
+				[['Space', 'Drag'], 'Move around the stage'],
+				[[mod, 'Scroll'], 'Zoom in or out (the zoom menu’s Fit resets it)'],
+				[['Alt', 'Drag'], 'Move without snapping']
+			]
+		},
+		{
 			title: 'Anytime',
 			items: [
 				[[mod, 'Z'], 'Undo'],

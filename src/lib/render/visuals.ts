@@ -81,3 +81,39 @@ export function textSharpness(maxScale: number): number {
 	if (maxScale <= 1.05) return 1;
 	return Math.min(4, Math.ceil(maxScale * 2) / 2);
 }
+
+/**
+ * Whether a drawn picture or words reaches outside a W × H frame (counting its rotation, and a
+ * layer's shadow). Only these are drawn on the editor's pasteboard, faded.
+ */
+export function reachesOutside(v: VisualDraw, W: number, H: number): boolean {
+	let cx: number;
+	let cy: number;
+	let w: number;
+	let h: number;
+	let margin = 0;
+	let rotation: number;
+	if (v.type === 'overlay') {
+		const d = v.draw;
+		if (d.opacity <= 0.001) return false;
+		cx = d.rect.x + d.rect.w / 2;
+		cy = d.rect.y + d.rect.h / 2;
+		w = d.rect.w;
+		h = d.rect.h;
+		rotation = d.rotation ?? 0;
+		if (d.shadow) margin = d.shadow.blur + Math.hypot(d.shadow.offsetX, d.shadow.offsetY);
+	} else {
+		const d = v.draw;
+		if (d.opacity <= 0.001) return false;
+		cx = d.cx;
+		cy = d.cy;
+		w = d.width * d.scale * (d.scaleX ?? 1);
+		h = d.height * d.scale * (d.scaleY ?? 1);
+		rotation = d.rotation ?? 0;
+	}
+	const c = Math.abs(Math.cos(rotation));
+	const s = Math.abs(Math.sin(rotation));
+	const hw = (w * c + h * s) / 2 + margin;
+	const hh = (w * s + h * c) / 2 + margin;
+	return cx - hw < 0 || cy - hh < 0 || cx + hw > W || cy + hh > H;
+}

@@ -16,6 +16,8 @@
 	import FramingOverlay from './FramingOverlay.svelte';
 	import CropOverlay from './CropOverlay.svelte';
 	import CardRectOverlay from './CardRectOverlay.svelte';
+	import { DragScope } from '$lib/ui/drag';
+	import { setStageView, StageView } from './stageView.svelte';
 
 	interface Props {
 		onpick: () => void;
@@ -63,8 +65,187 @@
 	function onstagepointerdown(event: PointerEvent) {
 		if (event.button !== 0 || editor.cropping) return;
 		const target = event.target as Element;
-		if (target === event.currentTarget || target.matches('.viewport, .controls, .clock')) editor.deselect();
+		if (target === event.currentTarget || target.matches('.viewport, .pasteboard, .controls, .clock'))
+			editor.deselect();
 	}
+
+	// ─── The pasteboard: panning and zooming the stage ──────────────────────────────────────
+	/*
+	 * Objects may sit anywhere, also outside the frame. The stage around the preview is a
+	 * pasteboard showing them faded (drawn by the player on a canvas behind the preview), and it
+	 * can be panned (scroll, or Space + drag) and zoomed (Ctrl/Cmd + scroll, or the zoom menu).
+	 */
+	const stageView = new StageView();
+	setStageView(stageView);
+
+	let viewportEl = $state<HTMLDivElement>();
+	let previewEl = $state<HTMLDivElement>();
+	let pasteboard = $state<HTMLCanvasElement>();
+	const format = $derived(editor.project.format);
+
+	/**
+	 * How the frame is shown: null is Fit (as large as the stage allows, following its size);
+	 * otherwise its zoom (screen pixels per project pixel) and its centre's offset from the
+	 * stage's centre, in screen pixels.
+	 */
+	let view = $state<{ zoom: number; x: number; y: number } | null>(null);
+	const MAX_ZOOM = 8;
+	/** Largest pasteboard drawing buffer (its longer side), to keep it light. */
+	const MAX_PASTEBOARD = 2560;
+
+	/** The zoom at which the frame fits the stage. */
+	function fitZoom(): number {
+		if (!viewportEl) return 1;
+		const cs = getComputedStyle(viewportEl);
+		const w = viewportEl.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+		const h = viewportEl.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+		return Math.max(1e-3, Math.min(w / format.width, h / format.height));
+	}
+
+	/** Keep the frame within reach: at most about a frame's width beyond the stage's edges. */
+	function reach(v: { zoom: number; x: number; y: number }) {
+		const zoom = Math.min(MAX_ZOOM, Math.max(fitZoom() / 8, v.zoom));
+		const vw = viewportEl?.clientWidth ?? 0;
+		const vh = viewportEl?.clientHeight ?? 0;
+		const lx = format.width * zoom + vw / 2;
+		const ly = format.height * zoom + vh / 2;
+		return { zoom, x: Math.min(lx, Math.max(-lx, v.x)), y: Math.min(ly, Math.max(-ly, v.y)) };
+	}
+
+	const current = () => view ?? { zoom: fitZoom(), x: 0, y: 0 };
+
+	function fit() {
+		view = null;
+	}
+
+	/** Zoom to `zoom`, keeping the point under (clientX, clientY) in place (default: the middle). */
+	function zoomTo(zoom: number, at?: { x: number; y: number }) {
+		if (!viewportEl) return;
+		const cur = current();
+		const next = reach({ ...cur, zoom });
+		const k = next.zoom / cur.zoom;
+		const r = viewportEl.getBoundingClientRect();
+		const ax = at ? at.x - (r.left + r.width / 2) : 0;
+		const ay = at ? at.y - (r.top + r.height / 2) : 0;
+		view = reach({ zoom: next.zoom, x: ax - (ax - cur.x) * k, y: ay - (ay - cur.y) * k });
+	}
+
+	function panBy(dx: number, dy: number) {
+		const cur = current();
+		view = reach({ ...cur, x: cur.x + dx, y: cur.y + dy });
+	}
+
+	const zoomLabel = $derived(view ? `${Math.round(view.zoom * 100)}%` : 'Fit');
+
+	// Scroll pans, Ctrl/Cmd + scroll (or a pinch) zooms. Not passive, so the page doesn't scroll
+	// or zoom instead.
+	$effect(() => {
+		const el = viewportEl;
+		if (!el) return;
+		const onwheel = (event: WheelEvent) => {
+			if (event.defaultPrevented || empty || !editor.ready || editor.cropping) return;
+			// The reframe view zooms the picture itself.
+			if (framing && (event.target as Element).closest('.preview')) return;
+			event.preventDefault();
+			const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientHeight : 1;
+			const dx = event.deltaX * unit;
+			const dy = event.deltaY * unit;
+			if (event.ctrlKey || event.metaKey) {
+				zoomTo(current().zoom * Math.exp(-dy * 0.002), { x: event.clientX, y: event.clientY });
+			} else if (event.shiftKey && !dx) {
+				panBy(-dy, 0);
+			} else {
+				panBy(-dx, -dy);
+			}
+		};
+		el.addEventListener('wheel', onwheel, { passive: false });
+		return () => el.removeEventListener('wheel', onwheel);
+	});
+
+	// Space + drag (or the middle button) pans. Space on its own, released without dragging,
+	// still plays and pauses.
+	let spaceDown = $state(false);
+	let spaceUsed = false;
+	let panning = $state(false);
+	const drags = new DragScope();
+	$effect(() => () => drags.dispose());
+
+	function typing(el: HTMLElement | null) {
+		return !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+	}
+
+	function onwindowkeydown(event: KeyboardEvent) {
+		if (event.key !== ' ' || event.metaKey || event.ctrlKey || event.altKey) return;
+		if (empty || editor.cropping || editor.recording) return;
+		const target = event.target as HTMLElement | null;
+		if (typing(target) || target?.closest?.('[role="dialog"], [role="menu"]')) return;
+		if (!spaceDown && !viewportEl?.matches(':hover')) return;
+		// Held over the stage: wait to see whether it's for panning (handled on release).
+		event.preventDefault();
+		event.stopPropagation();
+		if (!spaceDown) {
+			spaceDown = true;
+			spaceUsed = false;
+		}
+	}
+
+	function onwindowkeyup(event: KeyboardEvent) {
+		if (event.key !== ' ' || !spaceDown) return;
+		event.preventDefault();
+		event.stopPropagation();
+		spaceDown = false;
+		if (!spaceUsed && !panning && editor.project.scenes.length) editor.togglePlay();
+	}
+
+	function onviewportpointerdown(event: PointerEvent) {
+		if (!((spaceDown && event.button === 0) || event.button === 1) || empty) return;
+		event.preventDefault();
+		event.stopPropagation();
+		spaceUsed = true;
+		panning = true;
+		const start = { x: event.clientX, y: event.clientY, view: current() };
+		drags.start(
+			event,
+			{
+				move: (e) => {
+					view = reach({ ...start.view, x: start.view.x + e.clientX - start.x, y: start.view.y + e.clientY - start.y });
+				},
+				end: () => (panning = false)
+			},
+			viewportEl
+		);
+	}
+
+	/**
+	 * Measure where the preview is on the stage: for the pasteboard's drawing and for cutting off
+	 * boxes and handles at the stage's edges.
+	 */
+	function measure() {
+		if (!viewportEl || !previewEl) return;
+		const v = viewportEl.getBoundingClientRect();
+		const p = previewEl.getBoundingClientRect();
+		stageView.visible = { x0: v.left - p.left, y0: v.top - p.top, x1: v.right - p.left, y1: v.bottom - p.top };
+		if (pasteboard) {
+			const k = Math.min(devicePixelRatio || 1, MAX_PASTEBOARD / Math.max(1, v.width, v.height));
+			editor.player.placePasteboard(v.width * k, v.height * k, {
+				x: (p.left - v.left) * k,
+				y: (p.top - v.top) * k,
+				width: p.width * k
+			});
+		}
+	}
+
+	// Re-measure after every change of view (the DOM is updated by the time this runs).
+	$effect(() => {
+		void view;
+		void ratio;
+		measure();
+	});
+
+	$effect(() => {
+		// Nothing to pan around without scenes: back to Fit.
+		if (empty) view = null;
+	});
 
 	// ─── Dropping onto the picture: a layer on the scene at the playhead ──────────────────────
 	let dropHover = $state(0);
@@ -106,6 +287,9 @@
 
 	onMount(() => {
 		editor.player.attach(canvas);
+		editor.player.setPasteboard(canvas, pasteboard ?? null);
+		const stageObserver = new ResizeObserver(() => measure());
+		if (viewportEl) stageObserver.observe(viewportEl);
 		const observer = new ResizeObserver((entries) => {
 			const entry = entries[0];
 			// The overlays use the same measurement as the picture, so they always line up with it.
@@ -119,10 +303,13 @@
 				w = MAX_PREVIEW_WIDTH;
 			}
 			editor.player.resize(canvas, w, h);
+			measure();
 		});
 		observer.observe(canvas);
 		return () => {
 			observer.disconnect();
+			stageObserver.disconnect();
+			editor.player.setPasteboard(canvas, null);
 			editor.player.detach(canvas);
 		};
 	});
@@ -139,7 +326,20 @@
 		{ label: 'Save this frame as PNG', shortcut: 'F', onselect: () => void editor.downloadFrame('png') },
 		{ label: 'Save this frame as JPG', onselect: () => void editor.downloadFrame('jpg') }
 	];
+
+	// ─── The zoom menu ──────────────────────────────────────────────────────────────────────
+	let zoomMenu = $state(false);
+	let zoomButton = $state<HTMLButtonElement>();
+	const zoomItems = $derived<MenuItem[]>([
+		{ label: `${view ? '' : '✓ '}Fit`, onselect: fit },
+		{ label: `${view && Math.abs(view.zoom - 0.5) < 1e-6 ? '✓ ' : ''}50%`, onselect: () => zoomTo(0.5) },
+		{ label: `${view && Math.abs(view.zoom - 1) < 1e-6 ? '✓ ' : ''}100%`, onselect: () => zoomTo(1) },
+		{ label: 'Zoom in', shortcut: 'Ctrl/⌘ + scroll', separator: true, onselect: () => zoomTo(current().zoom * 1.25) },
+		{ label: 'Zoom out', onselect: () => zoomTo(current().zoom / 1.25) }
+	]);
 </script>
+
+<svelte:window onkeydowncapture={onwindowkeydown} onkeyupcapture={onwindowkeyup} onblur={() => (spaceDown = false)} />
 
 {#if frameMenu}
 	<span
@@ -156,8 +356,18 @@
 
 
 <section class="stage" aria-label="Preview" onpointerdown={onstagepointerdown}>
-	<div class="viewport" class:framing>
+	<div
+		class="viewport"
+		class:framing
+		class:space-pan={spaceDown}
+		class:panning
+		bind:this={viewportEl}
+		onpointerdowncapture={onviewportpointerdown}
+		data-testid="stage"
+	>
+		<canvas bind:this={pasteboard} class="pasteboard" aria-hidden="true" class:hidden={empty || !editor.ready}></canvas>
 		<div
+			bind:this={previewEl}
 			class="preview"
 			class:empty
 			class:reshaping
@@ -176,6 +386,12 @@
 				if (!editor.cropping && !empty) editor.enterCrop();
 			}}
 			style:--ar={ratio}
+			class:zoomed={!!view}
+			style:width={view ? `${format.width * view.zoom}px` : undefined}
+			style:height={view ? `${format.height * view.zoom}px` : undefined}
+			style:left={view ? `calc(50% + ${view.x - (format.width * view.zoom) / 2}px)` : undefined}
+			style:top={view ? `calc(50% + ${view.y - (format.height * view.zoom) / 2}px)` : undefined}
+			style:--pasteboard-clip={stageView.clipPath}
 		>
 			<div class="clip">
 				<canvas bind:this={canvas} class="frame" aria-label="Video preview" data-testid="preview"
@@ -206,6 +422,9 @@
 					</div>
 				{/if}
 			</div>
+			{#if !empty && editor.ready}
+				<span class="frame-edge" aria-hidden="true"></span>
+			{/if}
 			{#if editor.cropping}
 				<CropOverlay width={previewW} height={previewH} />
 			{:else if !empty}
@@ -248,6 +467,22 @@
 			<span class="of">of</span>
 			<span class="total">{formatClock(editor.duration)}</span>
 		</p>
+		{#if !empty && editor.ready}
+			<button
+				bind:this={zoomButton}
+				type="button"
+				class="zoom mono"
+				aria-label="Stage zoom: {view ? zoomLabel : 'whole frame'}"
+				aria-haspopup="menu"
+				aria-expanded={zoomMenu}
+				title="Zoom the stage (Ctrl/⌘ + scroll). Scroll or Space + drag to move around."
+				onclick={() => (zoomMenu = !zoomMenu)}
+				data-testid="zoom">{zoomLabel}</button
+			>
+			{#if zoomMenu && zoomButton}
+				<Menu label="Zoom" items={zoomItems} anchor={zoomButton} onclose={() => (zoomMenu = false)} />
+			{/if}
+		{/if}
 	</div>
 </section>
 
@@ -306,6 +541,7 @@
 		overflow: clip;
 	}
 	.viewport {
+		position: relative;
 		flex: 1;
 		min-height: 0;
 		display: grid;
@@ -313,14 +549,48 @@
 		padding: var(--space-2) var(--space-4);
 		container-type: size;
 	}
+	/* Space held over the stage: drag to pan. */
+	.viewport.space-pan,
+	.viewport.space-pan :global(*) {
+		cursor: grab !important;
+	}
+	.viewport.panning,
+	.viewport.panning :global(*) {
+		cursor: grabbing !important;
+	}
+	/* Behind the preview: the parts of pictures and words outside the frame, faded. */
+	.pasteboard {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		width: 100%;
+		height: 100%;
+		display: block;
+	}
+	.pasteboard.hidden {
+		visibility: hidden;
+	}
 	.preview {
 		position: relative;
 		width: min(100cqw, 100cqh * var(--ar));
 		height: min(100cqh, 100cqw / var(--ar));
-		border-radius: var(--radius-preview);
-		box-shadow: var(--shadow-preview);
-		background: var(--color-ink);
+		/* Square-ish corners: what's outside the frame shows on the stage around it. */
+		border-radius: var(--radius-frame, 3px);
 		container-type: inline-size;
+	}
+	/* Zoomed or panned: placed by its own size and offset (see `view`). */
+	.preview.zoomed {
+		position: absolute;
+	}
+	/* The frame's edge, clear against the pasteboard. */
+	.frame-edge {
+		position: absolute;
+		inset: 0;
+		z-index: 2;
+		border-radius: inherit;
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink) 28%, transparent);
+		pointer-events: none;
+		clip-path: var(--pasteboard-clip, none);
 	}
 	/* Animate only when the project's shape changes, so window resizing stays immediate. */
 	.preview.reshaping {
@@ -334,6 +604,10 @@
 		inset: 0;
 		border-radius: inherit;
 		overflow: hidden;
+		background: var(--color-ink);
+		box-shadow: var(--shadow-preview);
+		/* Zoomed in, the frame may be larger than the stage: cut off at its edges. */
+		clip-path: var(--pasteboard-clip, none);
 	}
 	.frame {
 		position: absolute;
@@ -343,9 +617,13 @@
 		display: block;
 	}
 	.preview.empty {
+		border-radius: var(--radius-preview);
 		background: var(--color-surface);
-		box-shadow: none;
 		border: 1.5px dashed var(--color-border);
+	}
+	.preview.empty .clip {
+		background: none;
+		box-shadow: none;
 	}
 	.preview.empty .frame {
 		visibility: hidden;
@@ -412,6 +690,7 @@
 
 	/* Play and time, centred under the preview. */
 	.controls {
+		position: relative;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -425,6 +704,27 @@
 	.of,
 	.total {
 		color: var(--color-muted);
+	}
+	/* The zoom menu's button, at the right end of the controls. */
+	.zoom {
+		position: absolute;
+		right: var(--space-4);
+		min-width: 56px;
+		height: 30px;
+		padding: 0 var(--space-3);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-pill);
+		background: var(--color-bg);
+		color: var(--color-ink);
+		font-size: var(--text-sm);
+		cursor: pointer;
+	}
+	.zoom:hover {
+		background: var(--color-surface);
+	}
+	.zoom:focus-visible {
+		box-shadow: var(--focus-ring);
+		outline: none;
 	}
 	@keyframes fade-in {
 		from {

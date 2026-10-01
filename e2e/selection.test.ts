@@ -194,8 +194,9 @@ test.describe('Selecting and deselecting on the video', () => {
 		await expect(settingsTitle(page)).toHaveText('Scene 2');
 		await expect(page.getByRole('button', { name: 'Remove rectangle' })).toBeVisible();
 
-		// Clicking the rectangle selects it again.
-		await page.getByRole('button', { name: /^Rectangle, / }).click();
+		// Clicking the rectangle selects it again. (It now reaches past the stage's bottom edge,
+		// where it's cut off: click the part on the picture.)
+		await page.getByRole('button', { name: /^Rectangle, / }).click({ position: { x: 20, y: 20 } });
 		await expect(handle).toBeVisible();
 		expect(await selectedId(page)).toBe(card);
 		await page.keyboard.press('Escape');

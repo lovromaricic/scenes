@@ -10,6 +10,7 @@
 	import { dragBox, type Crop, type CropHandle } from '$lib/model/crop';
 	import { MIN_RECT, rectFromPixels, rectToPixels } from '$lib/model/card';
 	import { useEditor } from '$lib/state/context';
+	import { useStageView } from './stageView.svelte';
 
 	interface Props {
 		width: number;
@@ -19,6 +20,7 @@
 	let { width, height }: Props = $props();
 
 	const editor = useEditor();
+	const stage = useStageView();
 
 	// The card under the playhead (or the selected one): its rectangle can be clicked to select it.
 	const placed = $derived(editor.inspectedScene);
@@ -133,45 +135,57 @@
 	{@const top = px.y * scale}
 	{@const w = px.w * scale}
 	{@const h = px.h * scale}
-	<div
-		class="box"
-		class:selected
-		data-on-video
-		style:left="{left}px"
-		style:top="{top}px"
-		style:width="{w}px"
-		style:height="{h}px"
-	>
-		<button
-			type="button"
-			class="move"
-			aria-pressed={selected}
-			aria-label="Rectangle, {px.w} by {px.h}. Drag to move, arrow keys to nudge."
-			onpointerdown={(e) => onpointerdown(e, 'move')}
-			{onkeydown}
-		></button>
-		{#each selected ? HANDLES : [] as handle (handle)}
-			<span
-				class="handle {handle}"
-				data-rect-handle={handle}
-				aria-hidden="true"
-				onpointerdown={(e) => onpointerdown(e, handle)}
-			></span>
-		{/each}
+	<!-- The rectangle may overhang the frame: cut off at the stage's edges. -->
+	<div class="clipper" style:clip-path={stage.clipPath}>
+		<div
+			class="box"
+			class:selected
+			data-on-video
+			style:left="{left}px"
+			style:top="{top}px"
+			style:width="{w}px"
+			style:height="{h}px"
+		>
+			<button
+				type="button"
+				class="move"
+				aria-pressed={selected}
+				aria-label="Rectangle, {px.w} by {px.h}. Drag to move, arrow keys to nudge."
+				onpointerdown={(e) => onpointerdown(e, 'move')}
+				{onkeydown}
+			></button>
+			{#each selected ? HANDLES : [] as handle (handle)}
+				<span
+					class="handle {handle}"
+					data-rect-handle={handle}
+					aria-hidden="true"
+					onpointerdown={(e) => onpointerdown(e, handle)}
+				></span>
+			{/each}
+		</div>
 	</div>
 	{#if selected}
-	<span
-		class="size mono"
-		data-testid="rect-size"
-		style:left="{left + w / 2}px"
-		style:top="{top + h + 8 > height - 24 ? Math.max(4, top - 28) : top + h + 8}px"
-	>
-		{px.w} × {px.h}
-	</span>
+		<span
+			class="size mono"
+			data-testid="rect-size"
+			style:left="{left + w / 2}px"
+			style:top="{top + h + 8 > height - 24 ? Math.max(4, top - 28) : top + h + 8}px"
+		>
+			{px.w} × {px.h}
+		</span>
 	{/if}
 {/if}
 
 <style>
+	.clipper {
+		position: absolute;
+		inset: 0;
+		z-index: 4;
+		pointer-events: none;
+	}
+	.clipper .box {
+		pointer-events: auto;
+	}
 	.box {
 		position: absolute;
 		z-index: 4;

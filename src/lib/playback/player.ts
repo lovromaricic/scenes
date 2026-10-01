@@ -23,7 +23,7 @@ import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
 import { ensureFonts, onFontsChange } from '$lib/render/fonts';
 import { resolveTextStyle } from '$lib/model/textStyle';
 import { layerInput } from '$lib/render/frame';
-import { textDraw, visualsAt, type VisualDraw } from '$lib/render/visuals';
+import { reachesOutside, textDraw, visualsAt, type VisualDraw } from '$lib/render/visuals';
 import type { Track } from '$lib/model/tracks';
 import { CardCache } from '$lib/render/card';
 import { placeOverlays, type Overlay, type PlacedOverlay } from '$lib/model/overlay';
@@ -149,6 +149,67 @@ export class Player {
 		}
 		this.dirty = true;
 		this.lastDrawnKey = '';
+	}
+
+	/**
+	 * The editor's pasteboard: a canvas behind the preview, covering the stage, where the parts of
+	 * pictures and words outside the frame show faded. `frame` is the preview canvas it belongs to
+	 * (nothing is drawn on it while another canvas, like Watch, is showing), and `place` is where
+	 * that canvas is on it, in the pasteboard's drawing-buffer pixels.
+	 */
+	private pasteboard: {
+		frame: HTMLCanvasElement;
+		compositor: Compositor;
+		place: { x: number; y: number; width: number };
+		/** Whether anything is drawn on it now (so it's cleared once when that stops). */
+		drawn: boolean;
+	} | null = null;
+
+	/** How faded what's outside the frame is on the pasteboard. */
+	static readonly PASTEBOARD_FADE = 0.3;
+
+	setPasteboard(frame: HTMLCanvasElement, canvas: HTMLCanvasElement | null): void {
+		this.pasteboard?.compositor.dispose();
+		this.pasteboard = null;
+		if (canvas) {
+			try {
+				const compositor = new Compositor(canvas, { transparent: true });
+				this.pasteboard = { frame, compositor, place: { x: 0, y: 0, width: 0 }, drawn: false };
+			} catch {
+				// No second WebGL context: the editor works without the faded view.
+			}
+		}
+		this.dirty = true;
+	}
+
+	/** The pasteboard's drawing-buffer size, and where the preview is on it (see setPasteboard). */
+	placePasteboard(width: number, height: number, place: { x: number; y: number; width: number }): void {
+		const pb = this.pasteboard;
+		if (!pb) return;
+		pb.compositor.resize(Math.max(2, Math.round(width)), Math.max(2, Math.round(height)));
+		pb.place = place;
+		pb.drawn = true; // resizing clears it: draw (or clear) it again
+		this.dirty = true;
+	}
+
+	/** Draw what reaches outside the frame on the pasteboard, faded (or clear it). */
+	private drawPasteboard(visuals: VisualDraw[]) {
+		const pb = this.pasteboard;
+		if (!pb || pb.frame !== this.canvas || !this.canvas) return;
+		const { width: W, height: H } = this.canvas;
+		const outside = pb.place.width > 0 ? visuals.filter((v) => reachesOutside(v, W, H)) : [];
+		if (!outside.length && !pb.drawn) return;
+		pb.compositor.renderPasteboard(
+			outside,
+			{ x: pb.place.x, y: pb.place.y, scale: pb.place.width / W },
+			Player.PASTEBOARD_FADE
+		);
+		pb.drawn = outside.length > 0;
+	}
+
+	/** For tests: the colour of a pixel on the pasteboard (its drawing-buffer pixels). */
+	readPasteboardPixel(x: number, y: number) {
+		return this.pasteboard?.compositor.readPixel(x, y) ?? null;
 	}
 
 	/** Size of a canvas's drawing buffer in device pixels. */
@@ -628,8 +689,10 @@ export class Player {
 			l
 				? `${objectId(l.image)}:${JSON.stringify(l.grade)}:${JSON.stringify(l.rect)}:${l.bars}`
 				: 'none';
+		const pb = this.pasteboard;
 		const key = [
 			`${this.canvas.width}x${this.canvas.height}`,
+			pb ? `pb:${pb.compositor.canvas.width}x${pb.compositor.canvas.height}@${pb.place.x.toFixed(1)},${pb.place.y.toFixed(1)},${pb.place.width.toFixed(1)}` : '',
 			layerKey(composite.a),
 			layerKey(composite.b),
 			composite.transition
@@ -648,6 +711,7 @@ export class Player {
 		this.lastDrawnKey = key;
 
 		this.compositor.render(composite);
+		this.drawPasteboard(visuals);
 		this.drawnTime = t;
 		this.sprites.endFrame();
 	}
@@ -688,6 +752,8 @@ export class Player {
 		this.raf = 0;
 		this.compositor?.dispose();
 		this.compositor = null;
+		this.pasteboard?.compositor.dispose();
+		this.pasteboard = null;
 		this.surfaces = [];
 		this.canvas = null;
 		for (const entry of this.sources.values()) entry.source?.dispose();

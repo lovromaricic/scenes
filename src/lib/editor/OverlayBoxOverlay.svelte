@@ -21,6 +21,7 @@
 	import OverlayStyleFields from './OverlayStyleFields.svelte';
 	import OverlayAnimationFields from './OverlayAnimationFields.svelte';
 	import KeyframeButtons from './KeyframeButtons.svelte';
+	import { useStageView } from './stageView.svelte';
 
 	interface Props {
 		width: number;
@@ -30,6 +31,7 @@
 	let { width, height }: Props = $props();
 
 	const editor = useEditor();
+	const stage = useStageView();
 	const format = $derived(editor.project.format);
 	/** Preview pixels per project pixel. */
 	const scale = $derived(width / format.width);
@@ -159,7 +161,8 @@
 				min: 16,
 				keepRatio: ratio,
 				keepRatioOnEdges: !!pictureRatio,
-				snapDistance: st.rotation % 360 === 0 ? 8 / scale : 0
+				// Alt: no snapping. Edges also snap just outside the frame (a far edge onto it).
+				snapDistance: st.rotation % 360 === 0 && !event.altKey ? 8 / scale : 0
 			}
 		);
 		const off = turn(box.x + box.w / 2 - st.cx, box.y + box.h / 2 - st.cy, st.rotation);
@@ -296,62 +299,72 @@
 
 <svelte:window onpointerdown={onWindowPointerDown} onkeydowncapture={onWindowKeydown} />
 
+<!-- Layers may sit outside the frame: their boxes are cut off at the stage's edges. -->
+<div class="boxes" style:clip-path={stage.clipPath}>
+	{#each showing as p (p.overlay.id)}
+		{@const o = p.overlay}
+		{@const g = geometry(p)}
+		{@const selected = editor.selectedId === o.id}
+		<div
+			class="layer-box"
+			class:selected
+			data-on-video
+			data-layer-box={o.id}
+			style:left="{g.left}px"
+			style:top="{g.top}px"
+			style:width="{g.w}px"
+			style:height="{g.h}px"
+			style:rotate={g.rotation ? `${g.rotation}deg` : undefined}
+		>
+			<button
+				type="button"
+				class="move"
+				aria-pressed={selected}
+				aria-label="Layer {o.name} on the video, {g.px.w} by {g.px.h}. Drag to move, arrow keys to nudge."
+				onpointerdown={(e) => onpointerdown(e, o, 'move')}
+				onkeydown={(e) => onkeydown(e, o)}
+				onclick={(e) => {
+					if (e.detail === 0) editor.select(o.id);
+				}}
+			></button>
+			{#if selected}
+				<span
+					class="rotate"
+					data-layer-handle="rotate"
+					role="presentation"
+					title="Drag to turn (Shift: 15° steps)"
+					onpointerdown={(e) => onrotatedown(e, o)}
+				></span>
+				{#each HANDLES as handle (handle)}
+					<span
+						class="handle {handle}"
+						data-layer-handle={handle}
+						aria-hidden="true"
+						onpointerdown={(e) => onpointerdown(e, o, handle)}
+					></span>
+				{/each}
+			{/if}
+		</div>
+	{/each}
+</div>
+
 {#each showing as p (p.overlay.id)}
 	{@const o = p.overlay}
 	{@const g = geometry(p)}
 	{@const selected = editor.selectedId === o.id}
-	<div
-		class="layer-box"
-		class:selected
-		data-on-video
-		data-layer-box={o.id}
-		style:left="{g.left}px"
-		style:top="{g.top}px"
-		style:width="{g.w}px"
-		style:height="{g.h}px"
-		style:rotate={g.rotation ? `${g.rotation}deg` : undefined}
-	>
-		<button
-			type="button"
-			class="move"
-			aria-pressed={selected}
-			aria-label="Layer {o.name} on the video, {g.px.w} by {g.px.h}. Drag to move, arrow keys to nudge."
-			onpointerdown={(e) => onpointerdown(e, o, 'move')}
-			onkeydown={(e) => onkeydown(e, o)}
-			onclick={(e) => {
-				if (e.detail === 0) editor.select(o.id);
-			}}
-		></button>
-		{#if selected}
-			<span
-				class="rotate"
-				data-layer-handle="rotate"
-				role="presentation"
-				title="Drag to turn (Shift: 15° steps)"
-				onpointerdown={(e) => onrotatedown(e, o)}
-			></span>
-			{#each HANDLES as handle (handle)}
-				<span
-					class="handle {handle}"
-					data-layer-handle={handle}
-					aria-hidden="true"
-					onpointerdown={(e) => onpointerdown(e, o, handle)}
-				></span>
-			{/each}
-		{/if}
-	</div>
+	{@const pinned = stage.pin(g.left, g.top, g.w, g.h)}
 	{#if selected && !dragging && !rotating}
 		<!-- Outside the layer's box, and stacked above the words on the video: the toolbar and its
 			popovers must never have words (or other layers) on top of them, catching clicks. -->
 		<div
 			class="toolbar-anchor"
 			data-on-video
-			style:left="{g.left}px"
-			style:top="{g.top}px"
+			style:left="{pinned.left}px"
+			style:top="{pinned.top}px"
 			style:width="{g.w}px"
 			style:height="{g.h}px"
 		>
-			<div class="layer-toolbar" class:below={g.top < 92}>
+			<div class="layer-toolbar" class:below={stage.cramped(pinned.top)}>
 				<div class="toolbar-row">
 					<FloatingToolbar label="Layer options" actions={actions(o)} />
 					<KeyframeButtons id={o.id} dark />
@@ -368,7 +381,7 @@
 			</div>
 		</div>
 	{/if}
-	{#if selected && !popover}
+	{#if selected && !popover && stage.shows(g.left, g.top, g.w, g.h)}
 		<span
 			class="size mono"
 			data-testid="layer-size"
@@ -389,9 +402,16 @@
 		align-items: center;
 	}
 
+	.boxes {
+		position: absolute;
+		inset: 0;
+		z-index: 4;
+		pointer-events: none;
+	}
 	.layer-box {
 		position: absolute;
 		z-index: 4;
+		pointer-events: auto;
 	}
 	.layer-box.selected {
 		z-index: 5;

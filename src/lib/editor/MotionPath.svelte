@@ -10,17 +10,21 @@
 	import { sortKeyframes, type ItemValues, type Keyframe } from '$lib/model/keyframes';
 	import { useEditor } from '$lib/state/context';
 	import { DragScope } from '$lib/ui/drag';
+	import { useStageView } from './stageView.svelte';
 
 	let { width, height }: { width: number; height: number } = $props();
 
 	const editor = useEditor();
+	const stage = useStageView();
 	const format = $derived(editor.project.format);
 
 	/** The selected overlay or words, with its keyframes, while not playing. */
 	const item = $derived.by(() => {
 		if (editor.playing || editor.cropping || !editor.selectedId) return null;
 		const id = editor.selectedId;
-		const o = editor.project.overlays.find((x) => x.id === id) ?? editor.project.texts.find((x) => x.id === id);
+		const o =
+			editor.project.overlays.find((x) => x.id === id) ??
+			editor.project.texts.find((x) => x.id === id);
 		if (!o || !o.keyframes || o.keyframes.length < 2) return null;
 		const track = editor.track(o.trackId);
 		if (track?.hidden || track?.locked) return null;
@@ -95,12 +99,25 @@
 		if (!m) return;
 		event.preventDefault();
 		event.stopPropagation();
-		editor.moveAnimation(item.id, m[0] / format.width, m[1] / format.height, `path-nudge:${item.id}`);
+		editor.moveAnimation(
+			item.id,
+			m[0] / format.width,
+			m[1] / format.height,
+			`path-nudge:${item.id}`
+		);
 	}
 </script>
 
 {#if item && d}
-	<svg class="motion-path" class:selected {width} {height} viewBox="0 0 {width} {height}" data-on-video>
+	<svg
+		class="motion-path"
+		class:selected
+		{width}
+		{height}
+		viewBox="0 0 {width} {height}"
+		data-on-video
+		style:clip-path={stage.clipPath}
+	>
 		<path class="line" {d} />
 		<!-- A wider, invisible line that's easy to grab. -->
 		<path

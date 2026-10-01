@@ -109,6 +109,9 @@ import { migrateProject, projectMediaIds } from '$lib/model/projects';
 import { fingerprint } from '$lib/media/fingerprint';
 import { makeProjectThumbnail, thumbnailKey } from './projectThumbnail';
 import { DEFAULT_FRAME, type SceneFrame } from '$lib/model/framing';
+import { offscreenCenter, turnedHalf, type OffscreenSide } from '$lib/model/offscreen';
+import { shadowParams } from '$lib/render/overlay';
+import { layoutText } from '$lib/render/text';
 import type { CardContent } from '$lib/model/card';
 import type { TextColors, TextFont } from '$lib/model/textStyle';
 import { FontLibrary } from './fonts.svelte';
@@ -1591,6 +1594,46 @@ export class EditorStore {
 		if (this.trackOfItem(id)?.locked || !this.itemValues(id)) return;
 		const kfId = newId();
 		this.edit(label, (p) => this.withItemValues(p, id, change, kfId), { key });
+	}
+
+	/**
+	 * Half an overlay's or words' on-screen width and height at the playhead, in project pixels,
+	 * with what's drawn around it (a layer's shadow, the words' outline and shadow).
+	 */
+	itemExtent(id: string, t = this.time): { hw: number; hh: number } | null {
+		const v = this.itemValues(id, t);
+		if (!v) return null;
+		const { width: W, height: H } = this.project.format;
+		const o = this.project.overlays.find((x) => x.id === id);
+		let w: number;
+		let h: number;
+		let margin = 0;
+		if (o) {
+			w = o.box.w * W * v.scaleX;
+			h = o.box.h * H * v.scaleY;
+			const s = shadowParams(o.style.shadow, W, H);
+			if (s) margin = s.blur + Math.hypot(s.offsetX, s.offsetY);
+		} else {
+			const text = this.project.texts.find((x) => x.id === id)!;
+			const l = layoutText({ ...text, x: v.x, y: v.y }, W, H);
+			w = l.width * v.scaleX;
+			h = l.height * v.scaleY;
+			margin = l.bleed;
+		}
+		const half = turnedHalf(w, h, v.rotation);
+		return { hw: half.hw + margin, hh: half.hh + margin };
+	}
+
+	/**
+	 * Move an overlay or words just outside one edge of the frame, keeping the other coordinate (a
+	 * clean starting point for sliding in). With keyframes, this sets the keyframe at the playhead.
+	 */
+	moveOffscreen(id: string, side: OffscreenSide): void {
+		const e = this.itemExtent(id);
+		if (!e) return;
+		const { width: W, height: H } = this.project.format;
+		const words = this.project.texts.some((x) => x.id === id);
+		this.setItemValues(id, offscreenCenter(side, e.hw / W, e.hh / H), undefined, words ? 'Move words' : 'Move layer');
 	}
 
 	/** The same during a drag (a gesture: one undo step when it ends). */

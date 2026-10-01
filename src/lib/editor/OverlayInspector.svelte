@@ -29,6 +29,7 @@
 	import TransformFields from './TransformFields.svelte';
 	import KeyframeSection from './KeyframeSection.svelte';
 	import KeyframeButtons from './KeyframeButtons.svelte';
+	import OffscreenButtons from './OffscreenButtons.svelte';
 
 	let { placed }: { placed: PlacedOverlay } = $props();
 
@@ -137,6 +138,7 @@
 				/>
 			{/each}
 		</div>
+		<OffscreenButtons id={o.id} />
 	</section>
 
 	<KeyframeSection id={o.id} />

@@ -13,6 +13,7 @@
 	import TransformFields from './TransformFields.svelte';
 	import KeyframeSection from './KeyframeSection.svelte';
 	import KeyframeButtons from './KeyframeButtons.svelte';
+	import OffscreenButtons from './OffscreenButtons.svelte';
 
 	let { item }: { item: TextItem } = $props();
 
@@ -81,6 +82,8 @@
 				editor.setTextPosition(item.id, 0.5, positions.find((p) => p.value === v)!.y)}
 		/>
 	</Field>
+
+	<OffscreenButtons id={item.id} />
 
 	<Field label="Size and turn">
 		<TransformFields id={item.id} linked={item.scaleLinked ?? true} noun="Words" withOpacity />
