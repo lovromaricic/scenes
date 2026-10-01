@@ -13,8 +13,8 @@
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { FloatingToolbar } from '$lib/ui';
-	import { dragBox, type Crop as Box, type CropHandle } from '$lib/model/crop';
-	import type { Overlay, OverlayBox, PlacedOverlay } from '$lib/model/overlay';
+	import { dragBox, type CropHandle } from '$lib/model/crop';
+	import type { Overlay, PlacedOverlay } from '$lib/model/overlay';
 	import { useEditor } from '$lib/state/context';
 	import { DragScope } from '$lib/ui/drag';
 	import { onDestroy } from 'svelte';
@@ -48,18 +48,6 @@
 	/** Moves smaller than this are a click, not a drag. */
 	const CLICK = 3;
 
-	const toPixels = (b: OverlayBox): Box => ({
-		x: Math.round(b.x * format.width),
-		y: Math.round(b.y * format.height),
-		w: Math.round(b.w * format.width),
-		h: Math.round(b.h * format.height)
-	});
-	const fromPixels = (b: Box): OverlayBox => ({
-		x: b.x / format.width,
-		y: b.y / format.height,
-		w: b.w / format.width,
-		h: b.h / format.height
-	});
 
 	let popover = $state<'style' | 'animate' | null>(null);
 	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */

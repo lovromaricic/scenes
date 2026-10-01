@@ -155,7 +155,6 @@
 {/if}
 
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc deselects from the keyboard) -->
 <section class="stage" aria-label="Preview" onpointerdown={onstagepointerdown}>
 	<div class="viewport" class:framing>
 		<div

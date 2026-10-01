@@ -66,6 +66,7 @@ class ProjectOpener {
 				}
 			});
 			// A fresh editor for it (even if the same project was open).
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- the path is resolve()d; only a query is added
 			await goto(`${resolve('/edit/[id]', { id: stored })}?opened=${Date.now()}`);
 		} catch (error) {
 			console.error('Could not open the project file', error);

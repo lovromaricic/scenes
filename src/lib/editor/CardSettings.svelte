@@ -3,19 +3,10 @@
 	Settings for a card scene: length, background, an optional rectangle, duplicate and remove.
 -->
 <script lang="ts">
-	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Copy from '@lucide/svelte/icons/copy';
-	import AlignCenter from '@lucide/svelte/icons/align-center';
-	import Maximize from '@lucide/svelte/icons/maximize';
-	import { Button, Field, PillStepper, Slider } from '$lib/ui';
-	import {
-		defaultCard,
-		defaultRect,
-		rectFromPixels,
-		rectToPixels,
-		type CardContent
-	} from '$lib/model/card';
+	import { Button, Field, PillStepper } from '$lib/ui';
+	import { defaultCard, type CardContent } from '$lib/model/card';
 	import { MAX_PHOTO, MIN_SCENE } from '$lib/model/edits';
 	import { formatClock, formatSeconds } from '$lib/model/time';
 	import type { PlacedScene } from '$lib/model/timeline';
@@ -29,28 +20,6 @@
 	const scene = $derived(placed.scene);
 	const card = $derived<CardContent>(scene.card ?? defaultCard());
 	const format = $derived(editor.project.format);
-	const px = $derived(card.rect ? rectToPixels(card.rect, format) : null);
-
-	function update(next: CardContent, key?: string) {
-		editor.setCard(scene.id, next, key);
-	}
-
-	function setPixels(field: 'x' | 'y' | 'w' | 'h', value: string) {
-		if (!card.rect || !px || value.trim() === '') return;
-		const n = Number(value);
-		if (!Number.isFinite(n)) return;
-		update(
-			{ ...card, rect: rectFromPixels(card.rect, { ...px, [field]: Math.round(n) }, format) },
-			`rect-${field}:${scene.id}`
-		);
-	}
-
-	const fields = [
-		{ key: 'w', label: 'Width' },
-		{ key: 'h', label: 'Height' },
-		{ key: 'x', label: 'X' },
-		{ key: 'y', label: 'Y' }
-	] as const;
 </script>
 
 <div class="head">

@@ -152,6 +152,7 @@
 	}
 
 	function newVideo() {
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- the path is resolve()d; only a query is added
 		void goto(`${resolve('/edit/[id]', { id: newId() })}?new=1`);
 	}
 

@@ -668,6 +668,7 @@ export class EditorStore {
 
 	private restore(state: Project, message: string): void {
 		// Collapsed tracks are a view setting: undo and redo keep them as they are now.
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 		const collapsed = new Map(this.project.tracks.map((t) => [t.id, !!t.collapsed]));
 		const next = structuredClone(state);
 		next.tracks = next.tracks.map((t) =>
@@ -1076,6 +1077,7 @@ export class EditorStore {
 		if (!id) return;
 		// Several items on tracks: removed together, as one step.
 		if (this.selectedIds.length > 1) {
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 			const ids = new Set(this.selectedIds.filter((x) => itemKind(this.project, x) && !this.trackOfItem(x)?.locked));
 			if (this.editingTextId && ids.has(this.editingTextId)) this.stopEditingText();
 			this.edit(`Remove ${ids.size} items`, (p) => removeItems(p, ids), { select: null });
@@ -1117,6 +1119,7 @@ export class EditorStore {
 		if (!items.length) return false;
 		this.clipboard = { items };
 		this.keyframeClipboard = null;
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 		const ids = new Set(items.map((c) => c.item.id));
 		if (this.editingTextId && ids.has(this.editingTextId)) this.stopEditingText();
 		this.edit(items.length > 1 ? `Cut ${items.length} items` : 'Cut', (p) => removeItems(p, ids), { select: null });
@@ -1249,6 +1252,7 @@ export class EditorStore {
 	/** Delete a track and everything on it (the Scenes track stays). */
 	deleteTrack(id: string): void {
 		if (!this.track(id) || this.track(id)!.kind === 'main') return;
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 		const gone = new Set(allItems(this.project).filter((i) => i.trackId === id).map((i) => i.id));
 		this.edit('Delete track', (p) => deleteTrack(p, id));
 		if (this.selectedIds.some((x) => gone.has(x))) this.selectItems(this.selectedIds.filter((x) => !gone.has(x)));
@@ -1823,6 +1827,7 @@ export class EditorStore {
 	removeKeyframes(id: string, keyframeIds: string[], channel: KeyframeChannel = 'motion'): void {
 		const track = this.keyframeTrack(id, channel);
 		if (!track) return;
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 		const gone = new Set(keyframeIds);
 		if (channel === 'volume') {
 			this.updateKeyframes(id, keyframeIds.length > 1 ? 'Remove volume points' : 'Remove volume point', (list) => list.filter((k) => !gone.has(k.id)), undefined, 'volume');
@@ -1945,6 +1950,7 @@ export class EditorStore {
 
 	/** The selected keyframes grouped by item. */
 	private keyframeGroups(refs = this.selectedKeyframes): { itemId: string; channel: KeyframeChannel; ids: string[] }[] {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 		const groups = new Map<string, { itemId: string; channel: KeyframeChannel; ids: string[] }>();
 		for (const r of refs) {
 			const channel = r.channel ?? 'motion';
@@ -1977,6 +1983,7 @@ export class EditorStore {
 		for (const { itemId, ids, channel } of this.keyframeGroups()) {
 			const track = this.keyframeTrack(itemId, channel);
 			if (!track) continue;
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 			const moving = new Set(ids);
 			this.updateKeyframes(itemId, ids.length > 1 ? 'Move keyframes' : 'Move keyframe', (list) => {
 				const moved = list
@@ -2027,6 +2034,7 @@ export class EditorStore {
 		const channel = first.channel ?? 'motion';
 		const track = this.keyframeTrack(first.itemId, channel);
 		if (!track) return false;
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 		const ids = new Set(
 			this.selectedKeyframes.filter((r) => r.itemId === first.itemId && (r.channel ?? 'motion') === channel).map((r) => r.id)
 		);
@@ -2213,6 +2221,7 @@ export class EditorStore {
 
 	/** Give keyframes (the stretches that start at them) an easing. */
 	setKeyframeEasing(id: string, keyframeIds: string[], easing: Easing, key?: string, channel: KeyframeChannel = 'motion'): void {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 		const ids = new Set(keyframeIds);
 		this.updateKeyframes(id, 'Easing', (list) => list.map((k) => (ids.has(k.id) ? { ...k, easing: { ...easing } } : k)), key, channel);
 	}

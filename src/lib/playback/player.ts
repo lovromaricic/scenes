@@ -17,8 +17,7 @@ import type { MoodId, Project, Scene, TextItem } from '$lib/model/types';
 import {
 	Compositor,
 	type CompositeFrame,
-	type LayerInput,
-	type TextDraw
+	type LayerInput
 } from '$lib/render/compositor';
 import { loadTextFonts, TextSpriteCache } from '$lib/render/text';
 import { ensureFonts, onFontsChange } from '$lib/render/fonts';
@@ -28,7 +27,7 @@ import { textDraw, visualsAt, type VisualDraw } from '$lib/render/visuals';
 import type { Track } from '$lib/model/tracks';
 import { CardCache } from '$lib/render/card';
 import { placeOverlays, type Overlay, type PlacedOverlay } from '$lib/model/overlay';
-import { cardSize, overlayDraw, type OverlayDraw } from '$lib/render/overlay';
+import { cardSize, overlayDraw } from '$lib/render/overlay';
 
 /** What has its own decoder: a scene, or a layer (even when both use the same file). */
 type Decodable = Pick<Scene, 'id' | 'kind' | 'mediaId'>;
