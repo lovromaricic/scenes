@@ -1918,6 +1918,36 @@ playhead sets the keyframe there.
   - The saved MP4 matching the preview for keyframes and for volume is checked in sections 1
     and 7.
 
+### 9. Save dialog structure
+
+- **Two choices at the top:**
+  - **What:** Whole video, or Range. Range is greyed out until a range is set; its tooltip says
+    "Set a range first: I for its start, O for its end". It's chosen by default when there is one.
+  - **Save as:** Video for now. GIF, Audio only, Current frame and Overlays only are added in the
+    sections that build them.
+  - Both are `ChipGroup`s, which can now have disabled options: skipped by the arrow keys and
+    shown faded.
+- **Below them**, the options for the kind chosen (the quality cards for a video), then a
+  summary line: output size · length · about how big the file will be (`export-summary`). The
+  estimates follow the chosen length.
+- **One renderer for every kind of saving** (`export/renderer.ts`, `FrameRenderer`):
+  - Frame drawing moved out of `exportVideo`: the same compositor, `compose`, keyframes,
+    overlays and words, decoders prepared 2 s ahead and freed once behind, and the last good
+    frame held.
+  - It has an `overlaysOnly` mode (section 14), with a transparent compositor
+    (`new Compositor(canvas, { transparent: true })`: an alpha canvas, premultiplied, cleared to
+    transparent).
+  - The video, GIF, frame and overlay exports all draw through it, so they all match the
+    preview.
+- **`exportVideo`** takes a `range` (`exportRange` keeps it within the video). Frames are drawn
+  at timeline time `range.start + i / fps` but stamped from 0 in the file, and the sound is
+  mixed for the same span.
+- **Tests:**
+  - `export-dialog.test.ts`: the What and Save as groups, Range disabled with its hint, and the
+    summary line changing with the quality.
+  - The existing save tests (MP4 vs preview, WebM fallback, keyframes, volume, transitions)
+    pass unchanged on the new renderer.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

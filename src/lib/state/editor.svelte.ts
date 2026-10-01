@@ -135,7 +135,7 @@ import type {
 } from '$lib/model/types';
 import { Player } from '$lib/playback/player';
 import { Autosaver, emergencyCopy, type SaveStatus } from './autosave';
-import { exportVideo, type ExportProgress, type ExportResult } from '$lib/export/exporter';
+import { exportVideo, type ExportProgress, type ExportRange, type ExportResult } from '$lib/export/exporter';
 import { presetById, type PresetId } from '$lib/export/presets';
 import { newCardScene, newId, newProject, sceneFromMedia } from './project';
 import { nameFromFile } from '$lib/media/kinds';
@@ -2463,12 +2463,14 @@ export class EditorStore {
 	async saveVideo(
 		presetId: PresetId,
 		onProgress: (p: ExportProgress) => void,
-		signal: AbortSignal
+		signal: AbortSignal,
+		range?: ExportRange | null
 	): Promise<ExportResult> {
 		this.player.pause();
 		const media = this.media;
 		return exportVideo({
 			project: this.snapshot(),
+			range,
 			preset: presetById(presetId),
 			bounds: (scene) => this.bounds(scene),
 			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null),

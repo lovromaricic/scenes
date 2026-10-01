@@ -128,6 +128,8 @@ export interface Project {
 	 * (the scenes), audio tracks. See tracks.ts.
 	 */
 	tracks: Track[];
+	/** The part of the video set with I and O, for saving just that (missing = none). */
+	range?: { start: number; end: number } | null;
 	/** Videos, photos and cards on overlay tracks, drawn over the scenes. */
 	overlays: Overlay[];
 	/** Every photo and video imported into this project, in import order ("Your media"). */

@@ -321,11 +321,19 @@ export class Compositor {
 	private frameCount = 0;
 	lost = false;
 
-	constructor(readonly canvas: HTMLCanvasElement | OffscreenCanvas) {
+	/** Clear to transparent (not black) where nothing is drawn: "Overlays only" exports. */
+	private readonly transparent: boolean;
+
+	constructor(
+		readonly canvas: HTMLCanvasElement | OffscreenCanvas,
+		options: { transparent?: boolean } = {}
+	) {
+		this.transparent = !!options.transparent;
 		const gl = canvas.getContext('webgl2', {
-			alpha: false,
+			// Overlays are drawn premultiplied, so a transparent canvas keeps them exact.
+			alpha: this.transparent,
 			antialias: false,
-			premultipliedAlpha: false,
+			premultipliedAlpha: this.transparent,
 			preserveDrawingBuffer: true,
 			powerPreference: 'high-performance'
 		}) as WebGL2RenderingContext | null;
@@ -512,7 +520,7 @@ export class Compositor {
 			this.drawLayer((frame.a ?? frame.b)!, 0, null);
 		} else {
 			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-			gl.clearColor(0, 0, 0, 1);
+			gl.clearColor(0, 0, 0, this.transparent ? 0 : 1);
 			gl.clear(gl.COLOR_BUFFER_BIT);
 		}
 

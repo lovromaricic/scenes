@@ -38,11 +38,16 @@
 		event.preventDefault();
 		const index = options.findIndex((o) => o.value === value);
 		let next = index;
-		if (event.key === 'Home') next = 0;
-		else if (event.key === 'End') next = options.length - 1;
-		else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp')
-			next = (index - 1 + options.length) % options.length;
-		else next = (index + 1) % options.length;
+		const n = options.length;
+		const step = event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'End' ? -1 : 1;
+		if (event.key === 'Home') next = -1;
+		else if (event.key === 'End') next = n;
+		// The next one that can be chosen (disabled ones are skipped).
+		for (let k = 0; k < n; k++) {
+			next = (next + step + n) % n;
+			if (!options[next].disabled) break;
+		}
+		if (options[next].disabled) return;
 		select(options[next].value);
 		group.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
 	}
@@ -66,6 +71,7 @@
 			title={option.description}
 			class="chip"
 			class:checked
+			disabled={option.disabled}
 			onclick={() => select(option.value)}
 		>
 			{option.label}
@@ -78,6 +84,10 @@
 		display: inline-flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
+	}
+	.chip:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 	.chip {
 		border: 1px solid var(--color-border);

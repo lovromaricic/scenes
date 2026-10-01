@@ -1,13 +1,16 @@
 <!--
 	@component
-	"Save video": pick a preset, watch the progress, get the file.
+	"Save video": choose what to save (the whole video, or the range set with I and O) and what to
+	save it as (a video, and the other kinds added below), see its size, length and about how big
+	the file will be, watch the progress, get the file.
 -->
 <script lang="ts">
 	import Download from '@lucide/svelte/icons/download';
 	import X from '@lucide/svelte/icons/x';
 	import Check from '@lucide/svelte/icons/check';
 	import { onMount } from 'svelte';
-	import { Button, IconButton } from '$lib/ui';
+	import { Button, ChipGroup, Field, IconButton } from '$lib/ui';
+	import { formatClock } from '$lib/model/time';
 	import {
 		chooseFormat,
 		ExportError,
@@ -32,6 +35,37 @@
 
 	let dialog: HTMLDialogElement;
 	let preset = $state<PresetId>('best');
+	/** What to save: all of it, or the range set with I and O. */
+	let what = $state<'whole' | 'range'>(editor.project.range ? 'range' : 'whole');
+	/** What to save it as. */
+	type SaveAs = 'video';
+	let saveAs = $state<SaveAs>('video');
+	const range = $derived(what === 'range' && editor.project.range ? editor.project.range : null);
+	/** How long what's saved lasts. */
+	const length = $derived(range ? Math.max(0, range.end - range.start) : editor.duration);
+	const whatOptions = $derived([
+		{ value: 'whole' as const, label: 'Whole video', description: formatLength(editor.duration) },
+		{
+			value: 'range' as const,
+			label: 'Range',
+			disabled: !editor.project.range,
+			description: editor.project.range
+				? `${formatClock(editor.project.range.start)} – ${formatClock(editor.project.range.end)}`
+				: 'Set a range first: I for its start, O for its end'
+		}
+	]);
+	const saveAsOptions: { value: SaveAs; label: string; description: string }[] = [
+		{ value: 'video', label: 'Video', description: 'An MP4 video with sound' }
+	];
+	/** The line under the choices: size, length and about how big the file will be. */
+	const summary = $derived.by(() => {
+		const p = PRESETS.find((x) => x.id === preset)!;
+		return {
+			size: `${size.width} × ${size.height}`,
+			length: formatLength(length),
+			bytes: formatBytes(estimateBytes(p, editor.project.format, length))
+		};
+	});
 	let phase = $state<'choose' | 'saving' | 'done' | 'error'>('choose');
 	let progress = $state(0);
 	let elapsed = $state(0);
@@ -81,7 +115,8 @@
 					progress = p.progress;
 					elapsed = p.elapsed;
 				},
-				controller.signal
+				controller.signal,
+				range
 			);
 			url = URL.createObjectURL(result.file);
 			phase = 'done';
@@ -136,15 +171,15 @@
 		event.stopPropagation();
 		if (phase !== 'choose') return;
 		const keys = ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'];
-		if (!keys.includes(event.key) || !(event.target as HTMLElement).matches('[role="radio"]'))
-			return;
+		// Arrow keys move between the quality cards (the chip rows handle their own).
+		if (!keys.includes(event.key) || !(event.target as HTMLElement).matches('.preset')) return;
 		event.preventDefault();
 		const i = PRESETS.findIndex((p) => p.id === preset);
 		const next =
 			(i + (event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1) + PRESETS.length) %
 			PRESETS.length;
 		preset = PRESETS[next].id;
-		dialog.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+		dialog.querySelectorAll<HTMLButtonElement>('.preset')[next]?.focus();
 	}
 </script>
 
@@ -162,35 +197,47 @@
 
 	{#if phase === 'choose'}
 		<p class="lede">
-			“{editor.project.title}” · {formatLength(editor.duration)}. It’s made right here on your
-			device — nothing is uploaded.
+			“{editor.project.title}”. It’s made right here on your device — nothing is uploaded.
 		</p>
-		<div class="presets" role="radiogroup" aria-label="Quality">
-			{#each PRESETS as p (p.id)}
-				{@const checked = p.id === preset}
-				{@const s = outputSize(editor.project.format, p)}
-				<button
-					type="button"
-					role="radio"
-					aria-checked={checked}
-					tabindex={checked ? 0 : -1}
-					class="preset"
-					class:checked
-					onclick={() => (preset = p.id)}
-				>
-					<span class="preset-head">
-						<span class="name">{p.label}</span>
-						<span class="radio" aria-hidden="true"></span>
-					</span>
-					<span class="desc">{p.description}</span>
-					<span class="meta mono">
-						{s.width} × {s.height} · {editor.project.format.fps} fps · about {formatBytes(
-							estimateBytes(p, editor.project.format, editor.duration)
-						)}
-					</span>
-				</button>
-			{/each}
+		<div class="choices">
+			<Field label="What">
+				<ChipGroup label="What" size="sm" options={whatOptions} bind:value={what} />
+			</Field>
+			<Field label="Save as">
+				<ChipGroup label="Save as" size="sm" options={saveAsOptions} bind:value={saveAs} />
+			</Field>
 		</div>
+		{#if saveAs === 'video'}
+			<div class="presets" role="radiogroup" aria-label="Quality">
+				{#each PRESETS as p (p.id)}
+					{@const checked = p.id === preset}
+					{@const s = outputSize(editor.project.format, p)}
+					<button
+						type="button"
+						role="radio"
+						aria-checked={checked}
+						tabindex={checked ? 0 : -1}
+						class="preset"
+						class:checked
+						onclick={() => (preset = p.id)}
+					>
+						<span class="preset-head">
+							<span class="name">{p.label}</span>
+							<span class="radio" aria-hidden="true"></span>
+						</span>
+						<span class="desc">{p.description}</span>
+						<span class="meta mono">
+							{s.width} × {s.height} · {editor.project.format.fps} fps · about {formatBytes(
+								estimateBytes(p, editor.project.format, length)
+							)}
+						</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
+		<p class="summary mono" data-testid="export-summary">
+			{summary.size} · {summary.length} · about {summary.bytes}
+		</p>
 		{#if format?.fallback}
 			<p class="note" role="note">
 				This browser can’t make MP4 files, so your video will be saved as <strong>WebM</strong>. It
@@ -274,6 +321,16 @@
 	.lede {
 		color: var(--color-muted);
 		margin-bottom: var(--space-5);
+	}
+	.choices {
+		display: grid;
+		gap: var(--space-3);
+		margin-bottom: var(--space-4);
+	}
+	.summary {
+		margin-top: var(--space-4);
+		font-size: var(--text-sm);
+		color: var(--color-ink);
 	}
 	.presets {
 		display: flex;

@@ -12,27 +12,11 @@ import {
 } from 'mediabunny';
 import { mixdown } from '$lib/audio/mixdown';
 import { projectAudioClips } from '$lib/audio/clips';
-import { getHandle } from '$lib/media/handles';
-import { compose, scenesNeeded } from '$lib/model/composition';
-import type { FrameResult } from '$lib/media/frames';
-
 import type { SourceBounds } from '$lib/model/edits';
-import { placeScenes, type PlacedScene } from '$lib/model/timeline';
+import { placeScenes } from '$lib/model/timeline';
 import type { Project, Scene } from '$lib/model/types';
-import { Compositor, type CompositeFrame } from '$lib/render/compositor';
-import { layerInput } from '$lib/render/frame';
-import { CardCache } from '$lib/render/card';
-import { TextSpriteCache } from '$lib/render/text';
-import { ensureFonts } from '$lib/render/fonts';
-import { resolveTextStyle } from '$lib/model/textStyle';
 import { exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
-import { placeOverlays, type PlacedOverlay } from '$lib/model/overlay';
-import { cardSize, overlayDraw } from '$lib/render/overlay';
-import { textDraw, visualsAt, type VisualDraw } from '$lib/render/visuals';
-import { PhotoExportReader, VideoExportReader, type ExportFrameReader } from './reader';
-
-/** How far ahead (seconds) the next scenes' decoders are started. */
-const PREPARE_AHEAD = 2;
+import { FrameRenderer } from './renderer';
 
 /**
  * Saves the project as a video file, frame by frame through the same compositor as the preview.
@@ -109,6 +93,8 @@ export interface ExportRequest {
 	signal?: AbortSignal;
 	/** Force a format (tests); otherwise chosen automatically. */
 	format?: ExportFormat;
+	/** Only this part of the video (default: all of it). */
+	range?: ExportRange | null;
 }
 
 export interface ExportResult {
@@ -152,11 +138,27 @@ async function openTarget(
 	}
 }
 
+/** The part of the video to save, in timeline seconds (default: all of it). */
+export interface ExportRange {
+	start: number;
+	end: number;
+}
+
+/** The range to save, kept within the video (the whole video when none is given). */
+export function exportRange(duration: number, range?: ExportRange | null): ExportRange {
+	if (!range) return { start: 0, end: duration };
+	const start = Math.max(0, Math.min(duration, range.start));
+	const end = Math.max(start, Math.min(duration, range.end));
+	return { start, end };
+}
+
 export async function exportVideo(request: ExportRequest): Promise<ExportResult> {
 	const { project, preset, signal } = request;
-	const placed = placeScenes(project.scenes);
-	const duration = placed.at(-1)?.end ?? 0;
+	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
 	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
+	const range = exportRange(duration, request.range);
+	const length = range.end - range.start;
+	if (length <= 0) throw new ExportError('The range is empty. Set its start (I) before its end (O).');
 
 	const { width, height } = outputSize(project.format, preset);
 	const fps = project.format.fps;
@@ -165,8 +167,14 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	const started = performance.now();
 	const elapsed = () => (performance.now() - started) / 1000;
 
-	// Every font the words use must be ready before the first frame.
-	await ensureFonts(project.texts.map((t) => resolveTextStyle(t).font));
+	const renderer = new FrameRenderer({
+		project,
+		width,
+		height,
+		bounds: request.bounds,
+		sourceSize: request.sourceSize
+	});
+	await renderer.ready();
 	const { target, finish, discard } = await openTarget(format.container);
 	const output = new Output({
 		format:
@@ -175,11 +183,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 				: new WebMOutputFormat(),
 		target
 	});
-
-	const canvas = new OffscreenCanvas(width, height);
-	const compositor = new Compositor(canvas);
-	const sprites = new TextSpriteCache();
-	const videoSource = new CanvasSource(canvas, {
+	const videoSource = new CanvasSource(renderer.canvas, {
 		codec: format.videoCodec,
 		bitrate,
 		keyFrameInterval: 2,
@@ -192,110 +196,9 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	output.addVideoTrack(videoSource, { frameRate: fps });
 	output.addAudioTrack(audioSource);
 
-	const readers = new Map<string, Promise<ExportFrameReader>>();
-	// Scenes and layers each get their own reader (decoding in step), even for the same file.
-	const readerFor = (scene: Pick<Scene, 'id' | 'mediaId'>) => {
-		let r = readers.get(scene.id);
-		if (!r) {
-			r = getHandle(scene.mediaId).then((h) =>
-				h.info.kind === 'photo'
-					? new PhotoExportReader(h, width, height)
-					: new VideoExportReader(h, width, height)
-			);
-			readers.set(scene.id, r);
-		}
-		return r;
-	};
-	const cards = new CardCache();
-	const lastGood = new Map<string, FrameResult>();
-	/**
-	 * Start the decoders of the scenes needed in the next 2 seconds (the same `compose` rules as
-	 * drawing), so the incoming scene of a transition is ready when it starts.
-	 */
-	const prepareAhead = (t: number) => {
-		for (const n of scenesNeeded(placed, t, t + PREPARE_AHEAD, (p) => request.bounds(p.scene))) {
-			if (n.placed.scene.kind === 'card') continue;
-			void readerFor(n.placed.scene)
-				.then((r) => r.prepare(n.firstSourceTime))
-				.catch(() => {});
-		}
-	};
-	const layer = async (ref: { placed: PlacedScene; sourceTime: number; contentTime: number } | null) => {
-		if (!ref) return null;
-		if (ref.placed.scene.kind === 'card') {
-			const card = ref.placed.scene.card;
-			return card
-				? layerInput(
-						cards.frame(card, width, height),
-						ref.placed.scene,
-						project.mood,
-						width,
-						height,
-						undefined,
-						ref.contentTime
-					)
-				: null;
-		}
-		const id = ref.placed.scene.id;
-		const decoded = await (await readerFor(ref.placed.scene)).frameAt(ref.sourceTime);
-		// If a frame isn't there, the scene keeps its last good frame (never a black gap).
-		if (decoded) lastGood.set(id, decoded);
-		else if (import.meta.env.DEV) console.debug(`[export] no frame for ${id} at ${ref.sourceTime}; using its last one`);
-		const frame = decoded ?? lastGood.get(id) ?? null;
-		return frame
-			? layerInput(
-					frame,
-					ref.placed.scene,
-					project.mood,
-					width,
-					height,
-					request.sourceSize(ref.placed.scene.mediaId) ?? undefined,
-					ref.contentTime
-				)
-			: null;
-	};
-
-	// The overlay tracks, lowest first (hidden ones left out), drawn exactly as in the preview.
-	const layers = placeOverlays(project.overlays ?? []);
-	const visuals = async (t: number): Promise<VisualDraw[]> => {
-		const draws: VisualDraw[] = [];
-		for (const v of visualsAt(project, t, duration)) {
-			if (v.type === 'text') {
-				const d = textDraw(v.item, t, width, height, sprites);
-				if (d) draws.push({ type: 'text', draw: d });
-				continue;
-			}
-			const frame = await overlayFrame(v.placed, t);
-			if (!frame) continue;
-			draws.push({
-				type: 'overlay',
-				draw: overlayDraw(
-					frame,
-					v.placed,
-					t,
-					project.mood,
-					width,
-					height,
-					project.format.width,
-					request.sourceSize(v.placed.overlay.mediaId) ?? undefined
-				)
-			});
-		}
-		return draws;
-	};
-	const overlayFrame = async (p: PlacedOverlay, t: number) => {
-		const o = p.overlay;
-		if (o.kind === 'card') {
-			if (!o.card) return null;
-			const size = cardSize(p, width, height);
-			return cards.frame(o.card, size.width, size.height);
-		}
-		return (await readerFor(o)).frameAt(o.sourceStart + (t - p.start));
-	};
-
 	const clips = projectAudioClips(project, request.hasAudio);
-	const totalFrames = Math.max(1, Math.round(duration * fps));
-	let audioUntil = 0;
+	const totalFrames = Math.max(1, Math.round(length * fps));
+	let audioUntil = range.start;
 
 	const checkAbort = () => {
 		if (signal?.aborted) throw new DOMException('Saving was cancelled', 'AbortError');
@@ -305,38 +208,19 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 		await output.start();
 		for (let i = 0; i < totalFrames; i++) {
 			checkAbort();
-			const t = i / fps;
+			// Timeline time of this frame; the file's own time starts at 0.
+			const local = i / fps;
+			const t = range.start + local;
 
 			// Keep the soundtrack a little ahead of the picture, one short chunk at a time.
-			while (audioUntil < Math.min(duration, t + AUDIO_CHUNK)) {
-				const to = Math.min(duration, audioUntil + AUDIO_CHUNK);
+			while (audioUntil < Math.min(range.end, t + AUDIO_CHUNK)) {
+				const to = Math.min(range.end, audioUntil + AUDIO_CHUNK);
 				await audioSource.add(await mixdown(clips, audioUntil, to, SAMPLE_RATE));
 				audioUntil = to;
 			}
 
-			if (i % Math.max(1, Math.round(fps / 2)) === 0) prepareAhead(t);
-			const c = compose(placed, t, (p) => request.bounds(p.scene));
-			const frame: CompositeFrame = {
-				a: await layer(c.a),
-				b: await layer(c.b),
-				transition: c.transition,
-				visuals: await visuals(t)
-			};
-			compositor.render(frame);
-			await videoSource.add(t, 1 / fps);
-			sprites.endFrame();
-
-			// Scenes and layers well behind the playhead won't be needed again: free their decoders.
-			const done = [
-				...placed.filter((p) => p.end + 1.5 < t).map((p) => p.scene.id),
-				...layers.filter((p) => p.end + 1.5 < t).map((p) => p.overlay.id)
-			];
-			for (const id of done) {
-				if (readers.has(id)) {
-					void readers.get(id)!.then((r) => r.dispose());
-					readers.delete(id);
-				}
-			}
+			await renderer.render(t);
+			await videoSource.add(local, 1 / fps);
 			if (i % 5 === 0) request.onProgress?.({ progress: i / totalFrames, elapsed: elapsed() });
 		}
 		checkAbort();
@@ -349,7 +233,6 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 		await discard();
 		throw error;
 	} finally {
-		for (const r of readers.values()) void r.then((x) => x.dispose()).catch(() => {});
-		compositor.dispose();
+		renderer.dispose();
 	}
 }

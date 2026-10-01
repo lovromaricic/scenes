@@ -7,6 +7,8 @@ export interface Choice<T extends string | number = string> {
 	label: string;
 	/** Optional longer description, read by screen readers. */
 	description?: string;
+	/** Shown but can't be chosen (its description says why). */
+	disabled?: boolean;
 }
 
 export interface Swatch<T extends string = string> extends Choice<T> {
