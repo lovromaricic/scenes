@@ -2349,6 +2349,68 @@ in from off-screen with keyframes.
     - the saved PNG frame has crisp letter edges (under 2% in-between pixels);
     - the saved MP4 shows them at the start and while growing.
 
+## Text shadow
+
+Words have an editable drop shadow (`TextShadowSettings`, below Color in the text settings).
+
+- **Model** (`TextShadow` in `model/textStyle.ts`):
+  - `on`, `color` (hex), `opacity`, `blur`, `distance` and `angle`. 0° points right and 90°
+    down (clockwise).
+  - Blur and distance are fractions of the font size. So a shadow looks the same at 40 px and
+    2000 px.
+  - The settings show (and take) pixels at the words' current size. The Blur and Distance
+    sliders run to 100 px, or further if the value is already bigger.
+- **Each style has its own shadow** (`StyleSpec.shadow`): Big title and Serif italic start with
+  the soft one; Clean white, Bold box, Outlined and Highlighter without.
+  - A shadow that's off still holds values (the Soft preset), so turning it on starts from
+    something sensible.
+  - The words' own shadow (`TextItem.shadow`) replaces the style's.
+  - Picking a style clears it (like colours), so the new style's default applies. "Reset shadow"
+    clears it too.
+- **Clean white used to have a shadow.** Projects now record which defaults their words were
+  made with (`Project.styleDefaults`, 2 for new ones).
+  - `migrateProject` gives older Clean white words the old soft shadow explicitly, so they look
+    as before. `.scenes` files go through the same migration.
+- **Presets** (chips): Soft (the old built-in shadow), Hard (no blur), Long (far, at 45°) and Glow.
+  Glow is white, distance 0 and a wide blur: a glow all around the letters. The chip for the
+  matching preset shows as chosen (`shadowPreset`).
+- **Angle:** a small dial (drag it, or use the arrow keys: 1°, Shift 15°) and a number field.
+- **Drawing** (`drawTextSprite`):
+  - The letters and outline go into their own layer. The shadow is cast once, by that layer:
+    it's drawn far off the canvas, and its shadow brought back by the offset. So the shadow
+    keeps its own opacity, translucent letters don't weaken it, and an outline casts a shadow
+    with the letters instead of the fill's shadow landing on the outline.
+  - Boxes and highlighter bands are drawn first, under the shadow. So the shadow falls on the
+    box, and the box itself doesn't cast one.
+  - The sprite's margin (`bleed`) includes the blur (3σ) plus the distance (`shadowReach`), so a
+    long or wide shadow isn't cut off.
+  - Typing on the preview uses the same values as a CSS `text-shadow`.
+- **Same everywhere:**
+  - The shadow is part of the cached text sprite, so the preview, the pasteboard, Watch and every
+    export draw exactly the same thing. It turns and scales with the words' keyframes.
+  - A large blur on very large words is drawn once per change, not per frame. (The sprite cache's
+    key includes the resolved style.)
+  - **Home pictures now include words.** Words showing at 0 s are drawn with the same sprite,
+    fully shown, after loading their fonts. The picture's key includes them, so it's made again
+    when they change.
+- **Undo, autosave, files, copy:**
+  - `setTextShadow` is an ordinary edit. Slider drags are merged into one step per control.
+  - The shadow is part of the item, so it's saved, in `.scenes` files, and copied with
+    copy/paste and track duplication.
+- **Tests:**
+  - Unit (`textShadow.test.ts`): style defaults, overrides, the offset at an angle relative to
+    the font size, the reach, presets, the CSS, and the migration. Store: undo/redo, copy/paste,
+    a new style resetting it, and Reset.
+  - E2E (`text-shadow.test.ts`):
+    - a Big title's shadow off and on;
+    - colour, opacity (purple when half), blur (less solid), distance and angle via the field
+      (left/right), the dial (down) and its arrow keys; undo;
+    - presets, Glow's light ring on all four sides, Reset shadow, and Clean white bringing no
+      shadow;
+    - the same blue shadow in Watch, at the same points in the saved MP4, and on the home
+      picture;
+    - a 900 px glowing title, turning and growing, playing over 20 fps with no sprite redrawn.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
@@ -2362,6 +2424,8 @@ in from off-screen with keyframes.
 - Mood swatches are stored per scene but only change the picture from Phase 6.
 - Very large words: they're drawn from one sprite. Splitting it into tiles would keep them sharp at
   4× too (now about 1.4× the frame's resolution at most for 2000 px words).
+- Shadow ideas: a shadow for the box itself (not only the letters), several shadows, an inner
+  shadow.
 - Pasteboard ideas: guides at the frame's edges while snapping words, a "show everything" zoom
   that fits all objects, and keeping the zoom per project.
 - Framing ideas: rotate, "follow the subject" pan over time (Ken Burns), per-scene background colour.

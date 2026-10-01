@@ -225,3 +225,36 @@ describe('EditorStore animatable values', () => {
 		expect(store.itemValues(id, 5)!.x).toBeCloseTo(0.9);
 	});
 });
+
+describe('EditorStore text shadows', () => {
+	it('are undoable, reset with the style, and copied with the words', () => {
+		const store = setup();
+		expect(store.project.styleDefaults).toBe(2);
+		store.addText('title');
+		store.stopEditingText();
+		const id = store.selectedId!;
+		const shadow = { on: true, color: '#ff0000', opacity: 0.5, blur: 0.1, distance: 0.2, angle: 180 };
+		store.setTextShadow(id, shadow);
+		expect(store.project.texts[0].shadow).toEqual(shadow);
+		store.undo();
+		expect(store.project.texts[0].shadow).toBeUndefined();
+		store.redo();
+		expect(store.project.texts[0].shadow).toEqual(shadow);
+
+		// Copied with the words.
+		store.select(id);
+		expect(store.copySelection()).toBe(true);
+		store.seek(5);
+		expect(store.paste()).toBe(true);
+		expect(store.project.texts).toHaveLength(2);
+		expect(store.project.texts[1].shadow).toEqual(shadow);
+
+		// Picking a style brings its own shadow back; so does Reset shadow.
+		store.setTextStyle(id, 'clean');
+		expect(store.project.texts[0].shadow).toBeUndefined();
+		store.setTextShadow(id, { ...shadow, on: false });
+		store.setTextShadow(id, undefined);
+		expect(store.project.texts[0].shadow).toBeUndefined();
+	});
+});
+

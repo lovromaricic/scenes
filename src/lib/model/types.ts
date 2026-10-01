@@ -8,7 +8,7 @@ import type { ProjectFormat } from './format';
 import type { SceneFrame } from './framing';
 import type { Crop } from './crop';
 import type { CardContent } from './card';
-import type { TextColors, TextFont } from './textStyle';
+import type { TextColors, TextFont, TextShadow } from './textStyle';
 import type { Overlay } from './overlay';
 import type { Track } from './tracks';
 import type { FrameValues, ItemValues, Keyframe } from './keyframes';
@@ -79,6 +79,8 @@ export interface TextItem {
 	/** Font size as a fraction of the frame's short side. */
 	size?: number;
 	colors?: TextColors;
+	/** The shadow, when changed from the style's own (missing = the style's). */
+	shadow?: TextShadow;
 	/** Scale on top of the font size, around the centre (missing = 1). */
 	scaleX?: number;
 	scaleY?: number;
@@ -123,6 +125,11 @@ export interface Project {
 	scenes: Scene[];
 	texts: TextItem[];
 	sounds: SoundItem[];
+	/**
+	 * Which styles' defaults the words were made with (2: Clean white without a shadow). Older
+	 * projects are brought up to it so their words look as they did. See migrateProject.
+	 */
+	styleDefaults?: number;
 	/**
 	 * The storyboard's tracks, top to bottom: overlay tracks (highest first), the main track
 	 * (the scenes), audio tracks. See tracks.ts.

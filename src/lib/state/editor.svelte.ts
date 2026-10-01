@@ -113,7 +113,7 @@ import { offscreenCenter, turnedHalf, type OffscreenSide } from '$lib/model/offs
 import { shadowParams } from '$lib/render/overlay';
 import { layoutText } from '$lib/render/text';
 import type { CardContent } from '$lib/model/card';
-import type { TextColors, TextFont } from '$lib/model/textStyle';
+import type { TextColors, TextFont, TextShadow } from '$lib/model/textStyle';
 import { FontLibrary } from './fonts.svelte';
 import {
 	clampCrop,
@@ -2874,7 +2874,14 @@ export class EditorStore {
 
 	/** A style is a starting point: picking one applies its own colours (font and size stay). */
 	setTextStyle(id: string, style: TextStyleId): void {
-		this.updateText('Text style', id, (t) => ({ ...t, style, colors: undefined }));
+		// A new style brings its own colours and shadow.
+		this.updateText('Text style', id, (t) => ({ ...t, style, colors: undefined, shadow: undefined }));
+	}
+
+	/** Change the words' shadow (`undefined` = back to the style's own). */
+	setTextShadow(id: string, shadow: TextShadow | undefined, key?: string): void {
+		const copy = shadow ? ($state.snapshot(shadow) as TextShadow) : undefined;
+		this.updateText('Text shadow', id, (t) => ({ ...t, shadow: copy }), key);
 	}
 
 	/** Override some of the style's colours (`undefined` = back to the style's own). */

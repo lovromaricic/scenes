@@ -1,5 +1,5 @@
 import type { TextItem } from '$lib/model/types';
-import { paintCss, resolveTextStyle } from '$lib/model/textStyle';
+import { paintCss, resolveTextStyle, shadowOffset, shadowReach } from '$lib/model/textStyle';
 import { ensureFallback, fontString } from './fonts';
 
 /**
@@ -70,7 +70,8 @@ function wrap(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: nu
 	return lines;
 }
 
-type LayoutInput = Pick<TextItem, 'text' | 'style' | 'x' | 'y' | 'font' | 'size' | 'colors'>;
+type LayoutInput = Pick<TextItem, 'text' | 'style' | 'x' | 'y' | 'font' | 'size' | 'colors'> &
+	Partial<Pick<TextItem, 'shadow'>>;
 
 /** Where and how big a text item is in a frame of the given size. */
 export function layoutText(item: LayoutInput, frameW: number, frameH: number): TextLayout {
@@ -87,7 +88,8 @@ export function layoutText(item: LayoutInput, frameW: number, frameH: number): T
 	const padY = (spec.box?.padY ?? 0) * fontSize;
 	const strokeW = (spec.stroke?.width ?? 0) * fontSize;
 	const bleed = Math.ceil(
-		Math.max(strokeW, spec.shadow ? spec.shadow.blur * fontSize * 1.5 : 0) + 2
+		// The outline reaches half its width past the letters; the shadow its blur and offset.
+		Math.max(strokeW, shadowReach(spec.shadow, fontSize) + strokeW / 2) + 2
 	);
 	return {
 		lines,
@@ -132,10 +134,12 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
 		ctx.fill();
 	}
 
-	// Translucent text: draw the letters (and outline) fully opaque into a layer, then place the
-	// layer with the fill's opacity, so the outline doesn't show through the letters.
+	// The letters (and outline) are drawn fully opaque into their own layer when they're
+	// translucent (so the outline doesn't show through them) or have a shadow (cast once, by the
+	// letters and outline together), then placed with the fill's opacity.
 	const fillOpacity = Math.max(0, Math.min(1, spec.fill.opacity));
-	const letters = fillOpacity < 1 ? new OffscreenCanvas(canvas.width, canvas.height) : canvas;
+	const shadow = spec.shadow.on && spec.shadow.opacity > 0 ? spec.shadow : null;
+	const letters = fillOpacity < 1 || shadow ? new OffscreenCanvas(canvas.width, canvas.height) : canvas;
 	const lctx = letters === canvas ? ctx : letters.getContext('2d')!;
 	if (lctx !== ctx) {
 		lctx.font = ctx.font;
@@ -153,11 +157,6 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
 			ctx.roundRect(centerX - w / 2, y - lineHeight * 0.44, w, lineHeight * 0.88, fontSize * 0.12);
 			ctx.fill();
 		}
-		if (spec.shadow) {
-			lctx.shadowColor = spec.shadow.color;
-			lctx.shadowBlur = spec.shadow.blur * fontSize;
-			lctx.shadowOffsetY = spec.shadow.offsetY * fontSize;
-		}
 		if (spec.stroke && spec.stroke.width > 0) {
 			lctx.lineJoin = 'round';
 			lctx.lineWidth = spec.stroke.width * fontSize;
@@ -166,9 +165,21 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
 		}
 		lctx.fillStyle = paintCss({ ...spec.fill, opacity: letters === canvas ? fillOpacity : 1 });
 		lctx.fillText(line, centerX, y);
-		lctx.shadowColor = 'transparent';
 	});
 
+	if (shadow) {
+		// Only the shadow: the letters are drawn far off the canvas and their shadow brought back
+		// by the offset, so it keeps its own opacity whatever the letters' is.
+		const off = shadowOffset(shadow, fontSize);
+		const away = canvas.width + bleed * 4 + 100;
+		ctx.save();
+		ctx.shadowColor = paintCss(shadow);
+		ctx.shadowBlur = shadow.blur * fontSize;
+		ctx.shadowOffsetX = off.x + away;
+		ctx.shadowOffsetY = off.y;
+		ctx.drawImage(letters, -away, 0);
+		ctx.restore();
+	}
 	if (letters !== canvas) {
 		ctx.globalAlpha = fillOpacity;
 		ctx.drawImage(letters, 0, 0);

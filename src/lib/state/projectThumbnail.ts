@@ -9,6 +9,10 @@ import { placeScenes } from '$lib/model/timeline';
 import { compose } from '$lib/model/composition';
 import { sceneFrameAt } from '$lib/model/keyframes';
 import { overlayDraw } from '$lib/render/overlay';
+import { textDraw } from '$lib/render/visuals';
+import { TextSpriteCache } from '$lib/render/text';
+import { ensureFonts } from '$lib/render/fonts';
+import { resolveTextStyle } from '$lib/model/textStyle';
 
 /**
  * The picture on a project's card on the home screen: its first scene, in the project's shape,
@@ -21,7 +25,7 @@ const WIDTH = 320;
 export function thumbnailKey(project: Project): string {
 	const s = sceneAtStart(project);
 	// Layers showing at the start are part of the picture too.
-	const layers = startLayers(project).map((p) => p.overlay);
+	const layers = startVisuals(project).map((v) => (v.type === 'overlay' ? v.placed.overlay : v.item));
 	return s
 		? JSON.stringify([s.mediaId, s.kind, s.crop, s.frame, s.keyframes, s.card, project.format.width, project.format.height, layers])
 		: '';
@@ -36,10 +40,10 @@ function sceneAtStart(project: Pick<Project, 'scenes'>) {
 	return compose(placed, 0, (p) => ({ start: p.scene.sourceStart, end: p.scene.sourceEnd })).a?.placed.scene;
 }
 
-/** Pictures on (shown) overlay tracks at the very start, lowest track first. */
-function startLayers(project: Project) {
+/** Pictures and words on (shown) overlay tracks at the very start, lowest track first. */
+function startVisuals(project: Project) {
 	const length = placeScenes(project.scenes).at(-1)?.end ?? 0;
-	return visualsAt(project, 0, length).flatMap((v) => (v.type === 'overlay' ? [v.placed] : []));
+	return visualsAt(project, 0, length);
 }
 
 export async function makeProjectThumbnail(project: Project, media: Record<string, MediaInfo>): Promise<Blob | null> {
@@ -82,7 +86,24 @@ async function drawLayers(
 	w: number,
 	h: number
 ) {
-	for (const p of startLayers(project)) {
+	const sprites = new TextSpriteCache();
+	const visuals = startVisuals(project);
+	await ensureFonts(visuals.flatMap((v) => (v.type === 'text' ? [resolveTextStyle(v.item).font] : []))).catch(() => {});
+	for (const v of visuals) {
+		if (v.type === 'text') {
+			// The words as the video draws them (same sprite, shadow and all), fully shown.
+			const t = textDraw({ ...v.item, animation: 'none' }, 0, w, h, sprites);
+			if (!t) continue;
+			ctx.save();
+			ctx.globalAlpha = t.opacity;
+			ctx.translate(t.cx, t.cy);
+			ctx.rotate(t.rotation ?? 0);
+			ctx.scale(t.scale * (t.scaleX ?? 1), t.scale * (t.scaleY ?? 1));
+			ctx.drawImage(t.image as CanvasImageSource, -t.width / 2, -t.height / 2);
+			ctx.restore();
+			continue;
+		}
+		const p = v.placed;
 		const o = p.overlay;
 		let image: ImageBitmap | null = null;
 		let size = { width: w, height: h };

@@ -20,6 +20,73 @@ export interface TextColors {
 	outline?: { color: string; width: number };
 }
 
+/**
+ * A drop shadow behind the letters (and their outline). Sizes are fractions of the font size, so
+ * it looks the same on small and very large words; the settings show them in pixels.
+ */
+export interface TextShadow {
+	on: boolean;
+	/** "#rrggbb". */
+	color: string;
+	/** 0–1. */
+	opacity: number;
+	/** Blur, as a fraction of the font size (0 = a hard, sharp shadow). */
+	blur: number;
+	/** How far it's offset, as a fraction of the font size. */
+	distance: number;
+	/** Which way it's offset, in degrees: 0 is right, 90 down (clockwise on screen). */
+	angle: number;
+}
+
+/** The version of the styles' defaults new words get (see Project.styleDefaults). */
+export const STYLE_DEFAULTS = 2;
+
+export type ShadowPreset = 'soft' | 'hard' | 'long' | 'glow';
+
+/** Quick shadow settings (Glow: no offset and a wide blur, a glow behind the words). */
+export const SHADOW_PRESETS: Record<ShadowPreset, Omit<TextShadow, 'on'>> = {
+	soft: { color: '#000000', opacity: 0.45, blur: 0.25, distance: 0.04, angle: 90 },
+	hard: { color: '#000000', opacity: 0.8, blur: 0, distance: 0.06, angle: 45 },
+	long: { color: '#000000', opacity: 0.55, blur: 0.03, distance: 0.22, angle: 45 },
+	glow: { color: '#ffffff', opacity: 0.9, blur: 0.5, distance: 0, angle: 90 }
+};
+
+export const SHADOW_PRESET_LABELS: Record<ShadowPreset, string> = {
+	soft: 'Soft',
+	hard: 'Hard',
+	long: 'Long',
+	glow: 'Glow'
+};
+
+/** The preset a shadow's values match (to show it chosen), if any. */
+export function shadowPreset(s: TextShadow): ShadowPreset | null {
+	const same = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+	for (const [id, p] of Object.entries(SHADOW_PRESETS) as [ShadowPreset, Omit<TextShadow, 'on'>][])
+		if (
+			p.color.toLowerCase() === s.color.toLowerCase() &&
+			same(p.opacity, s.opacity) &&
+			same(p.blur, s.blur) &&
+			same(p.distance, s.distance) &&
+			(p.distance === 0 || same(p.angle, s.angle))
+		)
+			return id;
+	return null;
+}
+
+/** The shadow's offset in pixels for words of `fontPx`. */
+export function shadowOffset(s: TextShadow, fontPx: number): { x: number; y: number } {
+	const r = (s.angle * Math.PI) / 180;
+	const d = s.distance * fontPx;
+	return { x: Math.cos(r) * d, y: Math.sin(r) * d };
+}
+
+/** How far a shadow reaches past the letters, in pixels for words of `fontPx`. */
+export function shadowReach(s: TextShadow | undefined, fontPx: number): number {
+	if (!s?.on || s.opacity <= 0) return 0;
+	// Canvas and CSS blur with a Gaussian of σ = blur / 2: 3σ covers it.
+	return (s.blur * 1.5 + s.distance) * fontPx;
+}
+
 export type FontSource = 'builtin' | 'local' | 'upload';
 
 export interface TextFont {
@@ -153,13 +220,15 @@ export interface StyleSpec {
 	stroke?: { color: string; width: number };
 	box?: Paint & { padX: number; padY: number; radius: number };
 	band?: Paint & { padX: number };
-	shadow?: { color: string; blur: number; offsetY: number };
+	/** The style's own shadow (also when off: what turning it on starts from). */
+	shadow: TextShadow;
 }
 
 // These colours are part of the rendered video (content), not the interface palette.
 const WHITE: Paint = { color: '#ffffff', opacity: 1 };
 const INK = '#141417';
-const SOFT_SHADOW = { color: 'rgba(0,0,0,0.45)', blur: 0.25, offsetY: 0.04 };
+const SOFT_SHADOW: TextShadow = { on: true, ...SHADOW_PRESETS.soft };
+const NO_SHADOW: TextShadow = { ...SOFT_SHADOW, on: false };
 const GEIST = { id: 'geist', family: 'Geist' };
 const SERIF = { id: 'instrument-serif', family: 'Instrument Serif' };
 
@@ -169,14 +238,15 @@ export const TEXT_STYLE_SPECS: Record<TextStyleId, StyleSpec> = {
 		size: 0.062,
 		lineHeight: 1.18,
 		fill: WHITE,
-		shadow: SOFT_SHADOW
+		shadow: NO_SHADOW
 	},
 	boxed: {
 		font: { ...GEIST, weight: 600, italic: false },
 		size: 0.056,
 		lineHeight: 1.22,
 		fill: WHITE,
-		box: { color: INK, opacity: 0.88, padX: 0.5, padY: 0.28, radius: 0.22 }
+		box: { color: INK, opacity: 0.88, padX: 0.5, padY: 0.28, radius: 0.22 },
+		shadow: NO_SHADOW
 	},
 	serif: {
 		font: { ...SERIF, weight: 400, italic: true },
@@ -192,14 +262,16 @@ export const TEXT_STYLE_SPECS: Record<TextStyleId, StyleSpec> = {
 		uppercase: true,
 		letterSpacing: 0.02,
 		fill: WHITE,
-		stroke: { color: INK, width: 0.16 }
+		stroke: { color: INK, width: 0.16 },
+		shadow: NO_SHADOW
 	},
 	highlight: {
 		font: { ...GEIST, weight: 600, italic: false },
 		size: 0.058,
 		lineHeight: 1.3,
 		fill: { color: INK, opacity: 1 },
-		band: { color: '#ffe14d', opacity: 1, padX: 0.28 }
+		band: { color: '#ffe14d', opacity: 1, padX: 0.28 },
+		shadow: NO_SHADOW
 	},
 	title: {
 		font: { ...SERIF, weight: 400, italic: true },
@@ -223,9 +295,9 @@ export interface ResolvedTextStyle extends Omit<StyleSpec, 'font'> {
 	font: TextFont;
 }
 
-/** A text item's style with its own colours, size and font applied on top. */
+/** A text item's style with its own colours, size, font and shadow applied on top. */
 export function resolveTextStyle(
-	item: Pick<TextItem, 'style' | 'font' | 'size' | 'colors'>
+	item: Pick<TextItem, 'style' | 'font' | 'size' | 'colors'> & Partial<Pick<TextItem, 'shadow'>>
 ): ResolvedTextStyle {
 	const spec = TEXT_STYLE_SPECS[item.style];
 	const c = item.colors ?? {};
@@ -237,7 +309,8 @@ export function resolveTextStyle(
 		fill: c.fill ?? spec.fill,
 		box: spec.box && c.box ? { ...spec.box, ...c.box } : spec.box,
 		band: spec.band && c.box ? { ...spec.band, ...c.box } : spec.band,
-		stroke: spec.stroke && c.outline ? { ...c.outline } : spec.stroke
+		stroke: spec.stroke && c.outline ? { ...c.outline } : spec.stroke,
+		shadow: item.shadow ?? spec.shadow
 	};
 }
 

@@ -1,3 +1,4 @@
+import { STYLE_DEFAULTS } from '$lib/model/textStyle';
 import type { MediaInfo } from '$lib/media/db';
 import type { Project, Scene } from '$lib/model/types';
 import { DEFAULT_FORMAT } from '$lib/model/format';
@@ -22,6 +23,7 @@ export function newProject(): Project {
 		mood: 'natural',
 		scenes: [],
 		texts: [],
+		styleDefaults: STYLE_DEFAULTS,
 		sounds: [],
 		// A new video starts with one overlay track and one audio track around the scenes.
 		tracks: [

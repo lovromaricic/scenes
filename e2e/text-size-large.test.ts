@@ -143,14 +143,15 @@ test.describe('Very large words (up to 2000 px)', () => {
 			const gl = document.createElement('canvas').getContext('webgl2')!;
 			return { max: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number };
 		});
-		const canvases: { w: number; h: number }[] = [];
-		await page.exposeFunction('__canvasMade', (w: number, h: number) => canvases.push({ w, h }));
+		const canvases: { w: number; h: number; stack: string }[] = [];
+		await page.exposeFunction('__canvasMade', (w: number, h: number, stack: string) => canvases.push({ w, h, stack }));
 		await page.evaluate(() => {
 			const Real = OffscreenCanvas;
 			(window as unknown as { OffscreenCanvas: typeof OffscreenCanvas }).OffscreenCanvas = class extends Real {
 				constructor(w: number, h: number) {
 					super(w, h);
-					if (w * h > 1_000_000) (window as unknown as { __canvasMade(w: number, h: number): void }).__canvasMade(w, h);
+					if (w * h > 1_000_000)
+						(window as unknown as { __canvasMade(w: number, h: number, stack: string): void }).__canvasMade(w, h, new Error().stack ?? '');
 				}
 			};
 		});
@@ -171,7 +172,9 @@ test.describe('Very large words (up to 2000 px)', () => {
 		const corner = await previewAt(page, 0.02, 0.02);
 		expect(red(corner)).toBe(false);
 
-		// Playing (growing all the while): smooth, and the words aren't drawn again.
+		// Playing (growing all the while): smooth, and the words aren't drawn again. (Saved first:
+		// the home picture, which shows the words too, is made again after a change.)
+		await api(page, 's => s.flushSave()');
 		canvases.length = 0;
 		const fps = await page.evaluate(async () => {
 			const s = (window as unknown as { __scenes: { togglePlay(): void; playing: boolean } }).__scenes;
@@ -190,7 +193,7 @@ test.describe('Very large words (up to 2000 px)', () => {
 			return (n * 1000) / (performance.now() - start);
 		});
 		expect(fps).toBeGreaterThan(20);
-		expect(canvases).toHaveLength(0);
+		expect(canvases.filter((c) => !c.stack.includes('Thumbnail'))).toHaveLength(0);
 
 		if (!hasFfmpeg) return;
 		// The saved frame at 0 s (the same renderer as every export): sharp letter edges. Pixels

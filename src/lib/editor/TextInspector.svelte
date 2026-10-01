@@ -10,6 +10,7 @@
 	import FontPicker from './FontPicker.svelte';
 	import TextSizeField from './TextSizeField.svelte';
 	import TextColorSettings from './TextColorSettings.svelte';
+	import TextShadowSettings from './TextShadowSettings.svelte';
 	import TransformFields from './TransformFields.svelte';
 	import KeyframeSection from './KeyframeSection.svelte';
 	import KeyframeButtons from './KeyframeButtons.svelte';
@@ -61,6 +62,8 @@
 	<TextSizeField {item} />
 
 	<TextColorSettings {item} />
+
+	<TextShadowSettings {item} />
 
 	<Field label="Animation">
 		<ChipGroup

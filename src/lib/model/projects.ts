@@ -1,5 +1,5 @@
 import { legacyFormat } from './format';
-import { resolveTextStyle, TEXT_STYLE_SPECS } from './textStyle';
+import { resolveTextStyle, SHADOW_PRESETS, STYLE_DEFAULTS, TEXT_STYLE_SPECS } from './textStyle';
 import type { Project } from './types';
 import { migrateSounds } from './sound';
 import { migrateToTracks } from './tracks';
@@ -98,6 +98,13 @@ export function migrateProject<T extends Partial<Project> & { aspect?: string }>
 	project.title ??= 'My video';
 	// Words in a style this version doesn't know are shown in the plain style.
 	for (const text of project.texts) if (!(text.style in TEXT_STYLE_SPECS)) text.style = 'clean';
+	// Before editable shadows, Clean white always had a soft shadow; now it starts without one.
+	// Older words keep theirs.
+	if ((project.styleDefaults ?? 1) < STYLE_DEFAULTS) {
+		for (const text of project.texts)
+			if (text.style === 'clean' && !text.shadow) text.shadow = { on: true, ...SHADOW_PRESETS.soft };
+		project.styleDefaults = STYLE_DEFAULTS;
+	}
 	// Before "Your media", the list is rebuilt from the scenes.
 	project.library ??= project.scenes
 		.filter((s) => s.kind !== 'card')

@@ -1,4 +1,4 @@
-import { paintCss, resolveTextStyle } from '$lib/model/textStyle';
+import { paintCss, resolveTextStyle, shadowOffset } from '$lib/model/textStyle';
 import type { TextItem } from '$lib/model/types';
 import { fontString } from './fonts';
 
@@ -7,7 +7,7 @@ import { fontString } from './fonts';
  * uses. Used for typing on the preview and for the style picker's little previews.
  */
 export function textCss(
-	item: Pick<TextItem, 'style' | 'font' | 'size' | 'colors'>,
+	item: Pick<TextItem, 'style' | 'font' | 'size' | 'colors'> & Partial<Pick<TextItem, 'shadow'>>,
 	fontPx: number
 ): string {
 	const s = resolveTextStyle(item);
@@ -18,10 +18,9 @@ export function textCss(
 		`letter-spacing: ${(s.letterSpacing ?? 0) * fontPx}px`,
 		`text-transform: ${s.uppercase ? 'uppercase' : 'none'}`
 	];
-	if (s.shadow) {
-		rules.push(
-			`text-shadow: 0 ${s.shadow.offsetY * fontPx}px ${s.shadow.blur * fontPx}px ${s.shadow.color}`
-		);
+	if (s.shadow.on) {
+		const o = shadowOffset(s.shadow, fontPx);
+		rules.push(`text-shadow: ${o.x}px ${o.y}px ${s.shadow.blur * fontPx}px ${paintCss(s.shadow)}`);
 	}
 	if (s.stroke && s.stroke.width > 0) {
 		rules.push(
