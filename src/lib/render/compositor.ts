@@ -377,8 +377,12 @@ export class Compositor {
 		return { program, u };
 	}
 
+	/** The GPU's largest texture side: text sprites are drawn no larger than this. */
+	maxTextureSize = 4096;
+
 	private init() {
 		const gl = this.gl;
+		this.maxTextureSize = Math.max(2048, (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number) || 4096);
 		this.grade = this.program(LAYER_VS, GRADE_FS, {
 			rect: 'uRect',
 			crop: 'uCrop',

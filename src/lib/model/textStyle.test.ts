@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { closestFace, faceLabel, paintCss, parseStyleName, resolveTextStyle } from './textStyle';
+import {
+	closestFace,
+	faceLabel,
+	MAX_TEXT_PX,
+	MIN_TEXT_PX,
+	paintCss,
+	parseStyleName,
+	resolveTextStyle,
+	sliderToTextPx,
+	textPxToSlider
+} from './textStyle';
 
 describe('resolveTextStyle', () => {
 	it('uses the style’s defaults', () => {
@@ -69,5 +79,24 @@ describe('faces', () => {
 	});
 	it('turns paint into CSS', () => {
 		expect(paintCss({ color: '#336699', opacity: 0.5 })).toBe('rgba(51, 102, 153, 0.5)');
+	});
+});
+
+describe('the text size slider (12–2000 px, curved)', () => {
+	it('runs from 12 to 2000 px and back', () => {
+		expect(MIN_TEXT_PX).toBe(12);
+		expect(MAX_TEXT_PX).toBe(2000);
+		expect(sliderToTextPx(0)).toBe(12);
+		expect(sliderToTextPx(1)).toBe(2000);
+		for (const px of [12, 20, 48, 120, 200, 640, 2000]) expect(sliderToTextPx(textPxToSlider(px))).toBe(px);
+		expect(textPxToSlider(5000)).toBe(1);
+		expect(textPxToSlider(1)).toBe(0);
+	});
+
+	it('gives the usual sizes most of the slider, in fine steps', () => {
+		expect(textPxToSlider(200)).toBeGreaterThan(0.65);
+		// Every step (of 1000) up to 200 px changes the size by at most 2 px.
+		for (let i = 1; i <= Math.floor(textPxToSlider(200) * 1000); i++)
+			expect(sliderToTextPx(i / 1000) - sliderToTextPx((i - 1) / 1000)).toBeLessThanOrEqual(2);
 	});
 });

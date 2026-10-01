@@ -124,7 +124,7 @@ export class FrameRenderer {
 		const draws: VisualDraw[] = [];
 		for (const v of visualsAt(project, t, this.duration)) {
 			if (v.type === 'text') {
-				const d = textDraw(v.item, t, width, height, this.sprites);
+				const d = textDraw(v.item, t, width, height, this.sprites, this.compositor.maxTextureSize);
 				if (d) draws.push({ type: 'text', draw: d });
 				continue;
 			}

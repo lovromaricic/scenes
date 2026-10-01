@@ -494,7 +494,7 @@ export class Player {
 			if (v.type === 'text') {
 				// Words being typed are shown by the HTML editor instead.
 				if (v.item.id === this.hiddenTextId) continue;
-				const d = textDraw(v.item, t, width, height, this.sprites);
+				const d = textDraw(v.item, t, width, height, this.sprites, this.compositor?.maxTextureSize);
 				if (d) draws.push({ type: 'text', draw: d });
 				continue;
 			}

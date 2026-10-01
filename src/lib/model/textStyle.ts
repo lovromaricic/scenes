@@ -273,4 +273,19 @@ export const TEXT_COLORS: { value: string; label: string }[] = [
 
 /** Size limits for the Size control, in project pixels. */
 export const MIN_TEXT_PX = 12;
-export const MAX_TEXT_PX = 400;
+export const MAX_TEXT_PX = 2000;
+
+/**
+ * The size slider's curve: position 0–1 to pixels and back. Not linear, so the sizes used most
+ * (about 12–200 px) take up about two thirds of the slider and stay easy to set, while the far
+ * end still reaches 2000 px. (A power of the logarithm: px = MIN × (MAX/MIN)^(p^1.6).)
+ */
+const SIZE_CURVE = 1.6;
+export function sliderToTextPx(p: number): number {
+	const q = Math.min(1, Math.max(0, p));
+	return Math.round(MIN_TEXT_PX * Math.pow(MAX_TEXT_PX / MIN_TEXT_PX, Math.pow(q, SIZE_CURVE)));
+}
+export function textPxToSlider(px: number): number {
+	const v = Math.min(MAX_TEXT_PX, Math.max(MIN_TEXT_PX, px));
+	return Math.pow(Math.log(v / MIN_TEXT_PX) / Math.log(MAX_TEXT_PX / MIN_TEXT_PX), 1 / SIZE_CURVE);
+}

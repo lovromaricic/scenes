@@ -51,14 +51,16 @@ export function textDraw(
 	t: number,
 	width: number,
 	height: number,
-	sprites: TextSpriteCache
+	sprites: TextSpriteCache,
+	/** The GPU's largest texture side (sprites never exceed it). */
+	maxTexture?: number
 ): TextDraw | null {
 	const state = textFrameState(item, t);
 	if (!state.visible) return null;
 	const base = textBaseValues(item);
 	const v = itemValuesAt(base, item.keyframes, t - item.start);
 	const sharp = textSharpness(maxItemScale(base, item.keyframes));
-	const { key, sprite } = sprites.get(item, width * sharp, height * sharp);
+	const { key, sprite, factor } = sprites.get(item, width, height, sharp, maxTexture);
 	return {
 		key,
 		image: sprite.canvas,
@@ -68,7 +70,7 @@ export function textDraw(
 		cy: v.y * height + state.dy * Math.min(width, height),
 		width: sprite.canvas.width,
 		height: sprite.canvas.height,
-		scale: state.scale / sharp,
+		scale: state.scale / factor,
 		scaleX: v.scaleX,
 		scaleY: v.scaleY,
 		rotation: (v.rotation * Math.PI) / 180,

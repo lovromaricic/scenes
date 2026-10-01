@@ -182,20 +182,63 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
  * Caches sprites so a text is only redrawn when it changes: its words, style, colours, size, the
  * frame size, or the font actually in use (so it redraws once a font finishes loading).
  */
+/** A texture side every WebGL2 device supports (the real limit is asked from the GPU). */
+export const SAFE_TEXTURE_SIZE = 4096;
+/** Most pixels in one text sprite (about 128 MB of RGBA), however large the words. */
+export const MAX_SPRITE_PIXELS = 32_000_000;
+
+/**
+ * How many sprite pixels to draw per frame pixel for words whose sprite is `w` × `h` frame
+ * pixels: `want` (more than 1 for words that grow, so they stay sharp), but no more than fits a
+ * texture of `maxSide` pixels and the pixel budget. Very large words (thousands of pixels, or
+ * grown 4×) are then drawn from a slightly smaller sprite, scaled up, rather than not at all.
+ */
+export function spriteFactor(w: number, h: number, want: number, maxSide: number, maxPixels = MAX_SPRITE_PIXELS): number {
+	// A little room for the sprite's rounding and the outline/shadow margin, which round up.
+	const side = Math.max(16, maxSide - 8);
+	return Math.min(want, side / Math.max(1, w), side / Math.max(1, h), Math.sqrt(maxPixels / Math.max(1, w * h)));
+}
+
+/**
+ * Text sprites, drawn once and kept while they're used: a sprite is only redrawn when the words,
+ * their style or the frame size change (moving, turning, scaling and fading don't redraw it).
+ */
 export class TextSpriteCache {
 	private sprites = new Map<string, { sprite: TextSprite; used: number }>();
+	/** Each sprite's drawing factor (see spriteFactor), so words aren't measured every frame. */
+	private factors = new Map<string, number>();
 	private frame = 0;
 
-	get(item: TextItem, frameW: number, frameH: number): { key: string; sprite: TextSprite } {
+	/**
+	 * The sprite for words in a frame of frameW × frameH, drawn `want` times larger if that fits
+	 * the GPU's `maxTexture` (and the pixel budget). `factor` is the size it was drawn at: sprite
+	 * pixels per frame pixel.
+	 */
+	get(
+		item: TextItem,
+		frameW: number,
+		frameH: number,
+		want = 1,
+		maxTexture = SAFE_TEXTURE_SIZE
+	): { key: string; sprite: TextSprite; factor: number } {
 		const spec = resolveTextStyle(item);
-		const key = `${item.id}|${frameW}x${frameH}|${item.text}|${JSON.stringify(spec)}|${fontString(spec.font, 10)}`;
+		const words = `${item.id}|${item.text}|${JSON.stringify(spec)}|${fontString(spec.font, 10)}`;
+		const fk = `${words}|${frameW}x${frameH}|${want}|${maxTexture}`;
+		let factor = this.factors.get(fk);
+		if (factor === undefined) {
+			const l = layoutText(item, frameW, frameH);
+			factor = spriteFactor(l.width + l.bleed * 2, l.height + l.bleed * 2, want, maxTexture);
+			if (this.factors.size > 256) this.factors.clear();
+			this.factors.set(fk, factor);
+		}
+		const key = `${words}|${frameW * factor}x${frameH * factor}`;
 		let entry = this.sprites.get(key);
 		if (!entry) {
-			entry = { sprite: drawTextSprite(item, frameW, frameH), used: this.frame };
+			entry = { sprite: drawTextSprite(item, frameW * factor, frameH * factor), used: this.frame };
 			this.sprites.set(key, entry);
 		}
 		entry.used = this.frame;
-		return { key, sprite: entry.sprite };
+		return { key, sprite: entry.sprite, factor };
 	}
 
 	/** Call once per rendered frame; forgets sprites not used for a while. */
@@ -215,5 +258,6 @@ export class TextSpriteCache {
 
 	clear(): void {
 		this.sprites.clear();
+		this.factors.clear();
 	}
 }

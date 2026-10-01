@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MOOD_GRADES } from '$lib/model/moods';
 import { reachesOutside, type VisualDraw } from './visuals';
+import { MAX_SPRITE_PIXELS, spriteFactor } from './text';
 
 const overlay = (x: number, y: number, w: number, h: number, extra: object = {}): VisualDraw => ({
 	type: 'overlay',
@@ -38,5 +39,21 @@ describe('what reaches outside the frame (drawn faded on the pasteboard)', () =>
 		});
 		expect(reachesOutside(words(1), 640, 360)).toBe(false);
 		expect(reachesOutside(words(4), 640, 360)).toBe(true);
+	});
+});
+
+describe('text sprites for very large words', () => {
+	it('draws growing words larger, within the texture limit and the pixel budget', () => {
+		// Small words growing 4×: drawn 4× larger.
+		expect(spriteFactor(400, 100, 4, 16384)).toBe(4);
+		// 2000 px words (about 6500 × 2500 in the frame) growing 4×: as large as fits.
+		const f = spriteFactor(6500, 2500, 4, 16384);
+		expect(f).toBeLessThan(4);
+		expect(6500 * f).toBeLessThanOrEqual(16384);
+		expect(6500 * 2500 * f * f).toBeLessThanOrEqual(MAX_SPRITE_PIXELS + 1);
+		expect(f).toBeGreaterThan(1); // still sharper than the frame
+		// A small GPU limit: scaled down to fit rather than failing.
+		const g = spriteFactor(6500, 2500, 1, 4096);
+		expect(6500 * g).toBeLessThanOrEqual(4096);
 	});
 });

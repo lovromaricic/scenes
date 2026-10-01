@@ -459,7 +459,7 @@ npm run check        # svelte-check (TypeScript strict)
   "Reset colors" does the same without changing the style.
 - **Opacity:** translucent text is drawn opaque into its own layer (letters + outline) and then
   placed with the fill's opacity, so the outline doesn't show through half-transparent letters.
-- **Size:** a slider and a number field in project pixels (12–400). Stored as a fraction of the
+- **Size:** a slider and a number field in project pixels (12–400; now 12–2000, see "Very large words"). Stored as a fraction of the
   frame's short side, so it keeps its look when the format changes.
 - **Built-in fonts:** ten SIL Open Font License families bundled as Latin-subset woff2 files in
   `static/fonts` (716 KB total, fetched from their Fontsource npm packages by
@@ -2303,6 +2303,52 @@ in from off-screen with keyframes.
     reach past the stage, where it's now cut off.
   - The zoom button's name is "Stage zoom: …", so the storyboard's "Fit" button stays unique.
 
+## Very large words (up to 2000 px)
+
+- **Range:** 12–2000 px (was 400; `MAX_TEXT_PX`). Typed values outside it are brought into range,
+  and the field shows the clamped value, even when the size itself doesn't change.
+- **Arrow keys** in the number field: 1 px, or 10 with Shift (`TextSizeField`).
+- **A curved slider.** Position p (0–1) maps to `12 × (2000/12)^(p^1.6)` px (`sliderToTextPx`,
+  `textPxToSlider`).
+  - Sizes up to 200 px take about two thirds of the slider, and each of its 1000 steps there
+    changes the size by 2 px at most.
+  - The far end is still 2000 px.
+  - A plain logarithm would give 12–200 px only 55% of the slider.
+  - Its value is read out as "48 px". `Slider` got `showValue={false}`, since the number field
+    already shows it.
+- **Sharp and within the GPU's limits.**
+  - Words are drawn once into a sprite and kept (`TextSpriteCache`). They're redrawn only when
+    the words, their style or the frame size change. Moving, turning, scaling and fading never
+    redraw them.
+  - Words that grow are drawn larger so they stay sharp (`textSharpness`, up to 4×). That
+    factor is now capped by `spriteFactor`:
+    - no side larger than the GPU's `MAX_TEXTURE_SIZE` (asked from each compositor, so the
+      preview, pasteboard and export each use their own);
+    - no more than 32 M pixels (about 128 MB) per sprite.
+  - The factor is worked out once per sprite (cached), not every frame. The drawn size on
+    screen doesn't depend on it: `TextDraw.scale` divides by it.
+  - So 2000 px words growing 4× are drawn as large as fits, rather than failing to upload.
+    - Typically about 1.4× the frame's resolution, so they're sharp at 1× and a little soft
+      at 4×.
+    - On a GPU with a small limit, they're drawn smaller and scaled up rather than missing.
+  - Outlines, boxes, bands and shadows scale with the font size. They're inside the same
+    sprite, with its margin (`bleed`), so they're capped together.
+- **Thumbnails** (home pictures) still show only the pictures at 0 s, not words, so very large
+  words don't affect them.
+- **Tests:**
+  - Unit: the slider curve (round trips, 200 px past two thirds, steps ≤ 2 px up to 200 px).
+  - Unit: `spriteFactor` (small words get the full 4×; 2000 px words growing 4× fit 16384 px
+    and the budget and are still sharper than the frame; a 4096 px GPU fits too).
+  - E2E (`text-size-large.test.ts`):
+    - typing 2000, 5000 (→ 2000) and 3 (→ 12);
+    - arrows and Shift + arrows, stopping at 2000;
+    - the slider's ends, 200 px past 0.6, and one step half-way changing it by at most 1 px;
+    - 2000 px boxed words growing 1×→4×: every sprite canvas within the GPU limit and the
+      budget, and the preview covered by the box;
+    - 1.5 s of playback over 20 fps with no sprite redrawn;
+    - the saved PNG frame has crisp letter edges (under 2% in-between pixels);
+    - the saved MP4 shows them at the start and while growing.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
@@ -2314,6 +2360,8 @@ in from off-screen with keyframes.
 - Stepper hold-to-repeat works with a pointer; keyboard users press repeatedly.
 - The Words, Sound and Looks panels are still placeholders (Phases 4–6). Clips works.
 - Mood swatches are stored per scene but only change the picture from Phase 6.
+- Very large words: they're drawn from one sprite. Splitting it into tiles would keep them sharp at
+  4× too (now about 1.4× the frame's resolution at most for 2000 px words).
 - Pasteboard ideas: guides at the frame's edges while snapping words, a "show everything" zoom
   that fits all objects, and keeping the zoom per project.
 - Framing ideas: rotate, "follow the subject" pan over time (Ken Burns), per-scene background colour.

@@ -13,6 +13,8 @@
 		onchange?: (value: number) => void;
 		/** Fires continuously while dragging. */
 		oninput?: (value: number) => void;
+		/** Show the value next to the slider (it's always given to screen readers). */
+		showValue?: boolean;
 	}
 
 	let {
@@ -23,7 +25,8 @@
 		step = 0.01,
 		format = (v) => `${Math.round(v * 100)}%`,
 		onchange,
-		oninput
+		oninput,
+		showValue = true
 	}: Props = $props();
 
 	const fill = $derived(((value - min) / (max - min)) * 100);
@@ -42,7 +45,7 @@
 		oninput={() => oninput?.(value)}
 		onchange={() => onchange?.(value)}
 	/>
-	<output class="mono">{format(value)}</output>
+	{#if showValue}<output class="mono">{format(value)}</output>{/if}
 </div>
 
 <style>
