@@ -19,6 +19,7 @@
 	import { onDestroy } from 'svelte';
 	import OverlayStyleFields from './OverlayStyleFields.svelte';
 	import OverlayAnimationFields from './OverlayAnimationFields.svelte';
+	import KeyframeButtons from './KeyframeButtons.svelte';
 
 	interface Props {
 		width: number;
@@ -196,6 +197,44 @@
 		if (d.moved) editor.endGesture(d.handle === 'move' ? 'Move layer' : 'Resize layer');
 	}
 
+	/**
+	 * Turn a layer with the handle above its box: the angle follows the pointer around the box's
+	 * centre; Shift snaps to 15° steps. At the playhead (a keyframe when animated).
+	 */
+	function onrotatedown(event: PointerEvent, o: Overlay) {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const box = (event.currentTarget as HTMLElement).closest('.layer-box')!.getBoundingClientRect();
+		const cx = box.left + box.width / 2;
+		const cy = box.top + box.height / 2;
+		const angle = (e: PointerEvent) => (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI;
+		const a0 = angle(event);
+		const r0 = shown(o).rotation;
+		const kfId = crypto.randomUUID();
+		let moved = false;
+		rotating = true;
+		drags.start(event, {
+			move: (e) => {
+				if (!moved) {
+					moved = true;
+					popover = null;
+					editor.beginGesture();
+				}
+				let r = r0 + angle(e) - a0;
+				// Keep it within ±180° of where it started, and tidy.
+				r = Math.round(r * 10) / 10;
+				if (e.shiftKey) r = Math.round(r / 15) * 15;
+				editor.liveItemValues(o.id, { rotation: r }, kfId);
+			},
+			end: () => {
+				rotating = false;
+				if (moved) editor.endGesture('Rotate layer');
+			}
+		});
+	}
+	let rotating = $state(false);
+
 	function onkeydown(event: KeyboardEvent, o: Overlay) {
 		const step = event.shiftKey ? 10 : 1;
 		const moves: Record<string, [number, number]> = {
@@ -287,6 +326,13 @@
 			}}
 		></button>
 		{#if selected}
+			<span
+				class="rotate"
+				data-layer-handle="rotate"
+				role="presentation"
+				title="Drag to turn (Shift: 15° steps)"
+				onpointerdown={(e) => onrotatedown(e, o)}
+			></span>
 			{#each HANDLES as handle (handle)}
 				<span
 					class="handle {handle}"
@@ -297,7 +343,7 @@
 			{/each}
 		{/if}
 	</div>
-	{#if selected && !dragging}
+	{#if selected && !dragging && !rotating}
 		<!-- Outside the layer's box, and stacked above the words on the video: the toolbar and its
 			popovers must never have words (or other layers) on top of them, catching clicks. -->
 		<div
@@ -308,8 +354,11 @@
 			style:width="{g.w}px"
 			style:height="{g.h}px"
 		>
-			<div class="layer-toolbar" class:below={g.top < 64}>
-				<FloatingToolbar label="Layer options" actions={actions(o)} />
+			<div class="layer-toolbar" class:below={g.top < 92}>
+				<div class="toolbar-row">
+					<FloatingToolbar label="Layer options" actions={actions(o)} />
+					<KeyframeButtons id={o.id} dark />
+				</div>
 				{#if popover === 'style'}
 					<div class="popover" role="dialog" aria-label="Layer style">
 						<OverlayStyleFields overlay={o} />
@@ -337,6 +386,12 @@
 {/each}
 
 <style>
+	.toolbar-row {
+		display: flex;
+		gap: var(--space-2);
+		align-items: center;
+	}
+
 	.layer-box {
 		position: absolute;
 		z-index: 4;
@@ -377,6 +432,40 @@
 		width: 10px;
 		height: 10px;
 		border-radius: 2px;
+		background: var(--color-bg);
+		box-shadow: 0 0 0 1.5px var(--color-accent);
+	}
+	/* The rotation handle: a round knob on a short stem above the box's top edge. */
+	.rotate {
+		position: absolute;
+		left: 50%;
+		top: -30px;
+		width: 22px;
+		height: 22px;
+		translate: -50% 0;
+		touch-action: none;
+		cursor: grab;
+		z-index: 1;
+	}
+	.rotate::before {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 15px;
+		width: 1.5px;
+		height: 15px;
+		translate: -50% 0;
+		background: var(--color-accent);
+	}
+	.rotate::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 4px;
+		width: 11px;
+		height: 11px;
+		translate: -50% 0;
+		border-radius: 50%;
 		background: var(--color-bg);
 		box-shadow: 0 0 0 1.5px var(--color-accent);
 	}
@@ -449,7 +538,8 @@
 	.layer-toolbar {
 		pointer-events: auto;
 		position: absolute;
-		bottom: calc(100% + 12px);
+		/* Clear of the rotation handle above the box. */
+		bottom: calc(100% + 40px);
 		left: 50%;
 		translate: -50% 0;
 		z-index: 6;

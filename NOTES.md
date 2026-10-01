@@ -1696,6 +1696,50 @@ playhead sets the keyframe there.
   - The default easing survives a reload and is used by a new keyframe.
   - Unit tests for the maths are in section 1.
 
+### 3. Adding and editing keyframes
+
+- **Diamond with arrows** (`KeyframeButtons.svelte`): ◀ ◆ ▶. They appear in the settings header
+  of layers, words and Custom-framed scenes (only once the framing is Custom), and as a dark
+  pill next to the floating toolbar over the preview.
+  - The diamond (`toggleKeyframe`) adds a keyframe at the playhead with the item's values there.
+    It's filled when the playhead is on a keyframe, and then removes it. Adding needs the
+    playhead on the item (a friendly message otherwise).
+  - The arrows (`seekKeyframe`) move the playhead to the item's previous or next keyframe,
+    among those that show. They're disabled when there's none that way.
+- **Automatic keyframes:** once an item has a keyframe, any change at the playhead goes through
+  `setItemValues` / `setFrameValues` (section 1) and adds or updates the keyframe there. That
+  covers dragging, resizing or rotating on the preview, the X/Y, scale, rotation and opacity
+  fields, quick placement, the zoom slider and reframing. A drag only touches the keyframe at
+  the playhead.
+- **Rotation:**
+  - Layers and words have a knob on a short stem above their box, turning with it.
+  - Dragging it turns the item around its centre, following the pointer's angle; Shift snaps
+    to 15°. It's one undo step and works at the playhead.
+  - There's also a Rotation field (section 1).
+  - The floating toolbars sit higher (40 px above the box, or below it near the top) so they
+    never cover the knob.
+- **Motion path** (`MotionPath.svelte`, for the selected layer or words with 2+ keyframes):
+  - A thin dashed line through where it goes (96 samples, so the easing shows), with a dot at
+    each keyframe. Clicking a dot goes to that keyframe.
+  - Dragging the line (a wide invisible hit area) moves every keyframe's position together
+    (`liveMoveAnimation`), as one undo step.
+  - Clicking selects the path (it turns accent-coloured and gets focus): the arrow keys then
+    nudge the whole animation by 1 project pixel (Shift: 10) without moving the playhead
+    (`moveAnimation`). Esc or clicking elsewhere unselects it.
+- **Remove all keyframes:** in the Keyframes section, with a confirmation. The item keeps its
+  values at the playhead (`removeAllKeyframes`). Removing the last keyframe with the diamond
+  does the same.
+- **Tests** (`keyframes-editing.test.ts`):
+  - The logo scenario: the diamond at 0.5 s, then a drag on the preview at 2.5 s adds the
+    second keyframe; in between it moves.
+  - A corner drag changes the scale at the playhead, not the base size.
+  - The path and its two dots; prev/next; the toolbar's buttons.
+  - The rotation knob with Shift gives a multiple of 15°, and the box turns.
+  - Dragging the path moves both keyframes by the same amount; arrow and Shift+arrow nudges.
+  - The filled diamond removes; Remove all keeps the values at the playhead.
+  - Custom framing: the diamond only shows once it's Custom; the zoom slider makes a second
+    keyframe. Words: the diamond and dragging them.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

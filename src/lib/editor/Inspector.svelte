@@ -13,6 +13,7 @@
 	import CropPanel from './CropPanel.svelte';
 	import CardSettings from './CardSettings.svelte';
 	import OverlayInspector from './OverlayInspector.svelte';
+	import KeyframeButtons from './KeyframeButtons.svelte';
 
 	const editor = useEditor();
 
@@ -65,7 +66,11 @@
 	{:else if scene && placed}
 		{#key scene.id}
 			<div class="head">
-				<h2 class="serif title">Scene {placed.index + 1}</h2>
+				<div class="title-row">
+					<h2 class="serif title">Scene {placed.index + 1}</h2>
+					<!-- Scenes animate their Custom framing (the buttons show once it's Custom). -->
+					<KeyframeButtons id={scene.id} />
+				</div>
 				<p class="subtitle">
 					{scene.name} · starts at <span class="mono">{formatClock(placed.start)}</span>
 				</p>
@@ -151,6 +156,13 @@
 </aside>
 
 <style>
+	.title-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+	}
+
 	.inspector {
 		display: flex;
 		flex-direction: column;

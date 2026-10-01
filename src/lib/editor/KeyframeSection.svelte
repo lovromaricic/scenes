@@ -8,6 +8,7 @@
 	import { EASING_LABELS, easingPreset, sortKeyframes } from '$lib/model/keyframes';
 	import { useEditor } from '$lib/state/context';
 	import CurveEditor from './CurveEditor.svelte';
+	import { ConfirmDialog } from '$lib/ui';
 
 	let { id }: { id: string } = $props();
 
@@ -22,6 +23,7 @@
 		return null;
 	});
 	let open = $state(false);
+	let confirming = $state(false);
 	let anchor = $state<HTMLElement>();
 
 	function onWindowPointerDown(event: PointerEvent) {
@@ -63,7 +65,26 @@
 				<span class="hint">Move the playhead between two keyframes to change how it moves there.</span>
 			{/if}
 		</div>
+		<button type="button" class="remove" onclick={() => (confirming = true)}>Remove all keyframes</button>
 	</section>
+{/if}
+
+{#if confirming}
+	<ConfirmDialog
+		title="Remove all keyframes?"
+		message="It stays as it is at the playhead, without moving. You can undo this."
+		actions={[
+			{
+				label: 'Remove all',
+				onclick: () => {
+					editor.removeAllKeyframes(id);
+					confirming = false;
+				}
+			}
+		]}
+		danger
+		oncancel={() => (confirming = false)}
+	/>
 {/if}
 
 <style>
@@ -104,6 +125,20 @@
 		font: inherit;
 		font-size: var(--text-sm);
 		cursor: pointer;
+	}
+	.remove {
+		align-self: flex-start;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--color-muted);
+		font: inherit;
+		font-size: var(--text-xs);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+	.remove:hover {
+		color: var(--color-ink);
 	}
 	.popover {
 		position: absolute;

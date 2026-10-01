@@ -11,6 +11,7 @@
 	import { useEditor } from '$lib/state/context';
 	import TextOverlay from './TextOverlay.svelte';
 	import OverlayBoxOverlay from './OverlayBoxOverlay.svelte';
+	import MotionPath from './MotionPath.svelte';
 	import RecordingOverlay from './RecordingOverlay.svelte';
 	import FramingOverlay from './FramingOverlay.svelte';
 	import CropOverlay from './CropOverlay.svelte';
@@ -183,6 +184,7 @@
 			{:else if !empty}
 				<FramingOverlay width={previewW} height={previewH} />
 				<CardRectOverlay width={previewW} height={previewH} />
+				<MotionPath width={previewW} height={previewH} />
 				<OverlayBoxOverlay width={previewW} height={previewH} />
 				<TextOverlay width={previewW} height={previewH} />
 			{/if}

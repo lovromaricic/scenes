@@ -12,6 +12,7 @@
 	import TextColorSettings from './TextColorSettings.svelte';
 	import TransformFields from './TransformFields.svelte';
 	import KeyframeSection from './KeyframeSection.svelte';
+	import KeyframeButtons from './KeyframeButtons.svelte';
 
 	let { item }: { item: TextItem } = $props();
 
@@ -30,7 +31,10 @@
 </script>
 
 <div class="head">
-	<h2 class="serif title">{title}</h2>
+	<div class="title-row">
+		<h2 class="serif title">{title}</h2>
+		<KeyframeButtons id={item.id} />
+	</div>
 	<p class="subtitle">Double-click the words on the video to type.</p>
 </div>
 
@@ -121,6 +125,13 @@
 </div>
 
 <style>
+	.title-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+	}
+
 	.title {
 		font-size: var(--text-heading);
 		line-height: 1;

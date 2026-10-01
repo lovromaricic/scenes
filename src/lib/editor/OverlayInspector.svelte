@@ -28,6 +28,7 @@
 	import CardContentFields from './CardContentFields.svelte';
 	import TransformFields from './TransformFields.svelte';
 	import KeyframeSection from './KeyframeSection.svelte';
+	import KeyframeButtons from './KeyframeButtons.svelte';
 
 	let { placed }: { placed: PlacedOverlay } = $props();
 
@@ -98,7 +99,10 @@
 </script>
 
 <div class="head">
-	<h2 class="serif title">Layer</h2>
+	<div class="title-row">
+		<h2 class="serif title">Layer</h2>
+		<KeyframeButtons id={o.id} />
+	</div>
 	<p class="subtitle">
 		{kindLabel} · {o.name} · on {trackName}
 	</p>
@@ -243,6 +247,13 @@
 </div>
 
 <style>
+	.title-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+	}
+
 	.title {
 		font-size: var(--text-heading);
 		line-height: 1;

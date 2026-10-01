@@ -63,7 +63,9 @@ import {
 	DEFAULT_EASING,
 	EASINGS,
 	itemValuesAt,
+	keyframeAt,
 	overlayBaseValues,
+	SAME_TIME,
 	sceneContentTime,
 	sceneFrameAt,
 	sceneKeyframeTimelineTime,
@@ -1682,6 +1684,130 @@ export class EditorStore {
 			}),
 			{ key }
 		);
+	}
+
+	/** The keyframe at the playhead on an item, if there is one. */
+	keyframeAtPlayhead(id: string): Keyframe<ItemValues | FrameValues> | undefined {
+		const track = this.keyframeTrack(id);
+		return track ? keyframeAt(track.list, track.fromTimeline(this.time)) : undefined;
+	}
+
+	/**
+	 * The diamond: add a keyframe at the playhead holding the item's values there, or, if the
+	 * playhead is on one, remove it.
+	 */
+	toggleKeyframe(id: string): void {
+		const track = this.keyframeTrack(id);
+		if (!track) return;
+		const at = this.keyframeAtPlayhead(id);
+		if (at) {
+			this.removeKeyframes(id, [at.id]);
+			return;
+		}
+		if (this.time < track.start - 1e-6 || this.time > track.end + 1e-6) {
+			toasts.show('Move the playhead onto it to add a keyframe there.');
+			return;
+		}
+		const values = track.kind === 'scene' ? this.frameValues(id) : this.itemValues(id);
+		if (!values) return;
+		const time = track.fromTimeline(this.time);
+		const easing = EASINGS[this.defaultEasing];
+		this.updateKeyframes(id, 'Add keyframe', (list) => upsertKeyframe(list, time, { ...values }, newId, easing));
+	}
+
+	/**
+	 * Remove keyframes. Removing the last one leaves the item as it is at the playhead (like
+	 * "Remove all keyframes").
+	 */
+	removeKeyframes(id: string, keyframeIds: string[]): void {
+		const track = this.keyframeTrack(id);
+		if (!track) return;
+		const gone = new Set(keyframeIds);
+		if (track.list.every((k) => gone.has(k.id))) {
+			this.removeAllKeyframes(id, keyframeIds.length > 1 ? 'Remove keyframes' : 'Remove keyframe');
+			return;
+		}
+		this.updateKeyframes(id, keyframeIds.length > 1 ? 'Remove keyframes' : 'Remove keyframe', (list) =>
+			list.filter((k) => !gone.has(k.id))
+		);
+	}
+
+	/** Remove every keyframe; the item keeps the values it has at the playhead. */
+	removeAllKeyframes(id: string, label = 'Remove all keyframes'): void {
+		if (this.trackOfItem(id)?.locked) return;
+		const item = this.itemValues(id);
+		const frame = this.frameValues(id);
+		this.edit(label, (p) => ({
+			...p,
+			overlays: p.overlays.map((o) =>
+				o.id === id && item
+					? {
+							...o,
+							keyframes: undefined,
+							box: { ...o.box, x: item.x - o.box.w / 2, y: item.y - o.box.h / 2 },
+							scaleX: item.scaleX,
+							scaleY: item.scaleY,
+							rotation: item.rotation,
+							style: { ...o.style, opacity: item.opacity }
+						}
+					: o
+			),
+			texts: p.texts.map((t) =>
+				t.id === id && item
+					? {
+							...t,
+							keyframes: undefined,
+							x: item.x,
+							y: item.y,
+							scaleX: item.scaleX,
+							scaleY: item.scaleY,
+							rotation: item.rotation,
+							opacity: item.opacity
+						}
+					: t
+			),
+			scenes: p.scenes.map((s) =>
+				s.id === id && frame ? { ...s, keyframes: undefined, frame: { ...(s.frame ?? DEFAULT_FRAME), ...frame } } : s
+			)
+		}));
+	}
+
+	/** Move the playhead to the previous or next keyframe of an item (only ones that show). */
+	seekKeyframe(id: string, direction: -1 | 1): void {
+		const track = this.keyframeTrack(id);
+		if (!track) return;
+		const times = track.list
+			.map((k) => track.toTimeline(k.time))
+			.filter((t) => t >= track.start - 1e-6 && t <= track.end + 1e-6)
+			.sort((a, b) => a - b);
+		const next =
+			direction > 0
+				? times.find((t) => t > this.time + SAME_TIME / 2)
+				: [...times].reverse().find((t) => t < this.time - SAME_TIME / 2);
+		if (next !== undefined) this.seek(Math.min(next, Math.max(0, this.duration - 1e-3)));
+	}
+
+	/** Move a whole animation: every keyframe's position by (dx, dy) (fractions of the frame). */
+	moveAnimation(id: string, dx: number, dy: number, key?: string): void {
+		this.updateKeyframes(
+			id,
+			'Move animation',
+			(list) =>
+				list.map((k) => {
+					const v = k.values as ItemValues;
+					return { ...k, values: { ...v, x: v.x + dx, y: v.y + dy } };
+				}),
+			key
+		);
+	}
+
+	/** The same during a drag of the motion path, from the keyframes as they were (`from`). */
+	liveMoveAnimation(id: string, from: Keyframe<ItemValues>[], dx: number, dy: number): void {
+		const moved = from.map((k) => ({ ...k, values: { ...k.values, x: k.values.x + dx, y: k.values.y + dy } }));
+		this.live((p) => {
+			const o = p.overlays.find((x) => x.id === id) ?? p.texts.find((x) => x.id === id);
+			if (o) o.keyframes = moved;
+		});
 	}
 
 	/** Give keyframes (the stretches that start at them) an easing. */

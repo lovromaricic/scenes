@@ -21,6 +21,7 @@
 	import { textCss } from '$lib/render/textCss';
 	import { useEditor } from '$lib/state/context';
 	import TextStylePicker from './TextStylePicker.svelte';
+	import KeyframeButtons from './KeyframeButtons.svelte';
 
 	interface Props {
 		width: number;
@@ -127,6 +128,36 @@
 		drag = null;
 		guides = { x: false, y: false };
 		if (d.moved) editor.endGesture('Move words');
+	}
+
+	/** Turn words with the handle above them; Shift snaps to 15° steps. */
+	function onrotatedown(event: PointerEvent, item: TextItem) {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const box = (event.currentTarget as HTMLElement).closest('.text-box')!.getBoundingClientRect();
+		const cx = box.left + box.width / 2;
+		const cy = box.top + box.height / 2;
+		const angle = (e: PointerEvent) => (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI;
+		const a0 = angle(event);
+		const r0 = editor.itemValues(item.id)?.rotation ?? 0;
+		const kfId = crypto.randomUUID();
+		let moved = false;
+		drags.start(event, {
+			move: (e) => {
+				if (!moved) {
+					moved = true;
+					popover = null;
+					editor.beginGesture();
+				}
+				let r = Math.round((r0 + angle(e) - a0) * 10) / 10;
+				if (e.shiftKey) r = Math.round(r / 15) * 15;
+				editor.liveItemValues(item.id, { rotation: r }, kfId);
+			},
+			end: () => {
+				if (moved) editor.endGesture('Rotate words');
+			}
+		});
 	}
 
 	function onkeydown(event: KeyboardEvent, item: TextItem) {
@@ -291,6 +322,15 @@
 					}}
 					onkeydown={(e) => onkeydown(e, item)}
 				></button>
+				{#if isSelected && !drag}
+					<span
+						class="rotate"
+						data-text-handle="rotate"
+						role="presentation"
+						title="Drag to turn (Shift: 15° steps)"
+						onpointerdown={(e) => onrotatedown(e, item)}
+					></span>
+				{/if}
 			{/if}
 
 			{#if editor.fonts.status(resolveTextStyle(item).font) === 'failed' && !isEditing}
@@ -304,8 +344,11 @@
 				</button>
 			{/if}
 			{#if isSelected && !isEditing && !drag && selected}
-				<div class="toolbar-anchor" class:below={b.top < 64}>
-					<FloatingToolbar label="Text options" actions={actions(selected)} />
+				<div class="toolbar-anchor" class:below={b.top < 92}>
+					<div class="toolbar-row">
+						<FloatingToolbar label="Text options" actions={actions(selected)} />
+						<KeyframeButtons id={selected.id} dark />
+					</div>
 					{#if popover === 'style'}
 						<div class="popover" role="dialog" aria-label="Text style">
 							<TextStylePicker
@@ -333,6 +376,12 @@
 </div>
 
 <style>
+	.toolbar-row {
+		display: flex;
+		gap: var(--space-2);
+		align-items: center;
+	}
+
 	.overlay {
 		position: absolute;
 		z-index: 5;
@@ -343,6 +392,39 @@
 		position: absolute;
 		pointer-events: auto;
 		border-radius: 6px;
+	}
+	.rotate {
+		position: absolute;
+		left: 50%;
+		top: -32px;
+		width: 22px;
+		height: 22px;
+		translate: -50% 0;
+		touch-action: none;
+		cursor: grab;
+		z-index: 2;
+	}
+	.rotate::before {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 15px;
+		width: 1.5px;
+		height: 17px;
+		translate: -50% 0;
+		background: var(--color-accent);
+	}
+	.rotate::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 4px;
+		width: 11px;
+		height: 11px;
+		translate: -50% 0;
+		border-radius: 50%;
+		background: var(--color-bg);
+		box-shadow: 0 0 0 1.5px var(--color-accent);
 	}
 	.hit {
 		position: absolute;
@@ -386,7 +468,8 @@
 	}
 	.toolbar-anchor {
 		position: absolute;
-		bottom: calc(100% + 12px);
+		/* Clear of the rotation handle above the box. */
+		bottom: calc(100% + 40px);
 		left: 50%;
 		translate: -50% 0;
 		z-index: 5;
