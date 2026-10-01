@@ -10,7 +10,9 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { EASINGS, EASING_LABELS, easingPreset } from '$lib/model/keyframes';
-	import { VOLUME_EASINGS, formatDb, gainToLevel, levelToGain } from '$lib/model/volume';
+	import { VOLUME_EASINGS, formatDb, gainToLevel, levelToGain, volumeAt, type VolumePoint } from '$lib/model/volume';
+	import { Snapper, toFrame } from './snap';
+	import { frameBatch } from '$lib/ui/frameBatch';
 	import { useEditor } from '$lib/state/context';
 	import { DragScope } from '$lib/ui/drag';
 	import { Menu, type MenuItem } from '$lib/ui';
@@ -36,19 +38,35 @@
 	const yOf = (gain: number) => PAD + (1 - gainToLevel(gain)) * (height - 2 * PAD);
 	const gainOfY = (y: number) => levelToGain(1 - (y - PAD) / (height - 2 * PAD));
 
+	/**
+	 * While a point is dragged (or a new one is being placed), where it is: shown here only, and
+	 * written to the project once, when the drag ends.
+	 */
+	let preview = $state<{ id: string | null; t: number; gain: number } | null>(null);
+
+	/** The points as shown: the project's, with the dragged one where it is now. */
+	const shownList = $derived.by(() => {
+		if (!track) return [];
+		const list = track.list as VolumePoint[];
+		if (!preview) return list;
+		const time = track.fromTimeline(preview.t);
+		const moved = { id: preview.id ?? 'new', time, values: { gain: preview.gain }, easing: list.find((k) => k.id === preview!.id)?.easing ?? EASINGS.linear };
+		return [...list.filter((k) => k.id !== preview!.id), moved].sort((x, y) => x.time - y.time);
+	});
+
 	const line = $derived.by(() => {
 		if (!track || width <= 0) return '';
 		const pts: string[] = [];
 		const steps = Math.max(2, Math.min(240, Math.round(width / 3)));
 		for (let i = 0; i <= steps; i++) {
 			const x = (width * i) / steps;
-			pts.push(`${x.toFixed(1)},${yOf(editor.volumeAtTime(itemId, tOf(x))).toFixed(1)}`);
+			pts.push(`${x.toFixed(1)},${yOf(volumeAt(shownList, track.fromTimeline(tOf(x)))).toFixed(1)}`);
 		}
 		return `M${pts.join(' L')}`;
 	});
 	const points = $derived(
 		track
-			? track.list
+			? shownList
 					.map((k) => ({ id: k.id, t: track.toTimeline(k.time), gain: (k.values as { gain: number }).gain, easing: k.easing }))
 					.filter((p) => p.t >= track.start - 1e-6 && p.t <= track.end + 1e-6)
 			: []
@@ -57,46 +75,45 @@
 	const drags = new DragScope();
 	onDestroy(() => drags.dispose());
 	let svg = $state<SVGSVGElement>();
-	/** The point being dragged and its value, for the dB label. */
-	let dragging = $state<{ id: string; x: number; y: number; gain: number } | null>(null);
-	const SNAP_PX = 8;
 
 	function local(e: PointerEvent) {
 		const r = svg!.getBoundingClientRect();
 		return { x: e.clientX - r.left, y: e.clientY - r.top };
 	}
 
-	/** Drag a point: up and down for the volume, left and right for its time. */
-	function drag(event: PointerEvent, id: string) {
-		const key = `volume:${id}:${Math.random()}`;
+	/**
+	 * Drag a point (or place a new one, `id` null): up and down for the volume, left and right for
+	 * its time, snapping steadily (Alt: freely). Shown once per frame; one undo step at the end.
+	 */
+	function drag(event: PointerEvent, id: string | null, from: { t: number; gain: number }) {
 		const start = local(event);
+		const snapper = new Snapper();
+		const fps = editor.project.format.fps;
 		let moved = false;
+		preview = { id, ...from };
+		const batch = frameBatch((e: PointerEvent) => {
+			const p = local(e);
+			if (!moved && Math.hypot(p.x - start.x, p.y - start.y) < 2) return;
+			moved = true;
+			const t = toFrame(tOf(Math.min(width, Math.max(0, p.x))), fps);
+			const targets = e.altKey
+				? []
+				: [...(services?.snapTargets([]) ?? [editor.time]), ...editor.keyframeTimes(id ? [{ itemId, id, channel: 'volume' }] : [])];
+			const s = snapper.snap([t], targets, xOf, e.altKey);
+			preview = { id, t: t + s.shift, gain: gainOfY(Math.min(height - PAD, Math.max(PAD, p.y))) };
+		});
 		drags.start(event, {
-			move: (e) => {
-				const p = local(e);
-				if (!moved && Math.hypot(p.x - start.x, p.y - start.y) < 2) return;
-				moved = true;
-				let x = Math.min(width, Math.max(0, p.x));
-				if (!e.altKey) {
-					const targets = [
-						...(services?.snapTargets([]) ?? [editor.time]),
-						...editor.keyframeTimes([{ itemId, id, channel: 'volume' }])
-					];
-					let best = SNAP_PX;
-					for (const target of targets) {
-						const d = Math.abs(xOf(target) - x);
-						if (d < best) {
-							best = d;
-							x = xOf(target);
-						}
-					}
-				}
-				const gain = gainOfY(Math.min(height - PAD, Math.max(PAD, p.y)));
-				dragging = { id, x, y: yOf(gain), gain };
-				editor.setVolumePoint(itemId, id, tOf(x), gain, key);
-			},
+			move: (e) => batch.push(e),
 			end: () => {
-				dragging = null;
+				batch.flush();
+				const done = preview;
+				preview = null;
+				if (!done) return;
+				if (id === null) {
+					// A click (or drag) on the line: one new point, where it ended up.
+					const newId = editor.addVolumePoint(itemId, done.t, done.gain);
+					if (newId) editor.selectKeyframes([{ itemId, id: newId, channel: 'volume' }]);
+				} else if (moved) editor.setVolumePoint(itemId, id, done.t, done.gain);
 			}
 		});
 	}
@@ -106,12 +123,8 @@
 		event.preventDefault();
 		event.stopPropagation();
 		if (editor.selectedId !== itemId) editor.select(itemId);
-		const p = local(event);
-		const t = tOf(p.x);
-		const id = editor.addVolumePoint(itemId, t, editor.volumeAtTime(itemId, t));
-		if (!id) return;
-		editor.selectKeyframes([{ itemId, id, channel: 'volume' }]);
-		drag(event, id);
+		const t = tOf(local(event).x);
+		drag(event, null, { t, gain: editor.volumeAtTime(itemId, t) });
 	}
 
 	function onpointdown(event: PointerEvent, id: string) {
@@ -125,7 +138,8 @@
 			return;
 		}
 		if (!editor.isKeyframeSelected(itemId, id)) editor.selectKeyframes([ref]);
-		drag(event, id);
+		const p = points.find((x) => x.id === id);
+		if (p) drag(event, id, { t: p.t, gain: p.gain });
 	}
 
 	// ─── Right-click ────────────────────────────────────────────────────────────────────────
@@ -157,7 +171,7 @@
 	<svg
 		bind:this={svg}
 		class="volume-line"
-		class:dragging={!!dragging}
+		class:dragging={!!preview}
 		{width}
 		{height}
 		viewBox="0 0 {width} {height}"
@@ -174,8 +188,8 @@
 		/>
 		{#each points as p (p.id)}
 			{@const selected = editor.isKeyframeSelected(itemId, p.id)}
-			{@const x = dragging?.id === p.id ? dragging.x : xOf(p.t)}
-			{@const y = dragging?.id === p.id ? dragging.y : yOf(p.gain)}
+			{@const x = xOf(p.t)}
+			{@const y = yOf(p.gain)}
 			<circle
 				class="point"
 				class:selected
@@ -194,12 +208,12 @@
 			/>
 		{/each}
 	</svg>
-	{#if dragging}
+	{#if preview}
 		<span
 			class="db mono"
 			data-testid="volume-db"
-			style:left="{dragging.x}px"
-			style:top="{Math.max(0, dragging.y - 22)}px">{formatDb(dragging.gain)}</span
+			style:left="{xOf(preview.t)}px"
+			style:top="{Math.max(0, yOf(preview.gain) - 22)}px">{formatDb(preview.gain)}</span
 		>
 	{/if}
 {/if}

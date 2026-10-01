@@ -5,6 +5,7 @@
 	WebGL compositor underneath; only the text being typed is shown in HTML.
 -->
 <script lang="ts">
+	import { frameBatch } from '$lib/ui/frameBatch';
 	import { DragScope } from '$lib/ui/drag';
 	import { onDestroy } from 'svelte';
 	import Pencil from '@lucide/svelte/icons/pencil';
@@ -99,7 +100,15 @@
 			moved: false,
 			kfId: crypto.randomUUID()
 		};
-		drags.start(event, { move: onpointermove, end: onend });
+		// Applied once per animation frame (the latest move).
+		const batch = frameBatch(onpointermove);
+		drags.start(event, {
+			move: (e) => batch.push(e),
+			end: () => {
+				batch.flush();
+				onend();
+			}
+		});
 	}
 
 	function onpointermove(event: PointerEvent) {

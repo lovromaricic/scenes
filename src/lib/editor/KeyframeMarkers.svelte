@@ -23,6 +23,8 @@
 	import { DragScope } from '$lib/ui/drag';
 	import { Menu, type MenuItem } from '$lib/ui';
 	import CurveEditor from './CurveEditor.svelte';
+	import { Snapper, toFrame } from './snap';
+	import { frameBatch } from '$lib/ui/frameBatch';
 	import { portal } from '$lib/ui/portal';
 	import type { LaneServices } from './lanes';
 
@@ -61,7 +63,6 @@
 		drags.dispose();
 		if (editor.keyframeDragDelta !== null) editor.keyframeDragDelta = null;
 	});
-	const SNAP_PX = 8;
 
 	function onpointerdown(event: PointerEvent, id: string, t: number) {
 		if (event.button !== 0) return;
@@ -76,33 +77,27 @@
 		if (!editor.isKeyframeSelected(itemId, id)) editor.selectKeyframes([ref]);
 		const x0 = event.clientX;
 		let moved = false;
+		const snapper = new Snapper();
+		const fps = editor.project.format.fps;
+		// Applied once per animation frame; the keyframes move once, at the end.
+		const batch = frameBatch((e: PointerEvent) => {
+			const dx = e.clientX - x0;
+			if (!moved && Math.abs(dx) < 3) return;
+			moved = true;
+			const x = xOf(t) + dx;
+			// Whole frames, unless snapped onto a target.
+			const at = toFrame(tOf(x), fps);
+			const targets = e.altKey
+				? []
+				: [...(services?.snapTargets([]) ?? [0, editor.duration, editor.time]), ...editor.keyframeTimes(editor.selectedKeyframes)];
+			const s = snapper.snap([at], targets, xOf, e.altKey);
+			editor.keyframeDragDelta = at + s.shift - t;
+			snapLine = s.target;
+		});
 		drags.start(event, {
-			move: (e) => {
-				const dx = e.clientX - x0;
-				if (!moved && Math.abs(dx) < 3) return;
-				moved = true;
-				const x = xOf(t) + dx;
-				let delta = tOf(x) - t;
-				let snapped: number | null = null;
-				if (!e.altKey) {
-					const targets = [
-						...(services?.snapTargets([]) ?? [0, editor.duration, editor.time]),
-						...editor.keyframeTimes(editor.selectedKeyframes)
-					];
-					let best = SNAP_PX;
-					for (const target of targets) {
-						const d = Math.abs(xOf(target) - x);
-						if (d < best) {
-							best = d;
-							snapped = target;
-						}
-					}
-					if (snapped !== null) delta = snapped - t;
-				}
-				editor.keyframeDragDelta = delta;
-				snapLine = snapped;
-			},
+			move: (e) => batch.push(e),
 			end: () => {
+				batch.flush();
 				const delta = editor.keyframeDragDelta;
 				editor.keyframeDragDelta = null;
 				snapLine = null;

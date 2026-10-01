@@ -2099,6 +2099,109 @@ playhead sets the keyframe there.
   VP9 and VP8 configuration. So only the "not supported" path ran; the WebM-with-alpha path
   is untested on a real encoder.
 
+## Fix: stuttering trims and moves
+
+### Measured, and the root causes (written before fixing)
+
+`e2e/drag-smooth.test.ts` drags a photo layer's right edge in 1–2 px steps on a 10-track project
+and records the width, label and snap line after each move. A CDP profile and call counts were
+taken over 150 moves of a snapping drag.
+
+**What it showed:**
+- The width followed the cursor only with Alt held (no snapping).
+- With snapping, the snap line was at **51 different positions** during one snapped stretch.
+- The label only showed whole seconds ("0:03").
+- 150 moves caused **148 seeks and 153 full preview re-renders**.
+- **One autosave**, with a new home-screen picture, happened in the middle of the drag.
+
+**Causes** (the checklist's suspects, in order):
+
+1. **Expensive work on every pointermove: yes, through the playhead.**
+   - Trimming and moving called `editor.seek()` on every move, so the playhead followed the
+     edge.
+   - Each seek re-drew the whole preview (decoding and compositing), and changed `editor.time`,
+     which everything showing values "at the playhead" depends on: the settings column, the
+     keyframe diamond, markers, scale and rotation fields. So all of that re-rendered on every
+     move.
+   - A seek can also schedule an autosave and a new home picture. That's the save in the middle
+     of the drag.
+   - The undo history was not touched during the drag: it's already one edit at the end.
+   - Waveforms and filmstrips weren't recomputed (no `computePeaks`). But a sound clip's
+     waveform canvas was redrawn on every width change, and a scene being trimmed re-laid out
+     and refilled its filmstrip tiles on every move.
+2. **Snapping to a moving target, with no hysteresis: the main cause of the jumps.**
+   - The playhead is a snap target, and the playhead had just been moved to the dragged edge. So
+     on the next move the edge snapped back to where it was a moment ago.
+   - The snap line hopped along with it (51 places), and the edge lagged and jumped.
+   - On top of that, snapping started and stopped at the same 8 px, so near a target it
+     flickered on and off.
+3. **Coarse rounding:** not for trims or moves (they weren't rounded at all). The label was
+   coarse: `formatClock` shows whole seconds, so it sat at "0:03". Fade drags round to 0.1 s
+   (kept: fades are set in tenths).
+4. **Pointer to time:** consistent. Every drag goes through the storyboard's `map` (zoom, the
+   minimum widths of short scenes) relative to the lane, so the header width and scroll don't
+   enter into it.
+5. **The shared drag helper:** all of these drags already use `DragScope` / `startDrag` from the
+   earlier fix.
+6. **Not batched:** every pointermove changed reactive state straight away (several moves can
+   arrive per frame).
+
+### The fix
+
+The rule for every drag: show a light preview, at most once per animation frame, and change the
+project (undo history, autosave, playhead) once, when the drag ends.
+
+- **Once per frame** (`ui/frameBatch.ts`): pointermoves are queued and only the latest is applied,
+  on the next animation frame. `flush()` applies a pending one when the drag ends, before
+  committing. Used for:
+  - trims, moves and fade drags of layers, words and sounds (`TrackLane`);
+  - keyframe markers, and volume points;
+  - scene-edge trims, scene reordering and range edges (`Storyboard`);
+  - moving and resizing layers and words on the preview.
+- **No seeking while dragging.** The playhead goes to the dragged edge (or item) once, at the
+  drop. So nothing tied to the playhead re-renders during a drag, and the preview isn't redrawn.
+  - On the 150-move measurement: 148 seeks → 1, and 153 preview renders → 4.
+  - Scene trims still show the frame at the edge (their "peek"), once per frame.
+- **Steady snapping** (`editor/snap.ts`, `Snapper`):
+  - It snaps within 8 px and lets go only past 12 px.
+  - Targets don't move during a drag, and there's one snap line, at the target actually snapped
+    to.
+  - Used by item trims and moves, keyframes, volume points and range edges. Alt still turns it
+    off.
+- **Whole frames:** dragged times round to the project's frame rate (`toFrame`), except when
+  snapped exactly onto a target.
+- **Live label:** "3.6 s" (the new length) while trimming, and "0:03.4" (the start,
+  `formatTenths`) while moving.
+- **One undo step and one autosave per drag:**
+  - Track items, keyframes and range edges already committed once.
+  - Volume points used to write the project on every move (merged into one undo step, but still
+    saving and re-rendering each time), and a click on the line added a point as a separate step
+    before the drag. Now the dragged or new point is a local preview, and one edit is made at
+    the end.
+- **Nothing is regenerated while dragging:**
+  - A sound's waveform keeps its last drawing, stretched (`live={false}`), and is redrawn after
+    the drop.
+  - Scene filmstrips are frozen during storyboard drags (`frozen`, stretched) and refilled after.
+  - Layer thumbnails were already a tiled background.
+- **Tests:**
+  - Unit (`snap.test.ts`): enter and release distances, the nearest single target, Alt, whole
+    frames, tenths.
+  - E2E (`drag-smooth.test.ts`, 10 overlay tracks with 27 cards plus a photo layer and three
+    scenes):
+    - A photo layer's right edge dragged 2 px at a time: the width never goes back, never jumps
+      more than the move plus a frame, and ends 120 px wider. The label is live in tenths, the
+      length is whole frames, and IndexedDB writes and undo steps each go up by exactly one.
+      Undo restores it.
+    - Snapping 1 px at a time past card edges and the cut: each target is held over a run of 8+
+      moves with the width still and the line in one place; no target is snapped twice; the cut
+      is among them.
+    - Moving an item: smooth, the label shows the start, one save, one undo step.
+    - A scene's end trimmed: the card shrinks smoothly to whole frames, one save, one undo step.
+  - `sound-editing`'s label check now expects "10.0 s" instead of "0:10".
+- **Not part of this fix:** a lint pass over `src/lib` found 25 older errors (unused imports,
+  `goto` without `resolve`, plain Map/Set in the store), flagged as a separate cleanup task. The
+  files touched here lint clean.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

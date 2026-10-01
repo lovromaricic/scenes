@@ -20,6 +20,8 @@
 		selected?: boolean;
 		onselect?: () => void;
 		onkeydown?: (event: KeyboardEvent) => void;
+		/** While dragging: the filmstrip stretches instead of being made again. */
+		frozen?: boolean;
 	}
 
 	let {
@@ -33,7 +35,8 @@
 		sourceSize,
 		selected = false,
 		onselect,
-		onkeydown
+		onkeydown,
+		frozen = false
 	}: Props = $props();
 </script>
 
@@ -58,6 +61,7 @@
 				sourceStart={scene.sourceStart}
 				sourceEnd={scene.sourceEnd}
 				{tileAspect}
+				{frozen}
 				frame={scene.frame}
 				crop={scene.crop}
 				card={scene.card}

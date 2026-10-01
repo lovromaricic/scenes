@@ -12,16 +12,18 @@
 		length?: number;
 		/** Loudness across the box (0 = left edge, 1 = right edge), e.g. its volume points. */
 		gain?: (fraction: number) => number;
+		/** False while dragging: the drawing is kept (and stretched) instead of redrawn. */
+		live?: boolean;
 	}
 
-	let { peaks, perSecond, from = 0, length, gain }: Props = $props();
+	let { peaks, perSecond, from = 0, length, gain, live = true }: Props = $props();
 
 	let canvas: HTMLCanvasElement;
 	let width = $state(0);
 	let height = $state(0);
 
 	$effect(() => {
-		if (!canvas || width === 0 || height === 0) return;
+		if (!live || !canvas || width === 0 || height === 0) return;
 		const dpr = window.devicePixelRatio || 1;
 		canvas.width = Math.round(width * dpr);
 		canvas.height = Math.round(height * dpr);
@@ -50,8 +52,8 @@
 </script>
 
 <div class="wave" bind:clientWidth={width} bind:clientHeight={height}>
-	<canvas bind:this={canvas} style:width="{width}px" style:height="{height}px" aria-hidden="true"
-	></canvas>
+	<!-- While dragging, the last drawing stretches to the new size. -->
+	<canvas bind:this={canvas} style:width="100%" style:height="100%" aria-hidden="true"></canvas>
 </div>
 
 <style>

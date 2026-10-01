@@ -14,7 +14,7 @@
 	import Mic from '@lucide/svelte/icons/mic';
 	import TypeIcon from '@lucide/svelte/icons/type';
 	import { onDestroy } from 'svelte';
-	import { MAX_FADE, effectiveFades, snapTimes, soundEnd } from '$lib/model/sound';
+	import { MAX_FADE, effectiveFades } from '$lib/model/sound';
 	import { formatClock, formatShort } from '$lib/model/time';
 	import type { Overlay } from '$lib/model/overlay';
 	import type { Track } from '$lib/model/tracks';
@@ -23,6 +23,8 @@
 	import { DragScope } from '$lib/ui/drag';
 	import Waveform from './Waveform.svelte';
 	import KeyframeMarkers from './KeyframeMarkers.svelte';
+	import { Snapper, formatTenths, toFrame } from './snap';
+	import { frameBatch } from '$lib/ui/frameBatch';
 	import VolumeLine from './VolumeLine.svelte';
 	import type { TimeMap } from './scale';
 	import type { DropTarget, LaneServices } from './lanes';
@@ -41,7 +43,6 @@
 	onDestroy(() => drags.dispose());
 
 	/** Snap within this many pixels. */
-	const SNAP_PX = 8;
 
 	type Entry =
 		| { kind: 'overlay'; item: Overlay }
@@ -90,6 +91,8 @@
 		group: string[];
 		/** The tracks' scroll when it began (the item follows the pointer as they scroll). */
 		startScroll: number;
+		/** Snapping that holds steady (see snap.ts). */
+		snapper: Snapper;
 	} | null>(null);
 
 	let lane: HTMLDivElement;
@@ -138,9 +141,18 @@
 			dy: 0,
 			target: null,
 			group,
-			startScroll: services.scrollTop()
+			startScroll: services.scrollTop(),
+			snapper: new Snapper()
 		};
-		drags.start(event, { move: onpointermove, end: onend });
+		// Moves are applied once per animation frame (the latest one); the drag commits once, at the end.
+		const batch = frameBatch(onpointermove);
+		drags.start(event, {
+			move: (e) => batch.push(e),
+			end: () => {
+				batch.flush();
+				onend();
+			}
+		});
 	}
 
 	function onpointermove(event: PointerEvent) {
@@ -158,41 +170,32 @@
 		const entry = entries.find((x) => x.item.id === g.id);
 		if (!entry) return;
 		const free = event.altKey;
-		const near = (a: number, b: number) => Math.abs(map.x(a) - map.x(b)) < SNAP_PX;
+		const fps = editor.project.format.fps;
+		// The targets don't move during a drag (the playhead stays where it is until the drop).
 		const targets = () => services.snapTargets([g.id, ...g.group]);
 		let snapped: number | null = null;
 
 		if (g.mode === 'move') {
-			let start = map.t(map.x(o.start) + dx);
-			if (!free) {
-				const s = snapTimes([start, start + o.duration], targets(), near);
-				start += s.shift;
-				snapped = s.target;
-			}
+			// Whole frames, unless snapped onto a target exactly.
+			let start = toFrame(map.t(map.x(o.start) + dx), fps);
+			const s = g.snapper.snap([start, start + o.duration], free ? [] : targets(), map.x, free);
+			start += s.shift;
+			snapped = s.target;
 			g.start = Math.max(0, start);
 			g.dy = g.group.length ? 0 : dy;
 			g.target = g.group.length ? null : services.targetAt(event.clientY, g.kind, event.clientX);
 			services.showTarget(g.target, track.id);
-			if (g.kind !== 'sound')
-				editor.seek(Math.min(g.start + 0.05, Math.max(0, editor.duration - 0.01)));
 		} else if (g.mode === 'start' || g.mode === 'end') {
 			const end = visibleEnd(entry, o.start, o.duration);
 			const from = g.mode === 'start' ? o.start : end;
-			let t = map.t(map.x(from) + dx);
-			if (!free) {
-				const s = snapTimes([t], targets(), near);
-				t += s.shift;
-				snapped = s.target;
-			}
+			let t = toFrame(map.t(map.x(from) + dx), fps);
+			const s = g.snapper.snap([t], free ? [] : targets(), map.x, free);
+			t += s.shift;
+			snapped = s.target;
 			const next = trimmed(entry, g.mode, t - from);
 			g.start = next.start;
 			g.duration = next.duration;
 			g.sourceStart = next.sourceStart;
-			editor.seek(
-				g.mode === 'start'
-					? g.start
-					: Math.max(g.start, visibleEnd(entry, g.start, g.duration) - 0.05)
-			);
 		} else {
 			const t = map.t(event.clientX - lane.getBoundingClientRect().left);
 			const end = visibleEnd(entry, o.start, o.duration);
@@ -227,6 +230,11 @@
 			return;
 		}
 		const o = g.original;
+		// The playhead goes to what was dragged once, at the drop (not on every move).
+		const last = Math.max(0, editor.duration - 0.01);
+		if (g.mode === 'move' && g.kind !== 'sound') editor.seek(Math.min(g.start + 0.05, last));
+		else if (g.mode === 'start') editor.seek(Math.min(g.start, last));
+		else if (g.mode === 'end') editor.seek(Math.max(g.start, Math.min(last, g.start + g.duration - 0.05)));
 		if (g.mode === 'move') {
 			const t = g.target;
 			if (t?.kind === 'main' && g.kind === 'overlay') editor.overlayToScene(g.id, t.index);
@@ -368,6 +376,7 @@
 								from={g ? g.sourceStart : e.item.sourceStart}
 								{length}
 								gain={(f) => editor.volumeAtTime(e.item.id, start + f * length)}
+								live={!g}
 							/>
 						{/if}
 						<svg class="fades" aria-hidden="true" {width} height={h}>
@@ -451,13 +460,13 @@
 				{#if g}
 					<span class="badge mono" data-testid="item-drag-label">
 						{#if g.mode === 'move'}
-							{formatClock(start)}
+							{formatTenths(start)}
 						{:else if g.mode === 'fade-in'}
 							Fade in {g.fadeIn.toFixed(1)} s
 						{:else if g.mode === 'fade-out'}
 							Fade out {g.fadeOut.toFixed(1)} s
 						{:else}
-							{formatClock(length)}
+							{length.toFixed(1)} s
 						{/if}
 					</span>
 				{/if}

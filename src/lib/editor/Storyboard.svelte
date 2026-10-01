@@ -14,6 +14,8 @@
 	import TrackLane from './TrackLane.svelte';
 	import TrackHeader from './TrackHeader.svelte';
 	import KeyframeMarkers from './KeyframeMarkers.svelte';
+	import { Snapper, toFrame } from './snap';
+	import { frameBatch } from '$lib/ui/frameBatch';
 	import VolumeLine from './VolumeLine.svelte';
 	import type { DropTarget, LaneServices } from './lanes';
 	import { accepts, type ItemKind } from '$lib/model/tracks';
@@ -24,7 +26,6 @@
 	import MoveHorizontal from '@lucide/svelte/icons/move-horizontal';
 	import ArrowRightToLine from '@lucide/svelte/icons/arrow-right-to-line';
 	import ArrowLeftToLine from '@lucide/svelte/icons/arrow-left-to-line';
-	import BetweenHorizontalStart from '@lucide/svelte/icons/between-horizontal-start';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Copy from '@lucide/svelte/icons/copy';
@@ -33,14 +34,7 @@
 	import type { Track } from '$lib/model/tracks';
 	import { RULER_H, trackHeight } from './layout';
 	import { tick } from 'svelte';
-	import {
-		fitTimeline,
-		mapTicks,
-		MIN_ITEM_PX,
-		ppsToZoom,
-		timeMap,
-		zoomToPps
-	} from './scale';
+	import { fitTimeline, mapTicks, MIN_ITEM_PX, ppsToZoom, timeMap, zoomToPps } from './scale';
 
 	interface Props {
 		onaddscene?: () => void;
@@ -285,7 +279,9 @@
 	/** How far the tracks are scrolled sideways (the playhead hides under the headers). */
 	let scrollLeft = $state(0);
 	/** Every item's track and kind, for the tracks' heights. */
-	const itemKinds = $derived(allItems(editor.project).map((i) => ({ trackId: i.trackId, kind: i.kind })));
+	const itemKinds = $derived(
+		allItems(editor.project).map((i) => ({ trackId: i.trackId, kind: i.kind }))
+	);
 
 	/** Auto-scroll while dragging near the top or bottom edge of the tracks. */
 	const EDGE = 36;
@@ -308,7 +304,8 @@
 		const top = r.top + RULER_H;
 		let v = 0;
 		if (autoY < top + EDGE) v = -Math.min(1, (top + EDGE - autoY) / EDGE) * MAX_SPEED;
-		else if (autoY > r.bottom - EDGE) v = Math.min(1, (autoY - (r.bottom - EDGE)) / EDGE) * MAX_SPEED;
+		else if (autoY > r.bottom - EDGE)
+			v = Math.min(1, (autoY - (r.bottom - EDGE)) / EDGE) * MAX_SPEED;
 		if (v === 0) return;
 		const before = tracks.scrollTop;
 		tracks.scrollTop = before + Math.round(v);
@@ -327,7 +324,9 @@
 		const added = known ? ids.filter((id) => !known.has(id)) : [];
 		if (added.length !== 1) return;
 		void tick().then(() => {
-			const row = tracks?.querySelector<HTMLElement>(`[data-track-row][data-track-id="${added[0]}"]`);
+			const row = tracks?.querySelector<HTMLElement>(
+				`[data-track-row][data-track-id="${added[0]}"]`
+			);
 			if (!row) return;
 			// Below the sticky ruler if it's above it.
 			const r = row.getBoundingClientRect();
@@ -444,33 +443,47 @@
 		event.preventDefault();
 		event.stopPropagation();
 		editor.beginGesture();
+		const snapper = new Snapper();
+		const batch = frameBatch((e: PointerEvent) => {
+			const r = editor.project.range;
+			if (!r) return;
+			let t = toFrame(map.t(Math.max(0, contentX(e.clientX))), editor.project.format.fps);
+			const targets = e.altKey
+				? []
+				: [editor.time, 0, duration, ...editor.placed.flatMap((p) => [p.start, p.end])];
+			t += snapper.snap([t], targets, map.x, e.altKey).shift;
+			const min = 1 / 30;
+			const next =
+				edge === 'start'
+					? { start: Math.max(0, Math.min(t, r.end - min)), end: r.end }
+					: { start: r.start, end: Math.min(duration, Math.max(t, r.start + min)) };
+			editor.live((p) => {
+				p.range = next;
+			});
+		});
 		drags.start(event, {
-			move: (e) => {
-				const r = editor.project.range;
-				if (!r) return;
-				let t = map.t(Math.max(0, contentX(e.clientX)));
-				if (!e.altKey) {
-					const targets = [editor.time, 0, duration, ...editor.placed.flatMap((p) => [p.start, p.end])];
-					for (const target of targets) if (Math.abs(map.x(target) - map.x(t)) < 8) t = target;
-				}
-				const min = 1 / 30;
-				const next =
-					edge === 'start'
-						? { start: Math.max(0, Math.min(t, r.end - min)), end: r.end }
-						: { start: r.start, end: Math.min(duration, Math.max(t, r.start + min)) };
-				editor.live((p) => {
-					p.range = next;
-				});
-			},
-			end: () => editor.endGesture('Range')
+			move: (e) => batch.push(e),
+			end: () => {
+				batch.flush();
+				editor.endGesture('Range');
+			}
 		});
 	}
 
 	let rangeMenu = $state(false);
 	let rangeMenuButton = $state<HTMLButtonElement>();
 	const rangeMenuItems = $derived<MenuItem[]>([
-		{ label: 'Set range to selection', disabled: !editor.selectedIds.length, onselect: () => editor.setRangeToSelection() },
-		{ label: 'Clear range', shortcut: 'Alt+X', disabled: !editor.project.range, onselect: () => editor.clearRange() }
+		{
+			label: 'Set range to selection',
+			disabled: !editor.selectedIds.length,
+			onselect: () => editor.setRangeToSelection()
+		},
+		{
+			label: 'Clear range',
+			shortcut: 'Alt+X',
+			disabled: !editor.project.range,
+			onselect: () => editor.clearRange()
+		}
 	]);
 
 	/** A pointer's x on the timeline (content pixels): measured from the lanes' left edge. */
@@ -496,7 +509,18 @@
 			dy: 0
 		};
 		// Nothing is captured yet, so a plain click still selects the card.
-		cardDrag = drags.start(event, { move: onCardPointerMove, end: onCardDragEnd }, null);
+		const batch = frameBatch(onCardPointerMove);
+		cardDrag = drags.start(
+			event,
+			{
+				move: (e) => batch.push(e),
+				end: () => {
+					batch.flush();
+					onCardDragEnd();
+				}
+			},
+			null
+		);
 	}
 
 	let cardDrag: PointerDrag | null = null;
@@ -526,7 +550,8 @@
 			const scene = scenes.find((s) => s.id === d.id)!;
 			d.toLayers = {
 				start: Math.max(0, map.t(Math.max(0, d.x))),
-				duration: scene.kind === 'video' ? scene.sourceEnd - scene.sourceStart : sceneDuration(scene),
+				duration:
+					scene.kind === 'video' ? scene.sourceEnd - scene.sourceStart : sceneDuration(scene),
 				target
 			};
 			dropTarget = { target, from: 'main' };
@@ -561,7 +586,8 @@
 			const to = d.toLayers;
 			dropTarget = null;
 			if (to?.target.kind === 'track') editor.sceneToOverlay(d.id, to.start, to.target.id);
-			else if (to?.target.kind === 'gap') editor.sceneToOverlay(d.id, to.start, undefined, to.target.index);
+			else if (to?.target.kind === 'gap')
+				editor.sceneToOverlay(d.id, to.start, undefined, to.target.index);
 			else editor.moveScene(d.from, d.to);
 		}
 	}
@@ -607,7 +633,8 @@
 	// Dropping from "Your media", the Cards button or the computer onto an overlay track: an overlay
 	// at that time on that track (a new track just above if it would overlap).
 	let laneDrop = $state<{ trackId: string; start: number } | null>(null);
-	const dropTime = (clientX: number) => Math.max(0, Math.min(map.t(contentX(clientX)), Math.max(0, duration - 0.5)));
+	const dropTime = (clientX: number) =>
+		Math.max(0, Math.min(map.t(contentX(clientX)), Math.max(0, duration - 0.5)));
 
 	function onLaneDragOver(event: DragEvent, trackId: string) {
 		const track = editor.track(trackId);
@@ -624,7 +651,8 @@
 		laneDrop = null;
 		const noScenes = scenes.length === 0;
 		const placed = handleVisualDrop(event, {
-			media: (id) => (noScenes ? editor.addSceneFromMedia(id) : editor.addOverlayFromMedia(id, start, trackId)),
+			media: (id) =>
+				noScenes ? editor.addSceneFromMedia(id) : editor.addOverlayFromMedia(id, start, trackId),
 			card: () => (noScenes ? editor.addCard() : editor.addCardOverlay(start, trackId)),
 			files: (files) => void editor.importAsOverlays(files, start, trackId)
 		});
@@ -666,14 +694,23 @@
 		event.preventDefault();
 		frozenPps = pps;
 		trim = { id: item.scene.id, edge, startX: event.clientX, delta: 0 };
-		drags.start(event, { move: (e) => onTrimPointerMove(e, item), end: onTrimPointerUp });
+		// Once per animation frame (the latest move); the scene changes once, at the end.
+		const batch = frameBatch((e: PointerEvent) => onTrimPointerMove(e, item));
+		drags.start(event, {
+			move: (e) => batch.push(e),
+			end: () => {
+				batch.flush();
+				onTrimPointerUp();
+			}
+		});
 		if (editor.selectedId !== item.scene.id) editor.selectedId = item.scene.id;
 		peekTrim(item.scene);
 	}
 
 	function onTrimPointerMove(event: PointerEvent, item: Item) {
 		if (!trim || trim.id !== item.scene.id) return;
-		trim.delta = (event.clientX - trim.startX) / pps;
+		// Whole frames of the video.
+		trim.delta = toFrame((event.clientX - trim.startX) / pps, editor.project.format.fps);
 		peekTrim(item.scene);
 	}
 
@@ -731,7 +768,9 @@
 		const lane = target.closest<HTMLElement>('[data-track-lane]');
 		if (lane) editor.activeTrackId = lane.dataset.trackLane ?? null;
 		// Shift adds to what's selected; otherwise start afresh.
-		const kept = event.shiftKey ? editor.selectedIds.filter((id) => itemKind(editor.project, id)) : [];
+		const kept = event.shiftKey
+			? editor.selectedIds.filter((id) => itemKind(editor.project, id))
+			: [];
 		if (!event.shiftKey) editor.deselect();
 		if (!target.closest('.tracks')) return;
 		// Dragging from an empty spot draws a selection box.
@@ -760,14 +799,18 @@
 					const hit = [...tracks.querySelectorAll<HTMLElement>('.item-slot[data-item-id]')]
 						.filter((el) => {
 							const r = el.getBoundingClientRect();
-							return r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+							return (
+								r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top
+							);
 						})
 						.map((el) => el.dataset.itemId!);
 					// Keyframe markers inside the box: those keyframes (rather than whole items).
 					const marks = [...tracks.querySelectorAll<HTMLElement>('.kf[data-keyframe]')]
 						.filter((el) => {
 							const r = el.getBoundingClientRect();
-							return r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+							return (
+								r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top
+							);
 						})
 						.map((el) => ({ itemId: el.dataset.keyframeItem!, id: el.dataset.keyframe! }));
 					if (marks.length) {
@@ -806,7 +849,13 @@
 {/if}
 
 {#if rangeMenu && rangeMenuButton}
-	<Menu label="Range" items={rangeMenuItems} anchor={rangeMenuButton} align="end" onclose={() => (rangeMenu = false)} />
+	<Menu
+		label="Range"
+		items={rangeMenuItems}
+		anchor={rangeMenuButton}
+		align="end"
+		onclose={() => (rangeMenu = false)}
+	/>
 {/if}
 
 {#if trackMenu}
@@ -822,7 +871,9 @@
 	{@const count = editor.itemsOnTrack(deletingTrack.id)}
 	<ConfirmDialog
 		title="Delete “{deletingTrack.name}”?"
-		message="The {count === 1 ? 'item' : `${count} items`} on it will be removed too. You can undo this."
+		message="The {count === 1
+			? 'item'
+			: `${count} items`} on it will be removed too. You can undo this."
 		actions={[
 			{
 				label: 'Delete track',
@@ -837,7 +888,6 @@
 	/>
 {/if}
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc deselects from the keyboard) -->
 <section
 	class="storyboard"
 	class:zooming
@@ -923,7 +973,12 @@
 		bind:clientWidth={trackWidth}
 		onscroll={() => (scrollLeft = tracks.scrollLeft)}
 	>
-		<div class="grid" bind:this={grid} style:width="{HEADER_W + contentWidth + TRACK_PAD}px" style:--header-w="{HEADER_W}px">
+		<div
+			class="grid"
+			bind:this={grid}
+			style:width="{HEADER_W + contentWidth + TRACK_PAD}px"
+			style:--header-w="{HEADER_W}px"
+		>
 			<!-- Ruler: click or drag to move the playhead -->
 			<div class="row ruler-row">
 				<div class="header corner">
@@ -979,7 +1034,8 @@
 							ondrop={onMediaDrop}
 						>
 							{#if dropIndex !== null}
-								<span class="drop-marker" style:left="{gapX(dropIndex) - 1}px" aria-hidden="true"></span>
+								<span class="drop-marker" style:left="{gapX(dropIndex) - 1}px" aria-hidden="true"
+								></span>
 							{/if}
 							{#each layout.items as item (item.scene.id)}
 								{@const isDragged = drag?.active && drag.id === item.scene.id}
@@ -1006,6 +1062,7 @@
 										scene={item.scene}
 										tileAspect={formatRatio(editor.project.format)}
 										sourceSize={editor.sourceSize(item.scene) ?? undefined}
+										frozen={!!trim || !!drag?.active}
 										{selected}
 										onselect={() => onCardClick(item.scene.id)}
 										onkeydown={(e) => onCardKeydown(e, item)}
@@ -1060,7 +1117,10 @@
 							{/each}
 							{#if !drag?.active && !trim}
 								{#each layout.items.slice(0, -1) as item (item.scene.id)}
-									<div class="transition-slot" style:left="{item.left + item.width - CARD_GAP / 2}px">
+									<div
+										class="transition-slot"
+										style:left="{item.left + item.width - CARD_GAP / 2}px"
+									>
 										<TransitionButton
 											kind={item.scene.transition.kind}
 											after={item.index + 1}
@@ -1191,7 +1251,6 @@
 			</div>
 		</div>
 	</div>
-
 </section>
 
 <style>
@@ -1659,7 +1718,6 @@
 			opacity: 0;
 		}
 	}
-
 
 	.playhead {
 		position: absolute;

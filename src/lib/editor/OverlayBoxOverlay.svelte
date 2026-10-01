@@ -7,6 +7,7 @@
 	gets a floating toolbar: Crop, Style, Animate, Remove.
 -->
 <script lang="ts">
+	import { frameBatch } from '$lib/ui/frameBatch';
 	import Crop from '@lucide/svelte/icons/crop';
 	import Paintbrush from '@lucide/svelte/icons/paintbrush';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
@@ -112,7 +113,15 @@
 			moved: false,
 			kfId: crypto.randomUUID()
 		};
-		drags.start(event, { move: onpointermove, end: onend });
+		// Applied once per animation frame (the latest move).
+		const batch = frameBatch(onpointermove);
+		drags.start(event, {
+			move: (e) => batch.push(e),
+			end: () => {
+				batch.flush();
+				onend();
+			}
+		});
 	}
 
 	/** Turn a vector by `deg` degrees (clockwise on screen). */

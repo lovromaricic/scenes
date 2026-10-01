@@ -23,10 +23,21 @@
 		sourceSize?: Size;
 		/** Cards have no file: each tile shows the card itself. */
 		card?: CardContent;
+		/** While dragging: keep the drawing (stretched to the new width) instead of making it again. */
+		frozen?: boolean;
 	}
 
-	let { mediaId, sourceStart, sourceEnd, tileAspect, frame, crop, sourceSize, card }: Props =
-		$props();
+	let {
+		mediaId,
+		sourceStart,
+		sourceEnd,
+		tileAspect,
+		frame,
+		crop,
+		sourceSize,
+		card,
+		frozen = false
+	}: Props = $props();
 
 	let canvas: HTMLCanvasElement;
 	let width = $state(0);
@@ -39,7 +50,7 @@
 	let generation = 0;
 
 	$effect(() => {
-		if (!canvas || count === 0) return;
+		if (frozen || !canvas || count === 0) return;
 		const gen = ++generation;
 		const dpr = window.devicePixelRatio || 1;
 		canvas.width = Math.round(width * dpr);
@@ -98,8 +109,8 @@
 		data-testid="filmstrip"
 		data-tiles={count}
 		data-tile-width={tileWidth}
-		style:width="{width}px"
-		style:height="{height}px"
+		style:width={frozen ? '100%' : `${width}px`}
+		style:height={frozen ? '100%' : `${height}px`}
 		aria-hidden="true"
 	></canvas>
 </div>
