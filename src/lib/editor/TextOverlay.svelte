@@ -64,12 +64,14 @@
 		const l = layoutText(placed, width, height);
 		return {
 			item: placed,
-			left: l.cx - l.width / 2,
+			left: l.cx - l.areaWidth / 2,
 			top: l.cy - l.height / 2,
-			width: l.width,
+			width: l.areaWidth,
 			height: l.height,
 			layout: l,
 			scale: v && (v.scaleX !== 1 || v.scaleY !== 1) ? `${v.scaleX} ${v.scaleY}` : undefined,
+			unscale:
+				v && (v.scaleX !== 1 || v.scaleY !== 1) ? `${1 / v.scaleX} ${1 / v.scaleY}` : undefined,
 			rotate: v?.rotation ? `${v.rotation}deg` : undefined,
 			values: v
 		};
@@ -201,6 +203,93 @@
 		});
 	}
 
+	// ─── Width (side handles) and scale (corners) ───────────────────────────────────────────
+	type TextHandle = 'nw' | 'ne' | 'se' | 'sw' | 'w' | 'e';
+	/** Corners scale; the sides change the width (no top and bottom: the height fits the lines). */
+	const TEXT_HANDLES: TextHandle[] = ['nw', 'ne', 'se', 'sw', 'w', 'e'];
+
+	/** While a handle is dragged: what the label says, and where it is (under the words). */
+	let sizing = $state<{ label: string; x: number; y: number } | null>(null);
+
+	/**
+	 * Drag a side to set the width (Fixed width: the words re-wrap as it changes; the other side
+	 * stays, or with Alt the centre does; never narrower than the widest word), or a corner to
+	 * scale (keeping proportions, around the centre; a keyframe when animated). Applied once per
+	 * frame; one undo step at the end.
+	 */
+	function onhandledown(event: PointerEvent, item: TextItem, handle: TextHandle) {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const b = box(item);
+		const v = b.values ?? { x: item.x, y: item.y, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
+		const el = (event.currentTarget as HTMLElement).closest('.text-box')!.getBoundingClientRect();
+		const center = { x: el.left + el.width / 2, y: el.top + el.height / 2 };
+		const start = { x: event.clientX, y: event.clientY };
+		const side = handle === 'w' || handle === 'e';
+		const sign = handle === 'e' ? 1 : -1;
+		const r = (v.rotation * Math.PI) / 180;
+		const kfId = crypto.randomUUID();
+		const fmt = editor.project.format;
+		let moved = false;
+		const label = (text: string) => {
+			const nb = box(editor.project.texts.find((t) => t.id === item.id) ?? item);
+			sizing = {
+				label: text,
+				x: nb.left + nb.width / 2,
+				y: nb.top + (nb.height * (nb.values?.scaleY ?? 1)) / 2 + nb.height / 2 + 10
+			};
+		};
+		const apply = (e: PointerEvent) => {
+			if (!moved) {
+				if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 2) return;
+				moved = true;
+				popover = null;
+				editor.beginGesture();
+			}
+			if (side) {
+				// The pointer's move along the words' own (turned, scaled) width.
+				const dx = e.clientX - start.x;
+				const dy = e.clientY - start.y;
+				const along = (dx * Math.cos(r) + dy * Math.sin(r)) / (v.scaleX || 1);
+				const grow = sign * along * (e.altKey ? 2 : 1);
+				const w = Math.max(b.layout.minWidth, b.width + grow);
+				const changed = w - b.width;
+				editor.live((p) => {
+					const t = p.texts.find((x) => x.id === item.id);
+					if (t) t.width = Math.max(0, w - b.layout.padX * 2) / width;
+				});
+				if (!e.altKey) {
+					// The other side stays: the centre moves by half the change, along the width.
+					const shift = (sign * changed * (v.scaleX || 1)) / 2;
+					editor.liveItemValues(
+						item.id,
+						{ x: v.x + (shift * Math.cos(r)) / width, y: v.y + (shift * Math.sin(r)) / height },
+						kfId
+					);
+				}
+				label(`${Math.round((w / width) * fmt.width)} px`);
+			} else {
+				const d0 = Math.hypot(start.x - center.x, start.y - center.y) || 1;
+				const k = Math.max(
+					0.05 / Math.max(v.scaleX, v.scaleY),
+					Math.hypot(e.clientX - center.x, e.clientY - center.y) / d0
+				);
+				editor.liveItemValues(item.id, { scaleX: v.scaleX * k, scaleY: v.scaleY * k }, kfId);
+				label(`${Math.round(v.scaleX * k * 100)}%`);
+			}
+		};
+		const batch = frameBatch(apply);
+		drags.start(event, {
+			move: (e) => batch.push(e),
+			end: () => {
+				batch.flush();
+				sizing = null;
+				if (moved) editor.endGesture(side ? 'Text width' : 'Scale words');
+			}
+		});
+	}
+
 	function onkeydown(event: KeyboardEvent, item: TextItem) {
 		if (event.key === 'Enter') {
 			event.preventDefault();
@@ -315,13 +404,27 @@
 					onkeydown={(e) => onkeydown(e, item)}
 				></button>
 				{#if isSelected && !drag}
+					<!-- Handles keep their size on screen whatever the words' scale. -->
 					<span
 						class="rotate"
 						data-text-handle="rotate"
 						role="presentation"
 						title="Drag to turn (Shift: 15° steps)"
+						style:scale={b.unscale}
 						onpointerdown={(e) => onrotatedown(e, item)}
 					></span>
+					{#each TEXT_HANDLES as handle (handle)}
+						<span
+							class="handle {handle}"
+							data-text-handle={handle}
+							role="presentation"
+							title={handle === 'w' || handle === 'e'
+								? 'Drag to change the width (Alt: from the centre)'
+								: 'Drag to scale'}
+							style:scale={b.unscale}
+							onpointerdown={(e) => onhandledown(e, item, handle)}
+						></span>
+					{/each}
 				{/if}
 			{/if}
 
@@ -337,6 +440,14 @@
 			{/if}
 		</div>
 	{/each}
+	{#if sizing}
+		<span
+			class="size-label mono"
+			data-testid="text-size-label"
+			style:left="{sizing.x}px"
+			style:top="{sizing.y}px">{sizing.label}</span
+		>
+	{/if}
 </div>
 
 {#each visible as item (item.id)}
@@ -358,7 +469,7 @@
 			)}
 			{width}
 			{height}
-			frozen={!!drag || turning}
+			frozen={!!drag || turning || !!sizing}
 		>
 			{#snippet bar({ compact })}
 				<FloatingToolbar label="Text options" actions={actions(selected)} {compact} />
@@ -401,6 +512,75 @@
 		position: absolute;
 		pointer-events: auto;
 		border-radius: 6px;
+	}
+	/* The same handles as layers: corners scale, the sides change the width. */
+	.handle {
+		position: absolute;
+		z-index: 3;
+		width: 22px;
+		height: 22px;
+		margin: -11px 0 0 -11px;
+		touch-action: none;
+	}
+	.handle::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		translate: -50% -50%;
+		width: 10px;
+		height: 10px;
+		border-radius: 2px;
+		background: var(--color-bg);
+		box-shadow: 0 0 0 1.5px var(--color-accent);
+	}
+	.handle.w::after,
+	.handle.e::after {
+		width: 6px;
+		height: 16px;
+		border-radius: 3px;
+	}
+	.handle.nw {
+		left: 0;
+		top: 0;
+		cursor: nwse-resize;
+	}
+	.handle.ne {
+		left: 100%;
+		top: 0;
+		cursor: nesw-resize;
+	}
+	.handle.se {
+		left: 100%;
+		top: 100%;
+		cursor: nwse-resize;
+	}
+	.handle.sw {
+		left: 0;
+		top: 100%;
+		cursor: nesw-resize;
+	}
+	.handle.w {
+		left: 0;
+		top: 50%;
+		cursor: ew-resize;
+	}
+	.handle.e {
+		left: 100%;
+		top: 50%;
+		cursor: ew-resize;
+	}
+	.size-label {
+		position: absolute;
+		z-index: 6;
+		translate: -50% 0;
+		padding: 2px 8px;
+		border-radius: var(--radius-pill);
+		background: var(--color-ink);
+		color: var(--color-on-ink);
+		font-size: var(--text-xs);
+		white-space: nowrap;
+		pointer-events: none;
 	}
 	.rotate {
 		position: absolute;

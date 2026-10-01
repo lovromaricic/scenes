@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { wrapRows } from './text';
+import { DEFAULT_TEXT_WIDTH, wrapRows, wrapWidth } from './text';
 
 /** Every character is 10 wide. */
 const measure = (s: string) => s.length * 10;
@@ -38,3 +38,14 @@ describe('breaking words into lines (one layout for drawing and typing)', () => 
 		expect(texts(wrapRows('ab cd', 45, measure))).toEqual(['ab ', 'cd']);
 	});
 });
+
+describe('width modes', () => {
+	it('Fixed: the width set; Auto: one line (only Enter breaks); unset: 84% of the frame', () => {
+		expect(wrapWidth({ width: 0.5 }, 1280)).toBe(640);
+		expect(wrapWidth({ width: 'auto' }, 1280)).toBe(Infinity);
+		expect(wrapWidth({}, 1280)).toBeCloseTo(DEFAULT_TEXT_WIDTH * 1280);
+		// Auto: a long line stays one line; Enter still breaks it.
+		expect(texts(wrapRows('a long line of words\nnext', Infinity, measure))).toEqual(['a long line of words', 'next']);
+	});
+});
+

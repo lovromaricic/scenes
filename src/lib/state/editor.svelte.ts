@@ -2907,6 +2907,11 @@ export class EditorStore {
 		this.updateText('Text style', id, (t) => ({ ...t, style, colors: undefined, shadow: undefined }));
 	}
 
+	/** How wide the words may get (see TextItem.width): a fraction of the frame, 'auto' or the default. */
+	setTextWidth(id: string, width: number | 'auto' | undefined, key?: string): void {
+		this.updateText(width === 'auto' ? 'Auto width' : 'Text width', id, (t) => ({ ...t, width }), key);
+	}
+
 	/** Change the words' shadow (`undefined` = back to the style's own). */
 	setTextShadow(id: string, shadow: TextShadow | undefined, key?: string): void {
 		const copy = shadow ? ($state.snapshot(shadow) as TextShadow) : undefined;

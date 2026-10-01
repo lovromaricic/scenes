@@ -15,6 +15,7 @@
 	import KeyframeSection from './KeyframeSection.svelte';
 	import KeyframeButtons from './KeyframeButtons.svelte';
 	import OffscreenButtons from './OffscreenButtons.svelte';
+	import { DEFAULT_TEXT_WIDTH } from '$lib/render/text';
 
 	let { item }: { item: TextItem } = $props();
 
@@ -105,6 +106,24 @@
 
 	<OffscreenButtons id={item.id} />
 
+	<Field label="Width">
+		<div class="width-row" data-testid="text-width">
+			<span class="width-mode">
+				{#if item.width === 'auto'}
+					Auto: one line, broken only by Enter
+				{:else if typeof item.width === 'number'}
+					Fixed: {Math.round(item.width * editor.project.format.width)} px
+				{:else}
+					Wraps at {Math.round(DEFAULT_TEXT_WIDTH * editor.project.format.width)} px
+				{/if}
+			</span>
+			{#if item.width !== 'auto'}
+				<Button variant="soft" size="sm" onclick={() => editor.setTextWidth(item.id, 'auto')}>Auto width</Button>
+			{/if}
+		</div>
+		<p class="hint">Drag the side handles on the video to set a width.</p>
+	</Field>
+
 	<Field label="Size and turn">
 		<TransformFields id={item.id} linked={item.scaleLinked ?? true} noun="Words" withOpacity />
 	</Field>
@@ -187,6 +206,19 @@
 	.words:focus-visible {
 		border-color: var(--color-ink);
 		box-shadow: none;
+	}
+	.width-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+		width: 100%;
+		font-size: var(--text-sm);
+	}
+	.hint {
+		margin-top: var(--space-1);
+		font-size: var(--text-xs);
+		color: var(--color-muted);
 	}
 	.timing {
 		display: flex;

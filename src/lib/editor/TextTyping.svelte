@@ -39,7 +39,7 @@
 	const rows = $derived(layout.rows);
 	const offsets = $derived(rows.map((r) => rowOffsets(item, layout, r)));
 	/** Left edge of each row inside the box (rows are centred, hanging spaces left out). */
-	const rowLeft = (r: number) => layout.width / 2 - rows[r].width / 2;
+	const rowLeft = (r: number) => layout.areaWidth / 2 - rows[r].width / 2;
 	const rowTop = (r: number) => layout.padY + r * layout.lineHeight;
 	/** A row that wraps onto the next (not at a line break). */
 	const soft = (r: number) => r < rows.length - 1 && rows[r].end === rows[r + 1].start;
@@ -160,7 +160,7 @@
 		const dx = clientX - (box.left + box.width / 2);
 		const dy = clientY - (box.top + box.height / 2);
 		const t = (-rotation * Math.PI) / 180;
-		const x = (dx * Math.cos(t) - dy * Math.sin(t)) / (scaleX || 1) + layout.width / 2;
+		const x = (dx * Math.cos(t) - dy * Math.sin(t)) / (scaleX || 1) + layout.areaWidth / 2;
 		const y = (dx * Math.sin(t) + dy * Math.cos(t)) / (scaleY || 1) + layout.height / 2;
 		const r = Math.max(
 			0,

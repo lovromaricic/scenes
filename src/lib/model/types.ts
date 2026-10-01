@@ -81,6 +81,12 @@ export interface TextItem {
 	colors?: TextColors;
 	/** The shadow, when changed from the style's own (missing = the style's). */
 	shadow?: TextShadow;
+	/**
+	 * How wide the words may get before they wrap: a fraction of the frame's width (Fixed, set with
+	 * the side handles), 'auto' (one line, broken only by Enter), or missing (84% of the frame, as
+	 * words always were).
+	 */
+	width?: number | 'auto';
 	/** Scale on top of the font size, around the centre (missing = 1). */
 	scaleX?: number;
 	scaleY?: number;

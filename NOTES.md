@@ -2637,6 +2637,55 @@ fix.
   - `selection.test.ts` moves the first caption up: the toolbar's spot at the bottom covers a
     caption there, and the test clicks it.
 
+## Fix: handles on words (width and scale)
+
+Selected words had only the turn handle, so their width couldn't be changed. They now have the
+same handles as layers: four corners, left and right sides, and the turn handle. There are no top
+or bottom handles, because the height always fits the lines.
+
+- **Width modes** (`TextItem.width`):
+  - **Fixed:** a fraction of the frame's width, set with the side handles.
+  - **Auto:** `'auto'`, one line, broken only by Enter.
+  - **Unset:** wraps at 84% of the frame (`DEFAULT_TEXT_WIDTH`), as words always did, so existing
+    projects look the same.
+  - `wrapWidth` gives the line width for `wrapRows`. The sprite cache's key includes the mode.
+- **The selection box** is the area (`layout.areaWidth`).
+  - In Fixed width it's the width set, with the words centred in it (never narrower than the
+    widest word).
+  - Otherwise it's just around the words.
+  - The drawing (Bold box, highlighter band) still hugs the words, so boxed captions don't
+    stretch.
+  - Typing's caret positions use the same area.
+- **Side handles:**
+  - Dragging one turns the words into Fixed width at the new width. They re-wrap live (once per
+    frame).
+  - The other side stays put: the centre moves by half the change, along the words' turned axis,
+    with keyframes as usual.
+  - With Alt the centre stays.
+  - The width never goes below the widest word (`layout.minWidth`).
+  - The label shows the box width in project pixels.
+- **Corner handles** scale around the centre, keeping proportions (scale values, keyframeable).
+  The label shows the percentage.
+- **Undo and saving:** each drag is one gesture (`beginGesture`/`endGesture`): one undo step and
+  one autosave. The toolbar stays put during it.
+- **On screen:** the handles stay a constant size whatever the words' scale (counter-scaled), sit
+  above the words, and work outside the frame too (the box is only cut off at the stage's edge).
+- **Settings:** a Width row says how the words wrap ("Auto", "Fixed: N px" or "Wraps at N px"),
+  with an "Auto width" button. There's no keyboard shortcut (none existed).
+- **Tests:**
+  - Unit: the width modes (`wrap.test.ts`).
+  - E2E (`text-handles.test.ts`):
+    - the six handles and the turn handle, no top or bottom, constant size at 2× scale and on the
+      scaled corner;
+    - right side narrower: several lines live, left side fixed, a "px" label, then one line again;
+      one undo step per drag;
+    - squeezed: limited by the widest word; Alt keeps the centre; Auto width brings back one line;
+    - a corner scales evenly with a percentage label, leaving the width mode alone;
+    - the left handle on the pasteboard (words partly outside) still works, and the right side
+      stays.
+  - `text-wysiwyg.test.ts` hides all the words' handles in its screenshots (it hid the turn
+    handle already): they show when the words are selected, not while typing.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
@@ -2652,7 +2701,6 @@ fix.
   4× too (now about 1.4× the frame's resolution at most for 2000 px words).
 - Pasteboard: white words without a shadow, faded to 30%, are nearly invisible on the white
   stage outside the frame (a tinted pasteboard, or an outline for faded parts, would help).
-- Text width modes (Auto: only Enter breaks lines; Fixed: wrap at a box width).
 - Shadow ideas: a shadow for the box itself (not only the letters), several shadows, an inner
   shadow.
 - Pasteboard ideas: guides at the frame's edges while snapping words, a "show everything" zoom

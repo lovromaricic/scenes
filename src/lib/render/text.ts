@@ -30,6 +30,13 @@ export interface TextLayout {
 	rows: TextRow[];
 	/** How many of the rows count for the size (empty lines at the end don't). */
 	shownRows: number;
+	/**
+	 * The width of the words' area on screen (for the selection box and its handles): the width set
+	 * in Fixed width, or just around the words. The drawing (box, band) still hugs the words.
+	 */
+	areaWidth: number;
+	/** The narrowest the area can be: the widest word (with the box's padding). */
+	minWidth: number;
 	/** Room inside a box (Bold box) or band (Highlighter) around the text. */
 	padX: number;
 	padY: number;
@@ -110,7 +117,16 @@ export function wrapRows(text: string, maxWidth: number, measure: (s: string) =>
 const WRAP_REFERENCE_PX = 100;
 
 type LayoutInput = Pick<TextItem, 'text' | 'style' | 'x' | 'y' | 'font' | 'size' | 'colors'> &
-	Partial<Pick<TextItem, 'shadow'>>;
+	Partial<Pick<TextItem, 'shadow' | 'width'>>;
+
+/** Where words wrap without a width of their own: 84% of the frame's width. */
+export const DEFAULT_TEXT_WIDTH = 0.84;
+
+/** How wide lines may get, in pixels of a frame frameW wide (Infinity: Auto, one line). */
+export function wrapWidth(item: Pick<TextItem, 'width'>, frameW: number): number {
+	if (item.width === 'auto') return Infinity;
+	return (item.width ?? DEFAULT_TEXT_WIDTH) * frameW;
+}
 
 /**
  * Where and how big a text item is in a frame of the given size, line by line. The one layout
@@ -128,7 +144,7 @@ export function layoutText(item: LayoutInput, frameW: number, frameH: number): T
 	// every other size wrap the words at exactly the same places.
 	ctx.font = fontString(spec.font, WRAP_REFERENCE_PX);
 	ctx.letterSpacing = `${letterSpacing * WRAP_REFERENCE_PX}px`;
-	const broken = wrapRows(text, (frameW * 0.84 * WRAP_REFERENCE_PX) / fontSize, (t) => ctx.measureText(t).width);
+	const broken = wrapRows(text, (wrapWidth(item, frameW) * WRAP_REFERENCE_PX) / fontSize, (t) => ctx.measureText(t).width);
 	ctx.font = fontString(spec.font, fontSize);
 	ctx.letterSpacing = `${letterSpacing * fontSize}px`;
 	const rows: TextRow[] = broken.map((r) => ({ ...r, width: r.text.trim() ? ctx.measureText(r.text.trimEnd()).width : 0 }));
@@ -137,6 +153,8 @@ export function layoutText(item: LayoutInput, frameW: number, frameH: number): T
 	let shown = rows.length;
 	while (shown > 1 && !rows[shown - 1].text.trim()) shown--;
 	const textWidth = Math.max(...rows.map((r) => r.width), fontSize * 0.5);
+	// The widest word: no narrower than that (in Fixed width).
+	const widestWord = Math.max(0, ...text.split(/\s+/).filter(Boolean).map((w) => ctx.measureText(w).width));
 	const lineHeight = fontSize * spec.lineHeight;
 	const padX = (spec.box?.padX ?? spec.band?.padX ?? 0) * fontSize;
 	const padY = (spec.box?.padY ?? 0) * fontSize;
@@ -154,6 +172,11 @@ export function layoutText(item: LayoutInput, frameW: number, frameH: number): T
 		padX,
 		padY,
 		width: textWidth + padX * 2,
+		// In Fixed width, the box handles show the width set (the text is centred in it); else the
+		// box is just around the words.
+		areaWidth:
+			typeof item.width === 'number' ? Math.max(item.width * frameW, widestWord, textWidth) + padX * 2 : textWidth + padX * 2,
+		minWidth: Math.max(widestWord, fontSize * 0.5) + padX * 2,
 		height: lineHeight * shown + padY * 2,
 		cx: item.x * frameW,
 		cy: item.y * frameH,
@@ -308,7 +331,7 @@ export class TextSpriteCache {
 		maxTexture = SAFE_TEXTURE_SIZE
 	): { key: string; sprite: TextSprite; factor: number } {
 		const spec = resolveTextStyle(item);
-		const words = `${item.id}|${item.text}|${JSON.stringify(spec)}|${fontString(spec.font, 10)}`;
+		const words = `${item.id}|${item.text}|${JSON.stringify(spec)}|${fontString(spec.font, 10)}|w${item.width ?? ''}`;
 		const fk = `${words}|${frameW}x${frameH}|${want}|${maxTexture}`;
 		let factor = this.factors.get(fk);
 		if (factor === undefined) {
