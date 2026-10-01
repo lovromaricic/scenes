@@ -2153,6 +2153,17 @@ What you can do:
   easy to click.
 - Keep any number of projects: a home screen with pictures, rename, duplicate, delete, and
   `.scenes` project files to save, move and reopen a whole project (media and fonts included).
+- Animate layers, words and Custom-framed scenes with keyframes, the usual way:
+  - a diamond adds one at the playhead, and moving, scaling, rotating or fading an animated
+    item sets the keyframe there;
+  - easing presets with a curve editor (Linear, eases, Hold, Overshoot, Bounce);
+  - a motion path on the preview that can be dragged to move the whole animation;
+  - markers on the timeline to select, drag, delete, ease and copy/paste;
+  - volume points (a rubber band) on anything with sound, shaping the mix and the waveform.
+- Save the whole video or a range (I/O) as a video, a GIF (or animated WebP), just the sound
+  (WAV, M4A, MP3), the current frame (PNG/JPG, also with F or a right-click), or only the
+  overlays on a transparent background (WebM with alpha where possible, or PNG frames). Every
+  kind is drawn by the same renderer as the preview.
 
 How to run: see "How to run" at the top (`npm install`, `npm run dev`; `npm test` and
 `npm run test:e2e` for the tests — the e2e suite uses installed Google Chrome, and the save-video
