@@ -66,9 +66,11 @@ import {
 	overlayBaseValues,
 	sceneContentTime,
 	sceneFrameAt,
+	sceneKeyframeTimelineTime,
 	shiftKeyframes,
 	textBaseValues,
 	upsertKeyframe,
+	type Easing,
 	type EasingPreset,
 	type FrameValues,
 	type ItemValues,
@@ -149,6 +151,17 @@ function retimed<T extends { start: number; duration: number; keyframes?: Keyfra
 	if (item.keyframes?.length && Math.abs(endBefore - endAfter) < 1e-6 && Math.abs(next.start - item.start) > 1e-9)
 		out.keyframes = shiftKeyframes(item.keyframes, item.start - next.start);
 	return out;
+}
+
+/** An item's keyframes and how their times map to the timeline (see `keyframeTrack`). */
+export interface KeyframeTrack {
+	kind: 'overlay' | 'text' | 'scene';
+	list: Keyframe<ItemValues | FrameValues>[];
+	toTimeline: (time: number) => number;
+	fromTimeline: (t: number) => number;
+	/** Where the item shows on the timeline. */
+	start: number;
+	end: number;
 }
 
 const EASING_KEY = 'scenes.defaultEasing';
@@ -1611,6 +1624,80 @@ export class EditorStore {
 						: { ...s, frame: { ...(s.frame ?? DEFAULT_FRAME), ...values } }
 			)
 		};
+	}
+
+	/**
+	 * An item's keyframes, whatever it is (overlay, words, or a scene with Custom framing), with
+	 * conversions between keyframe times and the timeline, and the part of the timeline where the
+	 * item shows (keyframes outside it are kept but hidden).
+	 */
+	keyframeTrack(id: string): KeyframeTrack | null {
+		const o = this.project.overlays.find((x) => x.id === id) ?? this.project.texts.find((x) => x.id === id);
+		if (o) {
+			return {
+				kind: this.project.overlays.some((x) => x.id === id) ? 'overlay' : 'text',
+				list: o.keyframes ?? [],
+				toTimeline: (time) => o.start + time,
+				fromTimeline: (t) => t - o.start,
+				start: o.start,
+				end: o.start + o.duration
+			};
+		}
+		const placed = this.placed.find((p) => p.scene.id === id);
+		if (placed && placed.scene.frame?.mode === 'custom') {
+			return {
+				kind: 'scene',
+				list: placed.scene.keyframes ?? [],
+				toTimeline: (time) => sceneKeyframeTimelineTime(placed, time),
+				fromTimeline: (t) => sceneContentTime(placed, t),
+				start: placed.start,
+				end: placed.end
+			};
+		}
+		return null;
+	}
+
+	/** Change an item's keyframes (overlay, words or scene) as one undo step. */
+	updateKeyframes(
+		id: string,
+		label: string,
+		change: (list: Keyframe<ItemValues | FrameValues>[]) => Keyframe<ItemValues | FrameValues>[],
+		key?: string
+	): void {
+		if (this.trackOfItem(id)?.locked) return;
+		const tidy = <K>(list: K[]): K[] | undefined => (list.length ? list : undefined);
+		this.edit(
+			label,
+			(p) => ({
+				...p,
+				overlays: p.overlays.map((o) =>
+					o.id === id ? { ...o, keyframes: tidy(change(o.keyframes ?? []) as Keyframe<ItemValues>[]) } : o
+				),
+				texts: p.texts.map((t) =>
+					t.id === id ? { ...t, keyframes: tidy(change(t.keyframes ?? []) as Keyframe<ItemValues>[]) } : t
+				),
+				scenes: p.scenes.map((s) =>
+					s.id === id ? { ...s, keyframes: tidy(change(s.keyframes ?? []) as Keyframe<FrameValues>[]) } : s
+				)
+			}),
+			{ key }
+		);
+	}
+
+	/** Give keyframes (the stretches that start at them) an easing. */
+	setKeyframeEasing(id: string, keyframeIds: string[], easing: Easing, key?: string): void {
+		const ids = new Set(keyframeIds);
+		this.updateKeyframes(id, 'Easing', (list) => list.map((k) => (ids.has(k.id) ? { ...k, easing: { ...easing } } : k)), key);
+	}
+
+	/** The easing new keyframes get (remembered on this device). */
+	setDefaultEasing(preset: EasingPreset): void {
+		this.defaultEasing = preset;
+		try {
+			localStorage.setItem(EASING_KEY, preset);
+		} catch {
+			// Storage blocked: it just isn't remembered.
+		}
 	}
 
 	/** Where a layer sits and how big it is (fractions of the frame). `key` merges drags. */

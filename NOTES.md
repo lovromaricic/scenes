@@ -1660,6 +1660,42 @@ playhead sets the keyframe there.
 - `project-files`' damaged-file test failed once under full-suite load and passes on its own
   (3/3).
 
+### 2. Easing
+
+- Easing belongs to the stretch from a keyframe to the next one and is stored on the first
+  keyframe of it.
+- **Presets:** Linear, Ease in, Ease out, Ease in and out (the CSS cubic-bezier values), Hold,
+  Overshoot and Bounce.
+  - The first four are curves you can fine-tune; Hold, Overshoot and Bounce are fixed shapes.
+  - `easingPreset` names a curve, or returns "custom".
+  - `cubicBezier` solves the curve like CSS: Newton's method, then bisection.
+  - Overshoot goes about 10% past the target and settles. Bounce comes in under the target and
+    bounces back up a few times, never past it.
+  - Opacity is clamped after easing, so neither can push it outside 0–100%.
+- **Curve editor** (`CurveEditor.svelte`, in a popover):
+  - It draws the curve with room above and below for overshooting handles.
+  - The two handles can be dragged (x kept within 0–1) or moved with the arrow keys (Shift for
+    bigger steps). A drag is one undo step.
+  - Under it are the preset chips, the preset's name (or "Custom"), and "Use for new keyframes".
+- **In the settings** (`KeyframeSection.svelte`, for layers, words and Custom-framed scenes):
+  - It shows how many keyframes there are, plus "Easing here", the stretch the playhead is in,
+    which opens the curve editor.
+  - (Right-clicking keyframe markers on the timeline comes in section 4.)
+- **Store:**
+  - `keyframeTrack(id)` gives any item's keyframes, whatever it is, with time conversions to
+    and from the timeline and where the item shows.
+  - `updateKeyframes` changes them as one undo step.
+  - `setKeyframeEasing(id, keyframeIds, easing)` sets the easing on several keyframes at once.
+  - `setDefaultEasing` changes the easing for new keyframes (Ease in and out to start with),
+    remembered in localStorage (`scenes.defaultEasing`).
+- **Tests** (`keyframes-easing.test.ts`):
+  - Each preset's effect on the motion halfway, Hold's jump, Overshoot's overshoot, and
+    Bounce's dip without passing the target.
+  - A handle drag gives "Custom" with a slower start; a keyboard nudge; two undos give Linear
+    back.
+  - The default easing survives a reload and is used by a new keyframe.
+  - Unit tests for the maths are in section 1.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

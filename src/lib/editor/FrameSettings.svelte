@@ -20,6 +20,7 @@
 	import { croppedSize } from '$lib/model/crop';
 	import { useEditor } from '$lib/state/context';
 	import { MediaNoun, mediaNoun } from '$lib/model/labels';
+	import KeyframeSection from './KeyframeSection.svelte';
 
 	let { scene }: { scene: Scene } = $props();
 
@@ -130,6 +131,7 @@
 		/>
 	</Field>
 	<p class="tip">Drag the {noun} on the preview to move it. Scroll or pinch to zoom.</p>
+	<KeyframeSection id={scene.id} />
 	<div class="row">
 		<Button
 			variant="soft"

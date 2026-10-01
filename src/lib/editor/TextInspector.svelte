@@ -11,6 +11,7 @@
 	import TextSizeField from './TextSizeField.svelte';
 	import TextColorSettings from './TextColorSettings.svelte';
 	import TransformFields from './TransformFields.svelte';
+	import KeyframeSection from './KeyframeSection.svelte';
 
 	let { item }: { item: TextItem } = $props();
 
@@ -80,6 +81,8 @@
 	<Field label="Size and turn">
 		<TransformFields id={item.id} linked={item.scaleLinked ?? true} noun="Words" withOpacity />
 	</Field>
+
+	<KeyframeSection id={item.id} />
 
 	<div class="timing">
 		<Field label="Starts at">

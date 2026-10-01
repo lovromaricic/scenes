@@ -27,6 +27,7 @@
 	import OverlayAnimationFields from './OverlayAnimationFields.svelte';
 	import CardContentFields from './CardContentFields.svelte';
 	import TransformFields from './TransformFields.svelte';
+	import KeyframeSection from './KeyframeSection.svelte';
 
 	let { placed }: { placed: PlacedOverlay } = $props();
 
@@ -133,6 +134,8 @@
 			{/each}
 		</div>
 	</section>
+
+	<KeyframeSection id={o.id} />
 
 	{#if o.kind !== 'card'}
 		<section aria-label="Crop">
