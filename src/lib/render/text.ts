@@ -24,7 +24,15 @@ export function loadTextFonts(): Promise<void> {
 type TextStyleInput = Pick<TextItem, 'style' | 'font' | 'size' | 'colors'>;
 
 export interface TextLayout {
+	/** Each line's characters (see `rows`). */
 	lines: string[];
+	/** The lines, with where they are in the words and their widths. */
+	rows: TextRow[];
+	/** How many of the rows count for the size (empty lines at the end don't). */
+	shownRows: number;
+	/** Room inside a box (Bold box) or band (Highlighter) around the text. */
+	padX: number;
+	padY: number;
 	fontSize: number;
 	lineHeight: number;
 	/** Box around the text (including any box/band padding), in frame pixels. */
@@ -43,46 +51,92 @@ function measurer(): OffscreenCanvasRenderingContext2D {
 	return measureCtx;
 }
 
+/**
+ * The words as drawn: upper case for styles that use it (letter by letter, so every character
+ * keeps its place in the typed text: one that would become two letters, like ß, stays as it is).
+ */
 function displayText(item: Pick<TextItem, 'text'>, uppercase: boolean | undefined): string {
 	const text = item.text.trim() ? item.text : ' ';
-	return uppercase ? text.toUpperCase() : text;
+	if (!uppercase) return text;
+	let out = '';
+	for (const c of text) {
+		const u = c.toUpperCase();
+		out += u.length === c.length ? u : c;
+	}
+	return out;
 }
 
-function wrap(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-	const lines: string[] = [];
-	for (const paragraph of text.split('\n')) {
-		const words = paragraph.split(/\s+/).filter(Boolean);
-		if (words.length === 0) {
-			lines.push('');
-			continue;
-		}
-		let line = words[0];
-		for (const word of words.slice(1)) {
-			const candidate = `${line} ${word}`;
-			if (ctx.measureText(candidate).width <= maxWidth) line = candidate;
-			else {
-				lines.push(line);
-				line = word;
-			}
-		}
-		lines.push(line);
-	}
-	return lines;
+/** One line as laid out, with where it is in the typed text. */
+export interface TextRow {
+	/** The characters on the line (spaces at a wrap stay at its end, "hanging"). */
+	text: string;
+	/** Where the line starts and ends in the words (end: before the line break, if any). */
+	start: number;
+	end: number;
+	/** Width without the hanging spaces at its end: what's centred. */
+	width: number;
 }
+
+/**
+ * Break the words into lines no wider than `maxWidth` (measured by `measure`): at the user's own
+ * line breaks, and between words. Every character keeps its place (spaces aren't collapsed);
+ * spaces where a line wraps stay at the end of that line, hanging past it, so they never move
+ * the text. A word longer than a line has a line to itself.
+ */
+export function wrapRows(text: string, maxWidth: number, measure: (s: string) => number): Omit<TextRow, 'width'>[] {
+	const rows: Omit<TextRow, 'width'>[] = [];
+	let at = 0;
+	for (const paragraph of text.split('\n')) {
+		const tokens = paragraph.match(/^\s+|\S+\s*/g) ?? [];
+		let line = '';
+		let lineStart = at;
+		let pos = at;
+		for (const token of tokens) {
+			if (line.trim() && measure((line + token).trimEnd()) > maxWidth) {
+				rows.push({ text: line, start: lineStart, end: pos });
+				line = '';
+				lineStart = pos;
+			}
+			line += token;
+			pos += token.length;
+		}
+		rows.push({ text: line, start: lineStart, end: at + paragraph.length });
+		at += paragraph.length + 1;
+	}
+	return rows;
+}
+
+/** Line breaks are decided at this font size, so they're the same at every resolution. */
+const WRAP_REFERENCE_PX = 100;
 
 type LayoutInput = Pick<TextItem, 'text' | 'style' | 'x' | 'y' | 'font' | 'size' | 'colors'> &
 	Partial<Pick<TextItem, 'shadow'>>;
 
-/** Where and how big a text item is in a frame of the given size. */
+/**
+ * Where and how big a text item is in a frame of the given size, line by line. The one layout
+ * for drawing (preview, export, home picture) and for typing on the preview (the caret and the
+ * selection are placed from its rows), so they always agree.
+ */
 export function layoutText(item: LayoutInput, frameW: number, frameH: number): TextLayout {
 	const spec = resolveTextStyle(item);
 	const short = Math.min(frameW, frameH);
 	const fontSize = spec.size * short;
 	const ctx = measurer();
+	const letterSpacing = spec.letterSpacing ?? 0;
+	const text = displayText(item, spec.uppercase);
+	// Where lines break: measured at a fixed size, then scaled, so the preview, the export and
+	// every other size wrap the words at exactly the same places.
+	ctx.font = fontString(spec.font, WRAP_REFERENCE_PX);
+	ctx.letterSpacing = `${letterSpacing * WRAP_REFERENCE_PX}px`;
+	const broken = wrapRows(text, (frameW * 0.84 * WRAP_REFERENCE_PX) / fontSize, (t) => ctx.measureText(t).width);
 	ctx.font = fontString(spec.font, fontSize);
-	ctx.letterSpacing = `${(spec.letterSpacing ?? 0) * fontSize}px`;
-	const lines = wrap(ctx, displayText(item, spec.uppercase), frameW * 0.84);
-	const textWidth = Math.max(...lines.map((l) => ctx.measureText(l).width), fontSize * 0.5);
+	ctx.letterSpacing = `${letterSpacing * fontSize}px`;
+	const rows: TextRow[] = broken.map((r) => ({ ...r, width: r.text.trim() ? ctx.measureText(r.text.trimEnd()).width : 0 }));
+	// Empty lines at the very end (Enter just pressed) hang below, like spaces at a line's end:
+	// they don't change the size or the place of the words.
+	let shown = rows.length;
+	while (shown > 1 && !rows[shown - 1].text.trim()) shown--;
+	const textWidth = Math.max(...rows.map((r) => r.width), fontSize * 0.5);
 	const lineHeight = fontSize * spec.lineHeight;
 	const padX = (spec.box?.padX ?? spec.band?.padX ?? 0) * fontSize;
 	const padY = (spec.box?.padY ?? 0) * fontSize;
@@ -92,15 +146,33 @@ export function layoutText(item: LayoutInput, frameW: number, frameH: number): T
 		Math.max(strokeW, shadowReach(spec.shadow, fontSize) + strokeW / 2) + 2
 	);
 	return {
-		lines,
+		lines: rows.map((r) => r.text),
+		rows,
+		shownRows: shown,
 		fontSize,
 		lineHeight,
+		padX,
+		padY,
 		width: textWidth + padX * 2,
-		height: lineHeight * lines.length + padY * 2,
+		height: lineHeight * shown + padY * 2,
 		cx: item.x * frameW,
 		cy: item.y * frameH,
 		bleed
 	};
+}
+
+/**
+ * Measure where each character of a row is (for the caret and selection): the x of the caret
+ * before character k, from the row's left (centred) edge, at the layout's size.
+ */
+export function rowOffsets(item: LayoutInput, layout: TextLayout, row: TextRow): number[] {
+	const spec = resolveTextStyle(item);
+	const ctx = measurer();
+	ctx.font = fontString(spec.font, layout.fontSize);
+	ctx.letterSpacing = `${(spec.letterSpacing ?? 0) * layout.fontSize}px`;
+	const out = [0];
+	for (let k = 1; k <= row.text.length; k++) out.push(ctx.measureText(row.text.slice(0, k)).width);
+	return out;
 }
 
 export interface TextSprite {
@@ -120,7 +192,7 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
 	const ctx = canvas.getContext('2d')!;
 	ctx.font = fontString(spec.font, fontSize);
 	ctx.letterSpacing = `${(spec.letterSpacing ?? 0) * fontSize}px`;
-	ctx.textAlign = 'center';
+	ctx.textAlign = 'left';
 	ctx.textBaseline = 'middle';
 
 	const centerX = canvas.width / 2;
@@ -144,14 +216,17 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
 	if (lctx !== ctx) {
 		lctx.font = ctx.font;
 		lctx.letterSpacing = ctx.letterSpacing;
-		lctx.textAlign = 'center';
+		lctx.textAlign = 'left';
 		lctx.textBaseline = 'middle';
 	}
 
-	layout.lines.forEach((line, i) => {
+	layout.rows.forEach((row, i) => {
+		const line = row.text;
 		const y = top + lineHeight * (i + 0.5);
-		if (spec.band && line) {
-			const w = ctx.measureText(line).width + spec.band.padX * 2 * fontSize;
+		// Each line is centred by its width without the spaces hanging at its end.
+		const x = centerX - row.width / 2;
+		if (spec.band && line.trim()) {
+			const w = row.width + spec.band.padX * 2 * fontSize;
 			ctx.fillStyle = paintCss(spec.band);
 			ctx.beginPath();
 			ctx.roundRect(centerX - w / 2, y - lineHeight * 0.44, w, lineHeight * 0.88, fontSize * 0.12);
@@ -161,10 +236,10 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
 			lctx.lineJoin = 'round';
 			lctx.lineWidth = spec.stroke.width * fontSize;
 			lctx.strokeStyle = spec.stroke.color;
-			lctx.strokeText(line, centerX, y);
+			lctx.strokeText(line, x, y);
 		}
 		lctx.fillStyle = paintCss({ ...spec.fill, opacity: letters === canvas ? fillOpacity : 1 });
-		lctx.fillText(line, centerX, y);
+		lctx.fillText(line, x, y);
 	});
 
 	if (shadow) {

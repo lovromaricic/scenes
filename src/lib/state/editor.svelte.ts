@@ -2890,10 +2890,9 @@ export class EditorStore {
 	setTextWords(id: string, text: string, key?: string): void {
 		const current = this.project.texts.find((t) => t.id === id);
 		if (!current) return;
-		const clean = text
-			.replace(/\r/g, '')
-			.replace(/\n{3,}/g, '\n\n')
-			.trimEnd();
+		// Spaces and empty lines at the end hang past the words (see layoutText), so tidying them
+		// away changes nothing on screen.
+		const clean = text.replace(/\r/g, '').trimEnd();
 		if (!clean.trim()) {
 			if (!key) this.deleteText(id);
 			return;
@@ -2975,16 +2974,28 @@ export class EditorStore {
 		});
 	}
 
+	/**
+	 * The words in the preview's typing box, as typed (also halfway through a composed character,
+	 * or empty for a moment): shown on the preview, and used to place the caret, while the
+	 * project gets them only once they're whole (typeTextWords). Null when not typing.
+	 */
+	typingText = $state<{ id: string; text: string } | null>(null);
+
+	showTyping(id: string, text: string): void {
+		this.typingText = { id, text };
+		this.player.showTyping(this.typingText);
+	}
+
 	startEditingText(id: string): void {
 		this.editingTextId = id;
-		this.player.hideText(id);
 	}
 
 	stopEditingText(): void {
 		const id = this.editingTextId;
 		if (!id) return;
 		this.editingTextId = null;
-		this.player.hideText(null);
+		this.typingText = null;
+		this.player.showTyping(null);
 		// Whatever was typed is already in (it's applied as it's typed); just end the undo step.
 		this.history.seal(TextTyping.key(id));
 	}

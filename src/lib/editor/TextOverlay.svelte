@@ -2,8 +2,8 @@
 	@component
 	Interactive layer over the preview for words: click to select, drag to move (snapping to the
 	centre), double-click or "Edit words" to type in place (live: the words, the settings and the
-	timeline follow every change; Enter is a new line, Esc or a click elsewhere stops). The words themselves are drawn by the
-	WebGL compositor underneath; only the text being typed is shown in HTML.
+	timeline follow every change; Enter is a new line, Esc or a click elsewhere stops). The words
+	themselves are always drawn by the WebGL compositor underneath, also while they're typed.
 -->
 <script lang="ts">
 	import { frameBatch } from '$lib/ui/frameBatch';
@@ -13,17 +13,16 @@
 	import Paintbrush from '@lucide/svelte/icons/paintbrush';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { tick } from 'svelte';
 	import { FloatingToolbar, ChipGroup } from '$lib/ui';
 	import { TEXT_ANIMATIONS } from '$lib/model/catalog';
 	import { isTextVisible } from '$lib/model/textAnimation';
 	import type { TextAnimation, TextItem } from '$lib/model/types';
 	import { layoutText } from '$lib/render/text';
 	import { resolveTextStyle } from '$lib/model/textStyle';
-	import { textCss } from '$lib/render/textCss';
 	import { useEditor } from '$lib/state/context';
 	import TextStylePicker from './TextStylePicker.svelte';
 	import KeyframeButtons from './KeyframeButtons.svelte';
+	import TextTyping from './TextTyping.svelte';
 	import { useStageView } from './stageView.svelte';
 	import { snapOutside, turnedHalf } from '$lib/model/offscreen';
 
@@ -57,8 +56,12 @@
 		void editor.fonts.version;
 		// Where the words are at the playhead (keyframed), scaled and turned like the video draws.
 		const v = editor.itemValues(item.id);
-		const l = layoutText(v ? { ...item, x: v.x, y: v.y } : item, width, height);
+		// While typing on the preview: the words as typed (what the video shows, too).
+		const typing = editor.typingText?.id === item.id ? editor.typingText.text : item.text;
+		const placed = { ...item, text: typing, ...(v ? { x: v.x, y: v.y } : {}) };
+		const l = layoutText(placed, width, height);
 		return {
+			item: placed,
 			left: l.cx - l.width / 2,
 			top: l.cy - l.height / 2,
 			width: l.width,
@@ -211,70 +214,18 @@
 		editor.setTextPosition(item.id, v.x + dir[0] * step, v.y + dir[1] * step);
 	}
 
-	// ─── Typing in place ────────────────────────────────────────────────────────────────────
-	let editorEl = $state<HTMLDivElement>();
-
+	// ─── Typing in place (see TextTyping) ───────────────────────────────────────────────────
 	function startEditing(id: string) {
 		popover = null;
 		if (editor.selectedId !== id) editor.select(id);
 		editor.startEditingText(id);
 	}
 
-	/** Focus the typing box and select its words whenever a text starts being edited. */
-	let focusedFor: string | null = null;
-	$effect(() => {
-		const id = editor.editingTextId;
-		const el = editorEl;
-		if (!id) {
-			focusedFor = null;
-			return;
-		}
-		if (!el || focusedFor === id) return;
-		focusedFor = id;
-		void tick().then(() => {
-			el.focus();
-			const range = document.createRange();
-			range.selectNodeContents(el);
-			const sel = window.getSelection();
-			sel?.removeAllRanges();
-			sel?.addRange(range);
-		});
-	});
-
-	/**
-	 * The typing box starts with the words, once: after that it's the typing that changes the
-	 * words (live), never the other way round, so the caret stays put.
-	 */
-	function initialText(node: HTMLElement, text: string) {
-		node.textContent = text;
-	}
-
-	/** What's typed, as plain text (new lines as \n). */
-	const typed = (el: HTMLElement) => el.innerText.replace(/\n$/, '');
-
-	/** Every change shows straight away (but not halfway through a composed character, like č). */
-	function onEditorInput(event: Event) {
-		const id = editor.editingTextId;
-		if (!id || !editorEl || (event as InputEvent).isComposing) return;
-		editor.typeTextWords(id, typed(editorEl));
-	}
-
 	/** Stop typing (Esc, or a click elsewhere), keeping what was typed. */
-	function finish() {
-		const id = editor.editingTextId;
-		if (!id || !editorEl) return;
-		const text = typed(editorEl);
+	function finish(id: string, text: string) {
+		if (editor.editingTextId !== id) return;
 		editor.stopEditingText();
 		editor.finishTextWords(id, text);
-	}
-
-	function onEditorKeydown(event: KeyboardEvent) {
-		// Typing keys are for the words, not the editor's shortcuts. Enter is a new line.
-		event.stopPropagation();
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			finish();
-		}
 	}
 
 	const selected = $derived(editor.selectedText);
@@ -335,22 +286,14 @@
 			style:rotate={b.rotate}
 		>
 			{#if isEditing}
-				<div
-					bind:this={editorEl}
-					class="typing"
-					contenteditable="plaintext-only"
-					role="textbox"
-					aria-multiline="true"
-					aria-label="Type the words on the video"
-					tabindex="0"
-					spellcheck="true"
-					style={textCss(item, b.layout.fontSize)}
-					use:initialText={item.text}
-					onkeydown={onEditorKeydown}
-					oninput={onEditorInput}
-					oncompositionend={onEditorInput}
-					onblur={finish}
-				></div>
+				<TextTyping
+					item={b.item}
+					layout={b.layout}
+					rotation={b.values?.rotation ?? 0}
+					scaleX={b.values?.scaleX ?? 1}
+					scaleY={b.values?.scaleY ?? 1}
+					onfinish={(text) => finish(item.id, text)}
+				/>
 			{:else}
 				<button
 					type="button"
@@ -514,24 +457,6 @@
 	}
 	.hit:focus-visible {
 		box-shadow: var(--focus-ring);
-	}
-	.typing {
-		position: absolute;
-		left: 50%;
-		top: 50%;
-		translate: -50% -50%;
-		min-width: 1ch;
-		max-width: none;
-		width: max-content;
-		text-align: center;
-		white-space: pre-wrap;
-		outline: 2px solid var(--color-accent);
-		outline-offset: 4px;
-		cursor: text;
-		caret-color: currentColor;
-	}
-	.typing:focus-visible {
-		box-shadow: none;
 	}
 	.toolbar-holder {
 		position: absolute;

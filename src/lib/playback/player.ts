@@ -79,7 +79,8 @@ export class Player {
 	private readonly sprites = new TextSpriteCache();
 	private readonly cards = new CardCache();
 	/** A text being edited on the preview is drawn by the HTML editor instead. */
-	private hiddenTextId: string | null = null;
+	/** Words being typed, drawn as they are in the typing box (see showTyping). */
+	private typing: { id: string; text: string } | null = null;
 	private placed: PlacedScene[] = [];
 	private duration = 0;
 	private mood: MoodId = 'natural';
@@ -329,8 +330,13 @@ export class Player {
 		this.dirty = true;
 	}
 
-	hideText(id: string | null): void {
-		this.hiddenTextId = id;
+	/**
+	 * While words are typed on the preview, draw them as they are in the typing box, even before
+	 * they're in the project (a character being composed, or no words at all for a moment).
+	 * `null` when typing stops.
+	 */
+	showTyping(typing: { id: string; text: string } | null): void {
+		this.typing = typing;
 		this.dirty = true;
 	}
 
@@ -492,9 +498,11 @@ export class Player {
 		const draws: VisualDraw[] = [];
 		for (const v of this.visualsAt(t)) {
 			if (v.type === 'text') {
-				// Words being typed are shown by the HTML editor instead.
-				if (v.item.id === this.hiddenTextId) continue;
-				const d = textDraw(v.item, t, width, height, this.sprites, this.compositor?.maxTextureSize);
+				// Words being typed are drawn here too, exactly as they'll look, as they're typed.
+				const typing = this.typing?.id === v.item.id ? this.typing : null;
+				if (typing && !typing.text) continue;
+				const item = typing ? { ...v.item, text: typing.text } : v.item;
+				const d = textDraw(item, t, width, height, this.sprites, this.compositor?.maxTextureSize);
 				if (d) draws.push({ type: 'text', draw: d });
 				continue;
 			}

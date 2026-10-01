@@ -50,6 +50,10 @@
 			rows="2"
 			value={item.text}
 			aria-label="Words"
+			spellcheck="false"
+			autocomplete="off"
+			autocapitalize="off"
+			{...{ autocorrect: 'off' }}
 			oninput={(e) => {
 				if (!(e as unknown as InputEvent).isComposing) editor.typeTextWords(item.id, e.currentTarget.value);
 			}}

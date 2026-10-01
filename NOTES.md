@@ -2464,6 +2464,85 @@ confirming.
       nothing halfway, the whole letter at the end.
   - `phase4-words.test.ts` now stops typing with Esc, since Enter makes a new line.
 
+## Fix: typing on the preview looked different from the result
+
+### Root cause
+
+The on-preview editor was a separate HTML `contenteditable` laid over the words. The video's
+renderer stopped drawing them while it was open (`player.hideText`). So what you saw while typing
+was the browser's own text layout, which only approximated the renderer:
+
+- **No wrapping.** It had `width: max-content` (with `white-space: pre-wrap`), so it never wrapped
+  at the renderer's width (84% of the frame): one long line, far outside the frame.
+- **A different shadow.** `textCss` gives a CSS `text-shadow`, with different blur maths, cast
+  per glyph. The renderer casts one canvas shadow of the letters and outline together.
+- **Its own line metrics.** CSS `line-height` and the font's ascent/descent, against the
+  renderer's rows centred on `lineHeight`. Its centring included trailing spaces. It had no
+  pasteboard fading (the hidden words weren't drawn faded outside the frame either).
+- **Spellcheck:** `spellcheck="true"`, hence the red dotted underline.
+- **The clean-up at the end changed the layout.** Leaving trimmed trailing spaces and blank
+  lines, and collapsed three blank lines into two.
+- **Wrapping wasn't the same at every size.** The renderer decided line breaks with
+  measurements at the size being drawn: the preview, each export resolution and the HTML box
+  could break a line in different places.
+
+### The fix: the renderer draws the words while they're typed
+
+- **The words stay on the video** (no more `hideText`).
+  - While typing, the player draws the typing box's text (`showTyping`). That includes a
+    character halfway through being composed, which the project only gets once it's whole.
+  - So font, lines, shadow, outline, box, band, colours, turn, scale and the faded parts outside
+    the frame are the real thing.
+- **An invisible field takes the typing** (`TextTyping.svelte`). It's a `<textarea>` with
+  opacity 0, and `spellcheck`, `autocorrect`, `autocapitalize` and `autocomplete` off (so is the
+  settings' Words field).
+  - It handles keys, input methods, Left/Right, Shift + arrows, select all and the browser's undo
+    while typing.
+  - Live updates, undo bursts and composed characters work as in the previous change.
+- **Caret and selection** are drawn over the box from the renderer's own rows (`layout.rows`,
+  `rowOffsets`): each row's place in the words and each character's measured x.
+  - Clicks, drags, double-clicks (word) and triple-clicks (line) are mapped through the same
+    rows. The pointer is turned back by the words' rotation and scale.
+  - Up, Down, Home and End move by the lines as drawn, not the field's own lines.
+  - Double-clicks are counted on `mousedown`. `pointerdown` isn't cancelled, since that would
+    cancel the `mousedown` too, and its `preventDefault` keeps the focus in the field. They also
+    stop there, so they don't reach the preview's "double-click to crop".
+- **The same outline** (2 px accent, 4 px out) while typing as when selected: the box doesn't move
+  or resize.
+- **One layout, character-exact** (`wrapRows`, `layoutText`):
+  - Lines keep every character and its index (spaces aren't collapsed any more).
+  - Spaces at a wrap hang at the end of their line, and each line is centred by its width
+    without them.
+  - Empty lines at the very end hang below and don't count for the size.
+  - So typing a space or pressing Enter, and the tidy-up when typing stops, never move anything.
+    The tidy-up is now only trailing whitespace, which hangs anyway.
+  - Upper-case styles map letter by letter; a letter that would become two, like ß, stays.
+- **Line breaks are decided at a fixed 100 px reference** and then used at every size. The
+  preview, the typing caret, exports at any resolution and the home picture all break lines at
+  the same places.
+- **Width modes:** this project has no Auto/Fixed width modes; words wrap at 84% of the frame, as
+  before. Typing follows exactly that. (Width modes were left for a separate change.)
+- **Tests:**
+  - Unit (`wrap.test.ts`): wrapping between words with hanging spaces, every character's index
+    kept, line breaks and empty lines, long words, widths without hanging spaces.
+  - E2E (`text-wysiwyg.test.ts`), screenshot comparisons of the stage with the caret, toolbar and
+    toasts hidden, before/while typing and while typing/after (under 0.05% of pixels differ by
+    more than 24), plus the box's size and place. Cases:
+    - several wrapped lines with a shadow;
+    - a 220 px italic Big title;
+    - an outline;
+    - a box turned 15° and scaled 1.3×;
+    - the highlighter;
+    - words partly outside the frame.
+  - Also:
+    - Enter plus spaces at the end then leaving: no jump;
+    - spellcheck and friends off, and no `contenteditable`;
+    - a click between the words puts the caret there and typing goes in there;
+    - a double-click selects a word, highlighted over it; Shift + Left; drag-selecting the first
+      word;
+    - Up/Down/Home/End over two lines;
+    - a click on 30°-turned words lands on the right letter.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
@@ -2477,6 +2556,9 @@ confirming.
 - Mood swatches are stored per scene but only change the picture from Phase 6.
 - Very large words: they're drawn from one sprite. Splitting it into tiles would keep them sharp at
   4× too (now about 1.4× the frame's resolution at most for 2000 px words).
+- Pasteboard: white words without a shadow, faded to 30%, are nearly invisible on the white
+  stage outside the frame (a tinted pasteboard, or an outline for faded parts, would help).
+- Text width modes (Auto: only Enter breaks lines; Fixed: wrap at a box width).
 - Shadow ideas: a shadow for the box itself (not only the letters), several shadows, an inner
   shadow.
 - Pasteboard ideas: guides at the frame's edges while snapping words, a "show everything" zoom
