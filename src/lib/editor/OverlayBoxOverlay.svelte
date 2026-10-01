@@ -22,6 +22,8 @@
 	import OverlayAnimationFields from './OverlayAnimationFields.svelte';
 	import KeyframeButtons from './KeyframeButtons.svelte';
 	import { useStageView } from './stageView.svelte';
+	import SelectionToolbar from './SelectionToolbar.svelte';
+	import { turnedBounds } from './toolbarPlacement';
 
 	interface Props {
 		width: number;
@@ -352,34 +354,32 @@
 	{@const o = p.overlay}
 	{@const g = geometry(p)}
 	{@const selected = editor.selectedId === o.id}
-	{@const pinned = stage.pin(g.left, g.top, g.w, g.h)}
 	{#if selected && !dragging && !rotating}
-		<!-- Outside the layer's box, and stacked above the words on the video: the toolbar and its
-			popovers must never have words (or other layers) on top of them, catching clicks. -->
-		<div
-			class="toolbar-anchor"
-			data-on-video
-			style:left="{pinned.left}px"
-			style:top="{pinned.top}px"
-			style:width="{g.w}px"
-			style:height="{g.h}px"
+		<!-- Inside the video frame (see SelectionToolbar), stacked above the words on the video: the
+			toolbar and its popovers must never have words (or other layers) on top of them. -->
+		<SelectionToolbar
+			bounds={turnedBounds(g.left + g.w / 2, g.top + g.h / 2, g.w, g.h, g.rotation)}
+			{width}
+			{height}
 		>
-			<div class="layer-toolbar" class:below={stage.cramped(pinned.top)}>
-				<div class="toolbar-row">
-					<FloatingToolbar label="Layer options" actions={actions(o)} />
-					<KeyframeButtons id={o.id} dark />
+			{#snippet children({ compact, up })}
+				<div class="layer-toolbar" data-on-video>
+					<div class="toolbar-row">
+						<FloatingToolbar label="Layer options" actions={actions(o)} {compact} />
+						<KeyframeButtons id={o.id} dark />
+					</div>
+					{#if popover === 'style'}
+						<div class="popover" class:up role="dialog" aria-label="Layer style">
+							<OverlayStyleFields overlay={o} />
+						</div>
+					{:else if popover === 'animate'}
+						<div class="popover" class:up role="dialog" aria-label="Layer animation">
+							<OverlayAnimationFields overlay={o} />
+						</div>
+					{/if}
 				</div>
-				{#if popover === 'style'}
-					<div class="popover" role="dialog" aria-label="Layer style">
-						<OverlayStyleFields overlay={o} />
-					</div>
-				{:else if popover === 'animate'}
-					<div class="popover" role="dialog" aria-label="Layer animation">
-						<OverlayAnimationFields overlay={o} />
-					</div>
-				{/if}
-			</div>
-		</div>
+			{/snippet}
+		</SelectionToolbar>
 	{/if}
 	{#if selected && !popover && stage.shows(g.left, g.top, g.w, g.h)}
 		<span
@@ -398,6 +398,8 @@
 <style>
 	.toolbar-row {
 		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
 		gap: var(--space-2);
 		align-items: center;
 	}
@@ -546,29 +548,11 @@
 		white-space: nowrap;
 		pointer-events: none;
 	}
-	/* Above the words (z-index 5) and every layer box; only its toolbar takes clicks. */
-	.toolbar-anchor {
-		position: absolute;
-		z-index: 7;
-		pointer-events: none;
-	}
 	.layer-toolbar {
-		pointer-events: auto;
-		position: absolute;
-		/* Clear of the rotation handle above the box. */
-		bottom: calc(100% + 40px);
-		left: 50%;
-		translate: -50% 0;
-		z-index: 6;
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: var(--space-2);
-		font-size: var(--text-md);
-	}
-	.layer-toolbar.below {
-		bottom: auto;
-		top: calc(100% + 12px);
 	}
 	.popover {
 		position: absolute;
@@ -579,6 +563,11 @@
 		background: var(--color-bg);
 		box-shadow: var(--shadow-float);
 		animation: pop-in var(--dur-fast) var(--ease-out);
+	}
+	/* Opened from a toolbar low in the frame: upwards. */
+	.popover.up {
+		top: auto;
+		bottom: calc(100% + 8px);
 	}
 	@keyframes pop-in {
 		from {

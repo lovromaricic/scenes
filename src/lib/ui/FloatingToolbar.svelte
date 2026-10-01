@@ -1,7 +1,8 @@
 <!--
 	@component
 	A dark pill toolbar that floats next to whatever is selected (for example text on the preview).
-	Arrow keys move between its buttons. Position it with `style` or a wrapping element.
+	Arrow keys move between its buttons. Position it with `style` or a wrapping element. `compact`
+	shows icons only (with the names as tooltips), for narrow spaces.
 -->
 <script lang="ts">
 	import type { HTMLAttributes } from 'svelte/elements';
@@ -10,9 +11,11 @@
 	interface Props extends HTMLAttributes<HTMLDivElement> {
 		label: string;
 		actions: ToolbarAction[];
+		/** Icons only, named by their tooltips. */
+		compact?: boolean;
 	}
 
-	let { label, actions, class: className = '', ...rest }: Props = $props();
+	let { label, actions, compact = false, class: className = '', ...rest }: Props = $props();
 
 	let focusIndex = $state(0);
 	let root: HTMLDivElement;
@@ -31,6 +34,7 @@
 <div
 	bind:this={root}
 	class="toolbar {className}"
+	class:compact
 	role="toolbar"
 	aria-label={label}
 	tabindex="-1"
@@ -43,9 +47,11 @@
 			tabindex={i === focusIndex ? 0 : -1}
 			onfocus={() => (focusIndex = i)}
 			onclick={action.onclick}
+			aria-label={compact ? action.label : undefined}
+			title={compact ? action.label : undefined}
 		>
 			<action.icon size={15} strokeWidth={1.8} aria-hidden="true" />
-			<span>{action.label}</span>
+			{#if !compact}<span>{action.label}</span>{/if}
 		</button>
 		{#if i < actions.length - 1}<span class="sep" aria-hidden="true"></span>{/if}
 	{/each}
@@ -77,6 +83,9 @@
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
 		transition: background-color var(--dur-fast) var(--ease-out);
+	}
+	.compact button {
+		padding: 0 var(--space-2);
 	}
 	button:hover {
 		background: var(--color-ink-line);

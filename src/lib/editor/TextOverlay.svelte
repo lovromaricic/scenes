@@ -23,6 +23,8 @@
 	import TextStylePicker from './TextStylePicker.svelte';
 	import KeyframeButtons from './KeyframeButtons.svelte';
 	import TextTyping from './TextTyping.svelte';
+	import SelectionToolbar from './SelectionToolbar.svelte';
+	import { turnedBounds } from './toolbarPlacement';
 	import { useStageView } from './stageView.svelte';
 	import { snapOutside, turnedHalf } from '$lib/model/offscreen';
 
@@ -339,55 +341,56 @@
 		{@const b = box(item)}
 		{@const sx = b.values?.scaleX ?? 1}
 		{@const sy = b.values?.scaleY ?? 1}
-		{@const pinned = stage.pin(
-			b.left + (b.width * (1 - sx)) / 2,
-			b.top + (b.height * (1 - sy)) / 2,
-			b.width * sx,
-			b.height * sy
-		)}
-		{@const left = pinned.left}
-		{@const top = pinned.top}
-		<!-- Outside the words' box: not cut off with it at the stage's edges, and not turned. -->
-		<div
-			class="toolbar-holder"
-			style:left="{left}px"
-			style:top="{top}px"
-			style:width="{b.width * sx}px"
-			style:height="{b.height * sy}px"
+		<!-- Inside the video frame (see SelectionToolbar): not cut off with the words at the stage's
+			edges, and not turned with them. -->
+		<SelectionToolbar
+			bounds={turnedBounds(
+				b.left + b.width / 2,
+				b.top + b.height / 2,
+				b.width * sx,
+				b.height * sy,
+				b.values?.rotation ?? 0
+			)}
+			{width}
+			{height}
 		>
-			<div class="toolbar-anchor" class:below={stage.cramped(top)}>
-				<div class="toolbar-row">
-					<FloatingToolbar label="Text options" actions={actions(selected)} />
-					<KeyframeButtons id={selected.id} dark />
+			{#snippet children({ compact, up })}
+				<div class="toolbar-anchor">
+					<div class="toolbar-row">
+						<FloatingToolbar label="Text options" actions={actions(selected)} {compact} />
+						<KeyframeButtons id={selected.id} dark />
+					</div>
+					{#if popover === 'style'}
+						<div class="popover" class:up role="dialog" aria-label="Text style">
+							<TextStylePicker
+								compact
+								value={selected.style}
+								onchange={(style) => editor.setTextStyle(selected.id, style)}
+							/>
+						</div>
+					{:else if popover === 'animate'}
+						<div class="popover narrow" class:up role="dialog" aria-label="Animation">
+							<p class="popover-label">How the words appear</p>
+							<ChipGroup
+								label="Animation"
+								size="sm"
+								options={animationOptions}
+								value={selected.animation}
+								onchange={(a: TextAnimation) => editor.setTextAnimation(selected.id, a)}
+							/>
+						</div>
+					{/if}
 				</div>
-				{#if popover === 'style'}
-					<div class="popover" role="dialog" aria-label="Text style">
-						<TextStylePicker
-							compact
-							value={selected.style}
-							onchange={(style) => editor.setTextStyle(selected.id, style)}
-						/>
-					</div>
-				{:else if popover === 'animate'}
-					<div class="popover narrow" role="dialog" aria-label="Animation">
-						<p class="popover-label">How the words appear</p>
-						<ChipGroup
-							label="Animation"
-							size="sm"
-							options={animationOptions}
-							value={selected.animation}
-							onchange={(a: TextAnimation) => editor.setTextAnimation(selected.id, a)}
-						/>
-					</div>
-				{/if}
-			</div>
-		</div>
+			{/snippet}
+		</SelectionToolbar>
 	{/if}
 {/each}
 
 <style>
 	.toolbar-row {
 		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
 		gap: var(--space-2);
 		align-items: center;
 	}
@@ -458,28 +461,11 @@
 	.hit:focus-visible {
 		box-shadow: var(--focus-ring);
 	}
-	.toolbar-holder {
-		position: absolute;
-		z-index: 7;
-		pointer-events: none;
-	}
 	.toolbar-anchor {
-		pointer-events: auto;
-		position: absolute;
-		/* Clear of the rotation handle above the box. */
-		bottom: calc(100% + 40px);
-		left: 50%;
-		translate: -50% 0;
-		z-index: 5;
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: var(--space-2);
-		font-size: var(--text-md);
-	}
-	.toolbar-anchor.below {
-		bottom: auto;
-		top: calc(100% + 12px);
 	}
 	.popover {
 		position: absolute;
@@ -490,6 +476,11 @@
 		background: var(--color-bg);
 		box-shadow: var(--shadow-float);
 		animation: pop-in var(--dur-fast) var(--ease-out);
+	}
+	/* Opened from a toolbar low in the frame: upwards. */
+	.popover.up {
+		top: auto;
+		bottom: calc(100% + 8px);
 	}
 	.popover.narrow {
 		width: auto;

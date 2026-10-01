@@ -121,10 +121,18 @@ test.describe('Keyframes: adding and editing', () => {
 		await seekTo(page, 4);
 		const path = page.getByTestId('motion-path');
 		await expect(path).toBeAttached();
-		// A point on the line, a tenth of the way along (clear of the layer's toolbar).
+		// A point on the line near its start, clear of the layer's toolbar (which stays inside the
+		// frame, so it may be over part of the line).
 		const preview = (await page.getByTestId('preview').boundingBox())!;
-		const px = preview.x + preview.width * (0.2 + (0.7 - 0.2) / 10);
-		const py = preview.y + preview.height * (0.3 + (0.6 - 0.3) / 10);
+		const bar = (await page.getByTestId('selection-toolbar').boundingBox())!;
+		let px = 0;
+		let py = 0;
+		for (let f = 0.02; f < 0.6; f += 0.02) {
+			px = preview.x + preview.width * (0.2 + (0.7 - 0.2) * f);
+			py = preview.y + preview.height * (0.3 + (0.6 - 0.3) * f);
+			const onBar = px > bar.x - 6 && px < bar.x + bar.width + 6 && py > bar.y - 6 && py < bar.y + bar.height + 6;
+			if (!onBar) break;
+		}
 		const dx = preview.width * 0.1;
 		const dy = preview.height * 0.05;
 		await dragBy(page, px, py, dx, dy);

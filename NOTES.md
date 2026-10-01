@@ -2543,6 +2543,57 @@ was the browser's own text layout, which only approximated the renderer:
     - Up/Down/Home/End over two lines;
     - a click on 30°-turned words lands on the right letter.
 
+## Fix: the floating toolbar left the video frame
+
+**Cause.** The toolbar of a selected layer or words was anchored to the object's box.
+- It sat a fixed 40 px above it, or 12 px below when there wasn't 92 px of room.
+- Since the pasteboard change, it was only nudged so that it touched the stage
+  (`StageView.pin`).
+- So a large object (big words, a card covering the frame) pushed it above or below the frame,
+  out over the timeline or top bar.
+- It was never measured, so nothing kept it inside on the sides, and it didn't shrink in narrow
+  frames.
+
+**Placement now** (`toolbarPlacement.ts`, `SelectionToolbar.svelte`, used by layers and words):
+- **Region:** the video frame, limited to the part in view when zoomed in, minus an 8 px margin.
+- **Bounds:** the object's on-screen box (`turnedBounds`), from its keyframed position, scale and
+  rotation, at the preview's size, which follows stage zoom.
+- **Order:**
+  1. above the object, 40 px clear (its turn handle);
+  2. else below it, 12 px clear;
+  3. else pinned at the top of the frame.
+- **Across:** centred on the object's visible part, then clamped inside the frame.
+- **Entirely outside the frame:** at the nearest edge (the object's centre clamped into the frame).
+- **Measured:** the toolbar (actions and keyframe buttons together) is measured and placed in
+  frame coordinates. It's recomputed whenever the object, the stage or the preview size changes:
+  moving, resizing, turning, animating, pan and zoom, the divider, the window. Svelte applies it
+  once per update.
+- **Hidden while dragging** (as before), and back in its new place when the drag ends.
+- **Narrow frames (9:16):** when the toolbar with names doesn't fit, it shows icons only
+  (`FloatingToolbar compact`, named by `aria-label` and tooltips). If even that is too wide, its
+  width is capped to the frame, so the keyframe buttons wrap onto a second row, still one unit.
+  The names come back when there's room.
+- **Popovers:** Style and Animate open upwards when the toolbar is in the lower half of the frame.
+- **Removed:** `StageView.pin` and `cramped`.
+
+**Tests:**
+- Unit (`toolbarPlacement.test.ts`):
+  - above, centred; below; pinned for objects as large as 2000 px words;
+  - clamped near both sides;
+  - the nearest edge for objects outside;
+  - turned bounds.
+- E2E (`toolbar-placement.test.ts`). Every case checks that the toolbar's box is inside the video
+  frame in view:
+  - above small words (centred, keyframe buttons inside it), below near the top, pinned at the
+    top for 600 and 2000 px words;
+  - partly outside each edge, near corners, turned 30°, -40° and 90°;
+  - entirely outside left and below: at that edge;
+  - a card covering the frame (pinned), a card near the bottom (above), scaled 3× and turned;
+  - 9:16: icons only, still named and with tooltips; names back in 16:9;
+  - zoomed to 100% and panned, a smaller window, and hidden while dragging, then back inside.
+- `keyframes-editing.test.ts` now drags the motion path at a point clear of the toolbar, which
+  now stays inside the frame and can cover part of the path.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

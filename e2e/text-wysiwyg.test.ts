@@ -14,7 +14,7 @@ const frames = (page: Page) => page.evaluate(() => new Promise((r) => requestAni
 /** Hide what's meant to differ (the caret, the toolbar and turn handle that show when not typing, toasts). */
 async function steady(page: Page) {
 	await page.addStyleTag({
-		content: `.caret, .toolbar-holder, [data-text-handle="rotate"], .toasts, .font-missing { visibility: hidden !important; }
+		content: `.caret, [data-testid="selection-toolbar"], [data-text-handle="rotate"], .toasts, .font-missing { visibility: hidden !important; }
 		* { animation: none !important; transition: none !important; }`
 	});
 }

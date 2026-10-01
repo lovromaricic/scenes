@@ -16,23 +16,6 @@ export class StageView {
 		return `inset(${v.y0}px calc(100% - ${v.x1}px) calc(100% - ${v.y1}px) ${v.x0}px)`;
 	}
 
-	/**
-	 * Where to anchor a selected object's toolbar: its box, moved just enough to stay in view
-	 * (its centre within the stage across, and touching it up and down), so the toolbar is always
-	 * there to reach, wherever the object is.
-	 */
-	pin(left: number, top: number, width: number, height: number): { left: number; top: number } {
-		const v = this.visible;
-		if (!v) return { left, top };
-		const cx = Math.min(v.x1 - 24, Math.max(v.x0 + 24, left + width / 2));
-		return { left: cx - width / 2, top: Math.min(v.y1, Math.max(v.y0 - height, top)) };
-	}
-
-	/** Whether there's less than `room` pixels of the stage above `top` (preview pixels). */
-	cramped(top: number, room = 92): boolean {
-		return top < room || top - (this.visible?.y0 ?? 0) < room;
-	}
-
 	/** Whether a box (preview pixels, from the frame's top-left) is at least partly in view. */
 	shows(left: number, top: number, width: number, height: number): boolean {
 		const v = this.visible;
