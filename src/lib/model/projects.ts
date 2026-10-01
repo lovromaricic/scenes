@@ -91,6 +91,9 @@ export function migrateProject<T extends Partial<Project> & { aspect?: string }>
 		sd.volumePoints = tidyKeyframes(sd.volumePoints);
 		if (!sd.volumePoints) delete sd.volumePoints;
 	}
+	// The range set with I and O (format 3): within reason, or none.
+	const r = project.range;
+	if (r && !(Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start && r.start >= 0)) project.range = null;
 	project.mood ??= 'natural';
 	project.title ??= 'My video';
 	// Words in a style this version doesn't know are shown in the plain style.

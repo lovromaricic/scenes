@@ -20,8 +20,8 @@ export const COLLAPSED_H = 20;
 export const ROW_GAP = 6;
 /** The "+ Audio track" row under the tracks. */
 export const ADD_ROW_H = 22;
-/** The storyboard's own padding above and below its tracks. */
-export const STORYBOARD_PAD = 12 + 16;
+/** The storyboard's own padding above and below its tracks, and its toolbar row (28 px). */
+export const STORYBOARD_PAD = 4 + 28 + 16;
 /** The divider between the preview and the storyboard. */
 export const DIVIDER_H = 8;
 /** The preview's area never gets smaller than this share of the window's height. */

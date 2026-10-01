@@ -2457,6 +2457,63 @@ export class EditorStore {
 		);
 	}
 
+	// ─── Range (I / O) ──────────────────────────────────────────────────────────────────────
+
+	/** Shortest range (seconds). */
+	static readonly MIN_RANGE = 1 / 30;
+
+	/** Set the range (kept within the video, start before end); null clears it. Saved and undoable. */
+	setRange(range: { start: number; end: number } | null, key?: string, label = 'Range'): void {
+		const d = this.duration;
+		let next: { start: number; end: number } | null = null;
+		if (range && d > 0) {
+			const start = Math.max(0, Math.min(d - EditorStore.MIN_RANGE, range.start));
+			const end = Math.max(start + EditorStore.MIN_RANGE, Math.min(d, range.end));
+			next = { start: Math.round(start * 1000) / 1000, end: Math.round(end * 1000) / 1000 };
+		}
+		if (JSON.stringify(next) === JSON.stringify(this.project.range ?? null)) return;
+		this.edit(label, (p) => ({ ...p, range: next }), { key });
+	}
+
+	/** I: the range starts at the playhead (it ends where it did, or at the end of the video). */
+	setRangeStart(): void {
+		const r = this.project.range;
+		const start = this.time;
+		this.setRange({ start, end: r && r.end > start + EditorStore.MIN_RANGE ? r.end : this.duration }, undefined, 'Range start');
+	}
+
+	/** O: the range ends at the playhead (it starts where it did, or at the start of the video). */
+	setRangeEnd(): void {
+		const r = this.project.range;
+		const end = this.time;
+		this.setRange({ start: r && r.start < end - EditorStore.MIN_RANGE ? r.start : 0, end }, undefined, 'Range end');
+	}
+
+	clearRange(): void {
+		this.setRange(null, undefined, 'Clear range');
+	}
+
+	/** The range from the start of the selected items (or scene) to the end of the last one. */
+	setRangeToSelection(): boolean {
+		const spans: { start: number; end: number }[] = [];
+		for (const id of this.selectedIds) {
+			const scene = this.placed.find((p) => p.scene.id === id);
+			if (scene) spans.push({ start: scene.start, end: scene.end });
+			const item = getItem(this.project, id);
+			if (item) spans.push({ start: item.start, end: item.start + item.duration });
+		}
+		if (!spans.length) {
+			toasts.show('Select a scene or items first, then set the range to them.');
+			return false;
+		}
+		this.setRange(
+			{ start: Math.min(...spans.map((x) => x.start)), end: Math.max(...spans.map((x) => x.end)) },
+			undefined,
+			'Range to selection'
+		);
+		return true;
+	}
+
 	// ─── Save video ─────────────────────────────────────────────────────────────────────────
 
 	/** Render and encode the video. The dialog shows progress and can cancel with `signal`. */

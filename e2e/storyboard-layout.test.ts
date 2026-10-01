@@ -110,8 +110,8 @@ test.describe('Storyboard size and scrolling', () => {
 
 		// Up: a taller storyboard, a smaller preview.
 		const previewBefore = await box(page.getByTestId('preview'));
-		await dragDivider(page, -100);
-		expect((await board()).height).toBeCloseTo(initial + 100, 0);
+		await dragDivider(page, -60);
+		expect((await board()).height).toBeCloseTo(initial + 60, 0);
 		expect((await box(page.getByTestId('preview'))).height).toBeLessThan(previewBefore.height);
 
 		// Never past 40% of the window for the preview's area…

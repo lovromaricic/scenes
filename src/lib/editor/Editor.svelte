@@ -207,6 +207,12 @@
 			if (done) event.preventDefault();
 			return;
 		}
+		// Alt/Option+X clears the range (by key position: Option+X types a symbol on a Mac).
+		if (event.altKey && !mod && event.code === 'KeyX' && !isTyping(event.target)) {
+			event.preventDefault();
+			editor.clearRange();
+			return;
+		}
 		if (mod || event.altKey || isTyping(event.target) || event.defaultPrevented) return;
 
 		// While recording a voiceover, Space or Esc stops it; nothing else happens.
@@ -240,6 +246,16 @@
 				if (editor.selectedSound) editor.splitSoundAtPlayhead();
 				else if (editor.selectedOverlay || editor.selectedText) editor.splitItemAtPlayhead();
 				else editor.splitAtPlayhead();
+				break;
+			case 'i':
+			case 'I':
+				event.preventDefault();
+				editor.setRangeStart();
+				break;
+			case 'o':
+			case 'O':
+				event.preventDefault();
+				editor.setRangeEnd();
 				break;
 			case 'Delete':
 			case 'Backspace':

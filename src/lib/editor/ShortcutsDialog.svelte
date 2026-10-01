@@ -34,7 +34,9 @@
 				[[mod, 'C'], `Copy the selected items (${mod} + X to cut)`],
 				[[mod, 'V'], 'Paste on the selected track, at the playhead'],
 				[['Alt', '←'], 'Move the selected scene earlier (Alt + → later)'],
-				[['Esc'], 'Deselect']
+				[['Esc'], 'Deselect'],
+				[['I'], 'Start the range at the playhead (O ends it)'],
+				[['Alt', 'X'], 'Clear the range']
 			]
 		},
 		{

@@ -22,6 +22,10 @@
 	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
 	import MoveHorizontal from '@lucide/svelte/icons/move-horizontal';
+	import ArrowRightToLine from '@lucide/svelte/icons/arrow-right-to-line';
+	import ArrowLeftToLine from '@lucide/svelte/icons/arrow-left-to-line';
+	import BetweenHorizontalStart from '@lucide/svelte/icons/between-horizontal-start';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -431,6 +435,44 @@
 		return url ? `url("${url}")` : 'none';
 	}
 
+	/**
+	 * Drag an edge of the range on the ruler: snapping to the playhead and scene edges (Alt: no
+	 * snapping). One undo step.
+	 */
+	function onRangeEdgeDown(event: PointerEvent, edge: 'start' | 'end') {
+		if (event.button !== 0 || !editor.project.range) return;
+		event.preventDefault();
+		event.stopPropagation();
+		editor.beginGesture();
+		drags.start(event, {
+			move: (e) => {
+				const r = editor.project.range;
+				if (!r) return;
+				let t = map.t(Math.max(0, contentX(e.clientX)));
+				if (!e.altKey) {
+					const targets = [editor.time, 0, duration, ...editor.placed.flatMap((p) => [p.start, p.end])];
+					for (const target of targets) if (Math.abs(map.x(target) - map.x(t)) < 8) t = target;
+				}
+				const min = 1 / 30;
+				const next =
+					edge === 'start'
+						? { start: Math.max(0, Math.min(t, r.end - min)), end: r.end }
+						: { start: r.start, end: Math.min(duration, Math.max(t, r.start + min)) };
+				editor.live((p) => {
+					p.range = next;
+				});
+			},
+			end: () => editor.endGesture('Range')
+		});
+	}
+
+	let rangeMenu = $state(false);
+	let rangeMenuButton = $state<HTMLButtonElement>();
+	const rangeMenuItems = $derived<MenuItem[]>([
+		{ label: 'Set range to selection', disabled: !editor.selectedIds.length, onselect: () => editor.setRangeToSelection() },
+		{ label: 'Clear range', shortcut: 'Alt+X', disabled: !editor.project.range, onselect: () => editor.clearRange() }
+	]);
+
 	/** A pointer's x on the timeline (content pixels): measured from the lanes' left edge. */
 	function contentX(clientX: number): number {
 		return clientX - rulerLane.getBoundingClientRect().left;
@@ -763,6 +805,10 @@
 	/>
 {/if}
 
+{#if rangeMenu && rangeMenuButton}
+	<Menu label="Range" items={rangeMenuItems} anchor={rangeMenuButton} align="end" onclose={() => (rangeMenu = false)} />
+{/if}
+
 {#if trackMenu}
 	<Menu
 		label="{trackMenu.track.name} options"
@@ -799,6 +845,73 @@
 	style:height={height ? `${height}px` : undefined}
 	onpointerdown={onEmptyPointerDown}
 >
+	<div class="zoom">
+		<!-- Compact, so the toolbar covers as little of the ruler as it can. -->
+		<div class="range-tools" role="group" aria-label="Range">
+			<button
+				type="button"
+				class="fit icon"
+				aria-label="Range start at the playhead"
+				title="Start the range at the playhead (I)"
+				onclick={() => editor.setRangeStart()}
+			>
+				<ArrowRightToLine size={13} strokeWidth={2} aria-hidden="true" />
+			</button>
+			<button
+				type="button"
+				class="fit icon"
+				aria-label="Range end at the playhead"
+				title="End the range at the playhead (O)"
+				onclick={() => editor.setRangeEnd()}
+			>
+				<ArrowLeftToLine size={13} strokeWidth={2} aria-hidden="true" />
+			</button>
+			<button
+				bind:this={rangeMenuButton}
+				type="button"
+				class="fit icon"
+				aria-label="More range options"
+				aria-haspopup="menu"
+				title="Range options"
+				onclick={() => (rangeMenu = !rangeMenu)}
+			>
+				<Ellipsis size={13} strokeWidth={2} aria-hidden="true" />
+			</button>
+		</div>
+		<button
+			type="button"
+			class="fit ripple"
+			aria-pressed={editor.ripple}
+			title={editor.ripple
+				? 'Ripple is on: when scenes change, what’s on the other tracks moves along with them'
+				: 'Ripple is off: when scenes change, what’s on the other tracks keeps its time'}
+			onclick={() => editor.setRipple(!editor.ripple)}
+		>
+			<MoveHorizontal size={12} strokeWidth={2} aria-hidden="true" />
+			Ripple
+		</button>
+		<button
+			type="button"
+			class="fit"
+			title="Show the whole video"
+			aria-pressed={zoom === 0}
+			onclick={fit}
+		>
+			<Maximize size={12} strokeWidth={2} aria-hidden="true" />
+			Fit
+		</button>
+		<input
+			type="range"
+			aria-label="Storyboard zoom"
+			aria-valuetext={zoom === 0 ? 'Whole video' : `${Math.round(pps)} pixels per second`}
+			min="0"
+			max="1"
+			step="0.01"
+			value={ppsToZoom(pps, fittedPps)}
+			oninput={(e) => void zoomAround(Number(e.currentTarget.value))}
+		/>
+	</div>
+
 	<!-- One scroller for all tracks: headers stay on the left when scrolling sideways; the ruler
 		stays on top and the Scenes track stays in view when scrolling up and down. The browser's own
 		drag of pictures or selected text would swallow a drag's release, so it's turned off. -->
@@ -819,6 +932,28 @@
 					</button>
 				</div>
 				<div class="ruler" role="presentation" bind:this={rulerLane} onpointerdown={onRulerDown}>
+					{#if editor.project.range}
+						{@const r = editor.project.range}
+						<!-- The range set with I and O: drag its edges to change it. -->
+						<div
+							class="range"
+							data-testid="range"
+							style:left="{map.x(r.start)}px"
+							style:width="{Math.max(2, map.x(r.end) - map.x(r.start))}px"
+						>
+							{#each ['start', 'end'] as const as edge (edge)}
+								<span
+									class="range-edge {edge}"
+									role="slider"
+									tabindex="-1"
+									aria-label="Range {edge}"
+									aria-valuenow={edge === 'start' ? r.start : r.end}
+									data-range-edge={edge}
+									onpointerdown={(e) => onRangeEdgeDown(e, edge)}
+								></span>
+							{/each}
+						</div>
+					{/if}
 					{#each rulerTicks as t (t)}
 						<span class="tick mono" style:left="{map.x(t)}px">{formatClock(t)}</span>
 					{/each}
@@ -1057,55 +1192,19 @@
 		</div>
 	</div>
 
-	<div class="zoom">
-		<button
-			type="button"
-			class="fit ripple"
-			aria-pressed={editor.ripple}
-			title={editor.ripple
-				? 'Ripple is on: when scenes change, what’s on the other tracks moves along with them'
-				: 'Ripple is off: when scenes change, what’s on the other tracks keeps its time'}
-			onclick={() => editor.setRipple(!editor.ripple)}
-		>
-			<MoveHorizontal size={12} strokeWidth={2} aria-hidden="true" />
-			Ripple
-		</button>
-		<button
-			type="button"
-			class="fit"
-			title="Show the whole video"
-			aria-pressed={zoom === 0}
-			onclick={fit}
-		>
-			<Maximize size={12} strokeWidth={2} aria-hidden="true" />
-			Fit
-		</button>
-		<input
-			type="range"
-			aria-label="Storyboard zoom"
-			aria-valuetext={zoom === 0 ? 'Whole video' : `${Math.round(pps)} pixels per second`}
-			min="0"
-			max="1"
-			step="0.01"
-			value={ppsToZoom(pps, fittedPps)}
-			oninput={(e) => void zoomAround(Number(e.currentTarget.value))}
-		/>
-	</div>
 </section>
 
 <style>
 	/* Zoom sits at the right end of the ruler, above the scrolling tracks. */
+	/* The storyboard's own toolbar: a slim row above the ruler, so it never covers it. */
 	.zoom {
-		position: absolute;
-		top: var(--space-3);
-		right: var(--space-6);
-		z-index: 8;
 		display: flex;
+		flex: none;
 		align-items: center;
+		justify-content: flex-end;
 		gap: var(--space-2);
-		height: var(--ruler-h);
-		padding-left: var(--space-3);
-		background: linear-gradient(to right, transparent, var(--color-bg) var(--space-3));
+		height: var(--toolbar-h);
+		padding: 0 var(--space-6) 2px;
 	}
 	.fit {
 		display: inline-flex;
@@ -1143,9 +1242,10 @@
 		min-width: 0;
 		min-height: 0;
 		--ruler-h: 26px;
+		--toolbar-h: 28px;
 		--scenes-h: 104px;
 		--row-gap: 6px;
-		padding: var(--space-3) 0 var(--space-4);
+		padding: 4px 0 var(--space-4);
 		border-top: 1px solid var(--color-border);
 		background: var(--color-bg);
 	}
@@ -1306,6 +1406,52 @@
 		border-bottom: 1px solid var(--color-border);
 		cursor: ew-resize;
 		touch-action: none;
+	}
+	.range {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		background: color-mix(in srgb, var(--color-ink) 12%, transparent);
+		border-left: 2px solid var(--color-ink);
+		border-right: 2px solid var(--color-ink);
+	}
+	.range-edge {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 12px;
+		cursor: ew-resize;
+		touch-action: none;
+	}
+	/* A small grip at the bottom of each edge: easy to grab even under the playhead's knob. */
+	.range-edge::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		bottom: 0;
+		width: 8px;
+		height: 9px;
+		translate: -50% 0;
+		border-radius: 2px 2px 0 0;
+		background: var(--color-ink);
+	}
+	.range-edge.start {
+		left: -7px;
+	}
+	.range-edge.end {
+		right: -7px;
+	}
+	.range-tools {
+		display: inline-flex;
+		gap: 4px;
+		margin-right: var(--space-2);
+	}
+	.fit.icon {
+		padding: 0 5px;
+	}
+	.fit:disabled {
+		opacity: 0.45;
+		cursor: default;
 	}
 	.tick {
 		position: absolute;

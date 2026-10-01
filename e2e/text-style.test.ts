@@ -254,16 +254,25 @@ test.describe('Text colour, size and fonts', () => {
 			{ maxBuffer: 64 * 1024 * 1024 }
 		);
 		const got: RGB[] = [];
+		/** The saved frame's pixels within 2 px of each sample (the preview is smaller, so a point
+		 * on a letter's edge can land a pixel or two either side in the saved frame). */
+		const around: RGB[][] = [];
+		const at = (x: number, y: number): RGB => {
+			const o = (y * 1280 + x) * 3;
+			return [raw[o], raw[o + 1], raw[o + 2]];
+		};
 		for (let i = 1; i < 12; i++) {
 			for (let j = 1; j < 6; j++) {
 				const x = Math.floor(((box.x - canvas.x + (box.width * i) / 12) / canvas.width) * 1280);
 				const y = Math.floor(((box.y - canvas.y + (box.height * j) / 6) / canvas.height) * 720);
-				const o = (y * 1280 + x) * 3;
-				got.push([raw[o], raw[o + 1], raw[o + 2]]);
+				got.push(at(x, y));
+				const n: RGB[] = [];
+				for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) n.push(at(x + dx, y + dy));
+				around.push(n);
 			}
 		}
 		// Yellow letters on a navy box, in the same places (a few edge pixels may differ).
-		const agree = got.filter((p, i) => near(p, want[i], 40)).length;
+		const agree = around.filter((n, i) => n.some((p) => near(p, want[i], 40))).length;
 		expect(agree / got.length).toBeGreaterThan(0.85);
 		expect(got.some((p) => near(p, [255, 225, 77], 30))).toBe(true);
 		// The box keeps Bold box's 88% opacity: navy with a little of the red video through it.

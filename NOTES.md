@@ -1948,6 +1948,45 @@ playhead sets the keyframe there.
   - The existing save tests (MP4 vs preview, WebM fallback, keyframes, volume, transitions)
     pass unchanged on the new renderer.
 
+### 10. Range
+
+- **Setting it:**
+  - **I** starts the range at the playhead, keeping its end if that's later, or else ending at
+    the video's end. **O** ends it at the playhead, keeping its start if that's earlier, or else
+    starting at 0.
+  - **Alt/Option+X** clears it. It's matched by key position (`code === 'KeyX'`) because
+    Option+X types a symbol on a Mac.
+  - All three are in the shortcuts dialog.
+  - Store: `setRange` keeps it inside the video, start before end (at least a frame), rounded
+    to the millisecond. `setRangeStart`, `setRangeEnd`, `clearRange`, and `setRangeToSelection`
+    (from the first selected item's or scene's start to the last one's end).
+- **Saved with the project** (`project.range`), so it's undoable, autosaved and in `.scenes`
+  files. `migrateProject` drops a range that makes no sense.
+- **On the ruler:** a tinted area with dark edges.
+  - Drag an edge (each has a small grip at the bottom, clear of the playhead's knob) to change
+    it, snapping to the playhead and scene edges (Alt: no snapping). One undo step.
+- **The storyboard toolbar** is now a slim row of its own above the ruler (28 px), rather than
+  sitting on the ruler. With the range buttons it had grown wide enough to cover the playhead's
+  knob near the end of the video.
+  - The range buttons are icon-only: "Range start at the playhead" (I), "Range end at the
+    playhead" (O), and a "…" menu with Set range to selection and Clear range (Alt+X).
+  - The storyboard's height constants grew by the same 20 px.
+- **Saving:** the dialog picks Range by default when one is set, and the length and estimate
+  follow it. Every kind of saving takes the range; the video export from section 9 already
+  does.
+- **Tests** (`export-range.test.ts`):
+  - I and O at 1 s and 3 s, with the area at the right place on the ruler. Alt+X, undo, and a
+    reload keep it.
+  - The toolbar buttons; dragging the end snaps onto the cut at 4 s (one undo step); Set range
+    to selection on scene 2; Clear.
+  - A 3–5 s range saved as video: Range preselected, "2 sec", and an MP4 of about 2 s that is
+    red then green (ffmpeg).
+- **Other tests:**
+  - `text-style`'s MP4-versus-preview text check became sensitive to the slightly smaller
+    preview (points on letter edges). It now accepts a match within 2 px in the saved frame.
+  - An experiment with the old storyboard height confirmed the saved video itself hadn't
+    changed.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
