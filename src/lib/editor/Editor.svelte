@@ -235,7 +235,11 @@
 				break;
 			case 'Delete':
 			case 'Backspace':
-				if (editor.selectedId) {
+				// Selected keyframes go first (their item stays).
+				if (editor.selectedKeyframes.length) {
+					event.preventDefault();
+					editor.deleteSelectedKeyframes();
+				} else if (editor.selectedId) {
 					event.preventDefault();
 					editor.deleteSelected();
 				}

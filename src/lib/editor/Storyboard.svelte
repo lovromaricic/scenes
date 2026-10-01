@@ -13,6 +13,7 @@
 	import TransitionPicker from './TransitionPicker.svelte';
 	import TrackLane from './TrackLane.svelte';
 	import TrackHeader from './TrackHeader.svelte';
+	import KeyframeMarkers from './KeyframeMarkers.svelte';
 	import type { DropTarget, LaneServices } from './lanes';
 	import { accepts, type ItemKind } from '$lib/model/tracks';
 	import { allItems, itemKind } from '$lib/model/items';
@@ -717,6 +718,19 @@
 							return r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
 						})
 						.map((el) => el.dataset.itemId!);
+					// Keyframe markers inside the box: those keyframes (rather than whole items).
+					const marks = [...tracks.querySelectorAll<HTMLElement>('.kf[data-keyframe]')]
+						.filter((el) => {
+							const r = el.getBoundingClientRect();
+							return r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+						})
+						.map((el) => ({ itemId: el.dataset.keyframeItem!, id: el.dataset.keyframe! }));
+					if (marks.length) {
+						const owners = [...new Set(marks.map((m) => m.itemId))];
+						if (owners.length === 1 && editor.selectedId !== owners[0]) editor.select(owners[0]);
+						editor.selectKeyframes(marks);
+						return;
+					}
 					editor.selectItems([...kept, ...hit.filter((id) => !kept.includes(id))]);
 				},
 				end: () => {
@@ -858,6 +872,21 @@
 										onselect={() => onCardClick(item.scene.id)}
 										onkeydown={(e) => onCardKeydown(e, item)}
 									/>
+									{#if item.scene.keyframes?.length && item.scene.frame?.mode === 'custom' && !drag?.active}
+										{@const p = editor.placed.find((x) => x.scene.id === item.scene.id)}
+										{@const w = Math.max(24, item.width - CARD_GAP)}
+										{#if p}
+											<div class="card-keyframes">
+												<KeyframeMarkers
+													itemId={item.scene.id}
+													xOf={(t) => ((t - p.start) / p.duration) * w}
+													tOf={(px) => p.start + (px / w) * p.duration}
+													{services}
+													width={w}
+												/>
+											</div>
+										{/if}
+									{/if}
 									{#if !drag?.active}
 										{#each ['start', 'end'] as const as edge (edge)}
 											<span
@@ -1274,6 +1303,18 @@
 	.scenes-row {
 		height: var(--scenes-h);
 		background: none;
+	}
+	/* Scene keyframes: along the bottom of the picture, above the name. */
+	.card-keyframes {
+		position: absolute;
+		left: 0;
+		top: calc(100% - 30px);
+		height: 12px;
+		width: 100%;
+		pointer-events: none;
+	}
+	.card-keyframes :global(.kf) {
+		pointer-events: auto;
 	}
 	.card-slot {
 		position: absolute;

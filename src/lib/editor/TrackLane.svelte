@@ -22,6 +22,7 @@
 	import { useEditor } from '$lib/state/context';
 	import { DragScope } from '$lib/ui/drag';
 	import Waveform from './Waveform.svelte';
+	import KeyframeMarkers from './KeyframeMarkers.svelte';
 	import type { TimeMap } from './scale';
 	import type { DropTarget, LaneServices } from './lanes';
 
@@ -412,6 +413,15 @@
 						>
 					{/if}
 				</button>
+				{#if e.kind !== 'sound' && !track.locked}
+					<KeyframeMarkers
+						itemId={e.item.id}
+						xOf={(t) => map.x(t) - map.x(start)}
+						tOf={(px) => map.t(px + map.x(start))}
+						{services}
+						{width}
+					/>
+				{/if}
 				{#if !track.locked}
 					{#each ['start', 'end'] as const as edge (edge)}
 						<span

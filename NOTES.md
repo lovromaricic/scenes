@@ -1740,6 +1740,45 @@ playhead sets the keyframe there.
   - Custom framing: the diamond only shows once it's Custom; the zoom slider makes a second
     keyframe. Words: the diamond and dragging them.
 
+### 4. Keyframes on the timeline
+
+- **Markers** (`KeyframeMarkers.svelte`): on layer and words items in their tracks, and on scene
+  cards with Custom framing (along the bottom of the picture). Only keyframes inside the item's
+  visible part show.
+  - Shape by the easing that starts there: a diamond for Linear, round for eased curves, a
+    square for Hold, a triangle for Overshoot and a ring for Bounce.
+  - They're white with a dark edge so they show on any picture; selected ones are accent.
+  - Positions use the storyboard's time map (piecewise, because short scenes get a minimum
+    width), so markers line up with the ruler.
+- **Selecting:**
+  - A click selects the keyframe (and its item) and moves the playhead there. Shift-click adds
+    or removes.
+  - A selection box over markers selects those keyframes instead of items.
+  - Selecting anything else, or Esc, clears it.
+  - Store: `selectedKeyframes: {itemId, id}[]`.
+- **Dragging:** moves every selected keyframe by the same time, shown live on all markers
+  (`keyframeDragDelta`).
+  - It snaps (within 8 px) to the playhead, item edges, scene boundaries, the video's ends and
+    other keyframes, with a short line on the item; Alt turns snapping off.
+  - Scene keyframes move by the matching stretch of their clip (the speed applies).
+  - A keyframe landing on another one replaces it.
+- **Delete/Backspace** removes the selected keyframes before anything else; their item stays.
+- **Right-click** (also selects it):
+  - Easing presets (the current one ticked; applied to every selected keyframe), Edit curve…
+    (the curve editor in a popover, above the marker when there's no room below), and Delete.
+  - Copy comes with section 5.
+- **Popovers from inside the tracks** (this menu and the curve editor) are moved to `<body>`
+  (`ui/portal.ts`). Inside the tracks' isolated stacking they could be covered by the divider.
+- **Tests** (`keyframes-timeline.test.ts`):
+  - Shapes for linear, eased and hold, evenly spaced. A click selects and seeks; Shift-click
+    adds and removes.
+  - A drag snaps onto the playhead, and the other selected keyframe moves the same; with Alt
+    it doesn't snap.
+  - Delete keeps the item; undo; a selection box over the markers.
+  - Right-click easing for two at once (shapes change to bounce, then overshoot); Edit curve →
+    Ease out; Delete.
+  - Scene card markers: a click seeks, and at 2× the same marker is at half the time.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

@@ -70,6 +70,7 @@ import {
 	sceneFrameAt,
 	sceneKeyframeTimelineTime,
 	shiftKeyframes,
+	sortKeyframes,
 	textBaseValues,
 	upsertKeyframe,
 	type Easing,
@@ -153,6 +154,12 @@ function retimed<T extends { start: number; duration: number; keyframes?: Keyfra
 	if (item.keyframes?.length && Math.abs(endBefore - endAfter) < 1e-6 && Math.abs(next.start - item.start) > 1e-9)
 		out.keyframes = shiftKeyframes(item.keyframes, item.start - next.start);
 	return out;
+}
+
+/** A keyframe on an item (overlay, words or scene). */
+export interface KeyframeRef {
+	itemId: string;
+	id: string;
 }
 
 /** An item's keyframes and how their times map to the timeline (see `keyframeTrack`). */
@@ -691,6 +698,7 @@ export class EditorStore {
 	/** Select several items on tracks at once (a selection box). */
 	selectItems(ids: string[]): void {
 		const ok = ids.filter((id) => itemKind(this.project, id) && !this.trackOfItem(id)?.locked);
+		this.selectedKeyframes = [];
 		this.stopEditingText();
 		this.selectedId = ok.at(-1) ?? null;
 		this.extraSelected = ok.slice(0, -1);
@@ -705,6 +713,9 @@ export class EditorStore {
 
 	select(id: string | null): void {
 		this.extraSelected = [];
+		// Selected keyframes belong to the selected item; selecting anything clears them (a click
+		// on a keyframe selects its item first, then the keyframe).
+		this.selectedKeyframes = [];
 		// Items on locked tracks can't be selected.
 		if (id && this.trackOfItem(id)?.locked) return;
 		if (id !== this.editingTextId) this.stopEditingText();
@@ -1808,6 +1819,95 @@ export class EditorStore {
 			const o = p.overlays.find((x) => x.id === id) ?? p.texts.find((x) => x.id === id);
 			if (o) o.keyframes = moved;
 		});
+	}
+
+	// ─── Keyframe selection (on the timeline) ─────────────────────────────────────────────
+
+	/** Keyframes selected on the timeline (rather than items). */
+	selectedKeyframes = $state<KeyframeRef[]>([]);
+	/** While dragging selected keyframes: how far (timeline seconds), for every marker to show. */
+	keyframeDragDelta = $state<number | null>(null);
+
+	isKeyframeSelected(itemId: string, id: string): boolean {
+		return this.selectedKeyframes.some((r) => r.itemId === itemId && r.id === id);
+	}
+
+	/** Select keyframes (the items they're on stay selected too). `additive` adds to the selection. */
+	selectKeyframes(refs: KeyframeRef[], additive = false): void {
+		const next = additive ? [...this.selectedKeyframes] : [];
+		for (const r of refs) if (!next.some((x) => x.itemId === r.itemId && x.id === r.id)) next.push(r);
+		this.selectedKeyframes = next;
+	}
+
+	toggleKeyframeSelected(ref: KeyframeRef): void {
+		this.selectedKeyframes = this.isKeyframeSelected(ref.itemId, ref.id)
+			? this.selectedKeyframes.filter((r) => !(r.itemId === ref.itemId && r.id === ref.id))
+			: [...this.selectedKeyframes, ref];
+	}
+
+	clearKeyframeSelection(): void {
+		if (this.selectedKeyframes.length) this.selectedKeyframes = [];
+	}
+
+	/** The selected keyframes grouped by item. */
+	private keyframeGroups(refs = this.selectedKeyframes): Map<string, string[]> {
+		const groups = new Map<string, string[]>();
+		for (const r of refs) groups.set(r.itemId, [...(groups.get(r.itemId) ?? []), r.id]);
+		return groups;
+	}
+
+	/** Delete the selected keyframes (one undo step per item). */
+	deleteSelectedKeyframes(): void {
+		const groups = this.keyframeGroups();
+		this.selectedKeyframes = [];
+		for (const [itemId, ids] of groups) this.removeKeyframes(itemId, ids);
+	}
+
+	/** Give every selected keyframe an easing. */
+	setSelectedKeyframesEasing(easing: Easing, key?: string): void {
+		for (const [itemId, ids] of this.keyframeGroups()) this.setKeyframeEasing(itemId, ids, easing, key);
+	}
+
+	/**
+	 * Move the selected keyframes by `delta` timeline seconds (scenes' keyframes by the matching
+	 * stretch of their clip). A keyframe landing on another one replaces it.
+	 */
+	moveSelectedKeyframes(delta: number): void {
+		if (Math.abs(delta) < 1e-6) return;
+		for (const [itemId, ids] of this.keyframeGroups()) {
+			const track = this.keyframeTrack(itemId);
+			if (!track) continue;
+			const moving = new Set(ids);
+			this.updateKeyframes(itemId, ids.length > 1 ? 'Move keyframes' : 'Move keyframe', (list) => {
+				const moved = list
+					.filter((k) => moving.has(k.id))
+					.map((k) => ({ ...k, time: track.fromTimeline(track.toTimeline(k.time) + delta) }));
+				const staying = list.filter(
+					(k) => !moving.has(k.id) && !moved.some((m) => Math.abs(m.time - k.time) < SAME_TIME)
+				);
+				return sortKeyframes([...staying, ...moved]);
+			});
+		}
+	}
+
+	/** Timeline times of every keyframe that shows (for snapping), except `except`. */
+	keyframeTimes(except: KeyframeRef[] = []): number[] {
+		const out: number[] = [];
+		const ids = [
+			...this.project.overlays.map((o) => o.id),
+			...this.project.texts.map((t) => t.id),
+			...this.project.scenes.map((s) => s.id)
+		];
+		for (const id of ids) {
+			const track = this.keyframeTrack(id);
+			if (!track) continue;
+			for (const k of track.list) {
+				if (except.some((r) => r.itemId === id && r.id === k.id)) continue;
+				const t = track.toTimeline(k.time);
+				if (t >= track.start - 1e-6 && t <= track.end + 1e-6) out.push(t);
+			}
+		}
+		return out;
 	}
 
 	/** Give keyframes (the stretches that start at them) an easing. */
