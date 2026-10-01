@@ -38,13 +38,14 @@
 		width: 24px;
 		height: 24px;
 		padding: 0;
-		border: 1.5px dashed var(--color-muted);
+		border: 1px solid var(--color-border);
 		border-radius: 50%;
 		background: var(--color-bg);
 		color: var(--color-muted);
 		transition:
 			transform var(--dur-fast) var(--ease-out),
 			background-color var(--dur-fast) var(--ease-out),
+			border-color var(--dur-fast) var(--ease-out),
 			color var(--dur-fast) var(--ease-out);
 	}
 	@media (pointer: coarse) {
@@ -59,7 +60,6 @@
 		border-color: var(--color-ink);
 	}
 	.set {
-		border-style: solid;
 		border-color: var(--color-ink);
 		background: var(--color-ink);
 		color: var(--color-on-ink);
@@ -67,8 +67,9 @@
 	.set:hover {
 		color: var(--color-on-ink);
 	}
+	/* Open (its picker showing): a thin border isn't enough on its own, so a ring around it. */
 	.active {
 		border-color: var(--color-accent);
-		border-style: solid;
+		box-shadow: 0 0 0 1px var(--color-accent);
 	}
 </style>

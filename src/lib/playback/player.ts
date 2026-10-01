@@ -5,10 +5,11 @@ import {
 	PhotoFrameSource,
 	VideoFrameSource,
 	type FrameImage,
-	type FrameSource
+	type FrameSource,
+	type FrameResult
 } from '$lib/media/frames';
 import { placeScenes, type PlacedScene } from '$lib/model/timeline';
-import { compose, type Composition, type LayerRef } from '$lib/model/composition';
+import { compose, scenesNeeded, type Composition, type LayerRef } from '$lib/model/composition';
 import type { SourceBounds } from '$lib/model/edits';
 import type { Size } from '$lib/model/crop';
 import { DEFAULT_FRAME } from '$lib/model/framing';
@@ -60,7 +61,10 @@ interface SourceEntry {
 }
 
 /** Seconds of upcoming scenes to start decoding before they're reached. */
-const PREFETCH = 1.5;
+/** How far ahead (seconds) decoders get ready while playing: scenes, their transitions, layers. */
+const PREFETCH = 2;
+/** Longest the picture is kept while a scene's first frame is still on its way. */
+const MAX_HOLD_MS = 1000;
 
 export class Player {
 	time = 0;
@@ -353,9 +357,25 @@ export class Player {
 				: null;
 		}
 		const source = this.sourceFor(ref.placed.scene);
-		if (!source) return null;
-		source.want(ref.sourceTime, playing);
-		return source.frameAt(ref.sourceTime);
+		source?.want(ref.sourceTime, playing);
+		return this.holdFrame(scene.id, source?.frameAt(ref.sourceTime) ?? null);
+	}
+
+	/**
+	 * The last good frame shown for each scene or layer. If a frame isn't ready yet (the decoder
+	 * is still starting, or seeking), that scene keeps showing its last good frame instead of
+	 * nothing, which would be drawn as black.
+	 */
+	private held = new Map<string, FrameResult>();
+
+	private holdFrame(id: string, frame: FrameResult | null): FrameResult | null {
+		if (frame) {
+			this.held.set(id, frame);
+			return frame;
+		}
+		const last = this.held.get(id);
+		if (last && import.meta.env.DEV) console.debug(`[player] frame not ready for ${id}; showing its last good frame`);
+		return last ? { ...last, exact: false } : null;
 	}
 
 	private layerInput(ref: LayerRef, playing: boolean): LayerInput | null {
@@ -399,10 +419,9 @@ export class Player {
 			return this.cards.frame(o.card, size.width, size.height);
 		}
 		const source = this.sourceFor(o);
-		if (!source) return null;
 		const sourceTime = o.sourceStart + (t - p.start);
-		source.want(sourceTime, playing);
-		return source.frameAt(sourceTime);
+		source?.want(sourceTime, playing);
+		return this.holdFrame(o.id, source?.frameAt(sourceTime) ?? null);
 	}
 
 	/** Pictures and words on the overlay tracks at `t`, lowest track first. */
@@ -480,39 +499,42 @@ export class Player {
 		};
 	}
 
-	private placedAt(t: number): PlacedScene | null {
-		const placed = this.placed;
-		if (!placed.length) return null;
-		for (const p of placed) if (t < p.end) return p;
-		return placed[placed.length - 1];
-	}
-
 	/** Keep decoders busy only for scenes and layers near the playhead; let the rest sleep. */
 	private manageSources(t: number) {
-		const ahead0 = this.playing ? PREFETCH : 0.6;
+		const ahead = this.playing ? PREFETCH : 0.6;
 		for (const p of this.placedOverlays) {
 			if (p.overlay.kind === 'card') continue;
-			const near = (t >= p.start && t < p.end) || (p.start >= t && p.start - t < ahead0);
+			const near = (t >= p.start && t < p.end) || (p.start >= t && p.start - t < ahead);
 			if (near) {
 				const source = this.sourceFor(p.overlay);
 				if (source && !(t >= p.start && t < p.end)) source.want(p.overlay.sourceStart, this.playing);
 			} else if (this.cropViewId !== p.overlay.id) {
-				this.sources.get(p.overlay.id)?.source?.idle();
+				this.sleep(p.overlay.id);
 			}
 		}
-		const current = this.placedAt(t);
-		const ahead = this.playing ? PREFETCH : 0.6;
+		// Scenes: exactly the ones drawing will use from now until `ahead` (the same `compose` rules,
+		// so a transition's outgoing scene stays awake to its very end, and the incoming one starts
+		// decoding at the footage the transition borrows from before its trim).
+		const now = this.composition(t);
+		const shown = new Set([now.a?.placed.scene.id, now.b?.placed.scene.id]);
+		const needed = scenesNeeded(this.placed, Math.max(0, t - 0.1), t + ahead, (p) =>
+			this.lookup.bounds(p.scene)
+		);
+		const keep = new Set(needed.map((n) => n.placed.scene.id));
+		for (const n of needed) {
+			// The ones on screen ask for their own frames as they're drawn.
+			if (shown.has(n.placed.scene.id)) continue;
+			this.sourceFor(n.placed.scene)?.want(n.firstSourceTime, this.playing);
+		}
 		for (const p of this.placed) {
-			const near =
-				p === current || (p.start >= t && p.start - t < ahead) || (p.end <= t && t - p.end < 0.3);
-			if (near) {
-				const source = this.sourceFor(p.scene);
-				if (source && p !== current)
-					source.want(sourceTimeAt(p, Math.max(p.start, Math.min(t, p.end))), this.playing);
-			} else if (p.scene.id !== this.peekTarget?.sceneId) {
-				this.sources.get(p.scene.id)?.source?.idle();
-			}
+			if (!keep.has(p.scene.id) && p.scene.id !== this.peekTarget?.sceneId) this.sleep(p.scene.id);
 		}
+	}
+
+	/** Let a scene's or layer's decoder sleep (and forget the frame held for it). */
+	private sleep(id: string) {
+		this.sources.get(id)?.source?.idle();
+		this.held.delete(id);
 	}
 
 	private tick = () => {
@@ -584,6 +606,19 @@ export class Player {
 				b: c.b ? this.layerInput(c.b, this.playing) : null,
 				transition: c.transition
 			};
+			// A scene with no frame at all yet (never decoded, e.g. right after a jump): keep the
+			// picture on screen as it is rather than draw a gap, for up to a second.
+			const missing = (!!c.a && !composite.a) || (!!c.b && !composite.b);
+			if (missing && this.drawnTime !== null) {
+				this.missingSince ??= performance.now();
+				if (performance.now() - this.missingSince < MAX_HOLD_MS) {
+					if (import.meta.env.DEV) console.debug(`[player] waiting for a scene's first frame at ${t.toFixed(3)}s`);
+					this.dirty = true;
+					return;
+				}
+			} else {
+				this.missingSince = null;
+			}
 		}
 		// Crop mode shows just the picture; while trimming (peek) only words stay on top.
 		const visuals = cropPlaced ? [] : this.visualDraws(t, this.playing, !!this.peekTarget);
@@ -612,8 +647,14 @@ export class Player {
 		this.lastDrawnKey = key;
 
 		this.compositor.render(composite);
+		this.drawnTime = t;
 		this.sprites.endFrame();
 	}
+
+	/** The timeline time of the picture on screen now (the last frame actually drawn). */
+	drawnTime: number | null = null;
+	/** Since when a scene's frame has been missing (the picture on screen is being kept). */
+	private missingSince: number | null = null;
 
 	/** For tests: the colour of a pixel in the preview. */
 	readPixel(x: number, y: number) {

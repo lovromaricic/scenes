@@ -8,6 +8,8 @@ import type { MediaHandle } from '$lib/media/handles';
  */
 export interface ExportFrameReader {
 	frameAt(sourceTime: number): Promise<FrameResult | null>;
+	/** Start decoding at `sourceTime` in the background, before it's needed. */
+	prepare(sourceTime: number): void;
 	dispose(): void;
 }
 
@@ -42,14 +44,27 @@ export class VideoExportReader implements ExportFrameReader {
 		return r.value;
 	}
 
+	/** Opening the decoder at a time, in the background (see `prepare`). */
+	private opening: Promise<void> | null = null;
+
+	private async open(t: number) {
+		await this.iter?.return(undefined);
+		this.iter = this.sink.canvases(t);
+		this.done = false;
+		this.current = await this.pull();
+		this.next = await this.pull();
+	}
+
+	prepare(t: number): void {
+		if (!this.iter && !this.opening) this.opening = this.open(t);
+	}
+
 	async frameAt(t: number): Promise<FrameResult | null> {
-		if (!this.iter || (this.current && t < this.current.timestamp - 0.5)) {
-			await this.iter?.return(undefined);
-			this.iter = this.sink.canvases(t);
-			this.done = false;
-			this.current = await this.pull();
-			this.next = await this.pull();
+		if (this.opening) {
+			await this.opening;
+			this.opening = null;
 		}
+		if (!this.iter || (this.current && t < this.current.timestamp - 0.5)) await this.open(t);
 		while (this.next && this.next.timestamp <= t + 1e-4) {
 			this.current = this.next;
 			this.next = await this.pull();
@@ -77,6 +92,10 @@ export class PhotoExportReader implements ExportFrameReader {
 			resizeHeight: size.height,
 			resizeQuality: 'high'
 		});
+	}
+
+	prepare(): void {
+		void this.frameAt().catch(() => {});
 	}
 
 	async frameAt(): Promise<FrameResult> {

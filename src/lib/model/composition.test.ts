@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compose, transitionLength } from './composition';
+import { compose, scenesNeeded, transitionLength } from './composition';
 import { placeScenes } from './timeline';
 import type { Scene, TransitionKind } from './types';
 
@@ -77,5 +77,23 @@ describe('compose', () => {
 		expect(compose(placed, 0, bounds).transition).toBeNull();
 		expect(compose(placed, 9, bounds).a?.placed.scene.id).toBe('b');
 		expect(compose([], 1, bounds).a).toBeNull();
+	});
+
+	it('lists the scenes needed over a span, with the footage a transition borrows', () => {
+		// A ends at 4 s with a 1 s crossfade: B is first shown at 3.5 s, 0.5 s before its start
+		// (it has no earlier footage, so source time 0); A until 4.5 s, 0.5 s past its trim (6.5).
+		const ahead = scenesNeeded(placed, 2, 5, bounds);
+		expect(ahead.map((n) => n.placed.scene.id)).toEqual(['a', 'b']);
+		expect(ahead[1].firstTime).toBeCloseTo(3.5);
+		expect(ahead[1].firstSourceTime).toBeCloseTo(0);
+		// Just after the cut, the outgoing scene is still needed (the old 0.3 s rule wasn't enough).
+		expect(scenesNeeded(placed, 4.4, 4.4, bounds).map((n) => n.placed.scene.id)).toEqual(['a', 'b']);
+		expect(scenesNeeded(placed, 4.5, 6, bounds).map((n) => n.placed.scene.id)).toEqual(['b']);
+		// Every time compose shows a scene, it's in the list for a span around that time.
+		for (let t = 0; t < 9; t += 0.05) {
+			const c = compose(placed, t, bounds);
+			const ids = scenesNeeded(placed, t - 0.01, t + 0.01, bounds).map((n) => n.placed.scene.id);
+			for (const ref of [c.a, c.b]) if (ref) expect(ids).toContain(ref.placed.scene.id);
+		}
 	});
 });

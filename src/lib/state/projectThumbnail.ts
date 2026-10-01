@@ -6,6 +6,7 @@ import type { Project } from '$lib/model/types';
 import { drawCard } from '$lib/render/card';
 import { visualsAt } from '$lib/render/visuals';
 import { placeScenes } from '$lib/model/timeline';
+import { compose } from '$lib/model/composition';
 import { overlayDraw } from '$lib/render/overlay';
 
 /**
@@ -17,12 +18,21 @@ import { overlayDraw } from '$lib/render/overlay';
 const WIDTH = 320;
 
 export function thumbnailKey(project: Project): string {
-	const s = project.scenes[0];
+	const s = sceneAtStart(project);
 	// Layers showing at the start are part of the picture too.
 	const layers = startLayers(project).map((p) => p.overlay);
 	return s
 		? JSON.stringify([s.mediaId, s.kind, s.crop, s.frame, s.card, project.format.width, project.format.height, layers])
 		: '';
+}
+
+/**
+ * The scene showing at 0 s, by the same rule the preview and export use (`compose`). (It's the
+ * first scene: no transition can be running at the very start.)
+ */
+function sceneAtStart(project: Pick<Project, 'scenes'>) {
+	const placed = placeScenes(project.scenes);
+	return compose(placed, 0, (p) => ({ start: p.scene.sourceStart, end: p.scene.sourceEnd })).a?.placed.scene;
 }
 
 /** Pictures on (shown) overlay tracks at the very start, lowest track first. */
@@ -32,7 +42,7 @@ function startLayers(project: Project) {
 }
 
 export async function makeProjectThumbnail(project: Project, media: Record<string, MediaInfo>): Promise<Blob | null> {
-	const scene = project.scenes[0];
+	const scene = sceneAtStart(project);
 	if (!scene) return null;
 	const w = WIDTH;
 	const h = Math.round((WIDTH * project.format.height) / project.format.width);
@@ -146,9 +156,9 @@ export async function currentProjectThumbnail(project: Project): Promise<Blob | 
 	if (!key) return null;
 	const stored = await projectThumbnail(project.id);
 	if (stored && stored.key === key) return stored.blob;
-	const scene = project.scenes[0];
+	const scene = sceneAtStart(project);
 	const media: Record<string, MediaInfo> = {};
-	if (scene.kind !== 'card') for (const info of await getMediaInfos([scene.mediaId])) media[info.id] = info;
+	if (scene && scene.kind !== 'card') for (const info of await getMediaInfos([scene.mediaId])) media[info.id] = info;
 	const blob = await makeProjectThumbnail(project, media).catch(() => null);
 	if (blob) await putProjectThumbnail(project.id, blob, key);
 	return blob ?? stored?.blob ?? null;

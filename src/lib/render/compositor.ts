@@ -486,8 +486,10 @@ export class Compositor {
 			gl.uniform4f(u.rect, -1, -1, 2, 2);
 			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 			gl.activeTexture(gl.TEXTURE0);
-		} else if (frame.a) {
-			this.drawLayer(frame.a, 0, null);
+		} else if (frame.a || frame.b) {
+			// One scene on its own, or (as a last resort) whichever side of a transition has a
+			// picture: never black because the other one's frame is missing.
+			this.drawLayer((frame.a ?? frame.b)!, 0, null);
 		} else {
 			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 			gl.clearColor(0, 0, 0, 1);

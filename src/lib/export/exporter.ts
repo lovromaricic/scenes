@@ -13,7 +13,9 @@ import {
 import { mixdown } from '$lib/audio/mixdown';
 import { projectAudioClips } from '$lib/audio/clips';
 import { getHandle } from '$lib/media/handles';
-import { compose } from '$lib/model/composition';
+import { compose, scenesNeeded } from '$lib/model/composition';
+import type { FrameResult } from '$lib/media/frames';
+
 import type { SourceBounds } from '$lib/model/edits';
 import { placeScenes, type PlacedScene } from '$lib/model/timeline';
 import type { Project, Scene } from '$lib/model/types';
@@ -28,6 +30,9 @@ import { placeOverlays, type PlacedOverlay } from '$lib/model/overlay';
 import { cardSize, overlayDraw } from '$lib/render/overlay';
 import { textDraw, visualsAt, type VisualDraw } from '$lib/render/visuals';
 import { PhotoExportReader, VideoExportReader, type ExportFrameReader } from './reader';
+
+/** How far ahead (seconds) the next scenes' decoders are started. */
+const PREPARE_AHEAD = 2;
 
 /**
  * Saves the project as a video file, frame by frame through the same compositor as the preview.
@@ -202,6 +207,19 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 		return r;
 	};
 	const cards = new CardCache();
+	const lastGood = new Map<string, FrameResult>();
+	/**
+	 * Start the decoders of the scenes needed in the next 2 seconds (the same `compose` rules as
+	 * drawing), so the incoming scene of a transition is ready when it starts.
+	 */
+	const prepareAhead = (t: number) => {
+		for (const n of scenesNeeded(placed, t, t + PREPARE_AHEAD, (p) => request.bounds(p.scene))) {
+			if (n.placed.scene.kind === 'card') continue;
+			void readerFor(n.placed.scene)
+				.then((r) => r.prepare(n.firstSourceTime))
+				.catch(() => {});
+		}
+	};
 	const layer = async (ref: { placed: PlacedScene; sourceTime: number } | null) => {
 		if (!ref) return null;
 		if (ref.placed.scene.kind === 'card') {
@@ -216,7 +234,12 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 					)
 				: null;
 		}
-		const frame = await (await readerFor(ref.placed.scene)).frameAt(ref.sourceTime);
+		const id = ref.placed.scene.id;
+		const decoded = await (await readerFor(ref.placed.scene)).frameAt(ref.sourceTime);
+		// If a frame isn't there, the scene keeps its last good frame (never a black gap).
+		if (decoded) lastGood.set(id, decoded);
+		else if (import.meta.env.DEV) console.debug(`[export] no frame for ${id} at ${ref.sourceTime}; using its last one`);
+		const frame = decoded ?? lastGood.get(id) ?? null;
 		return frame
 			? layerInput(
 					frame,
@@ -288,6 +311,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 				audioUntil = to;
 			}
 
+			if (i % Math.max(1, Math.round(fps / 2)) === 0) prepareAhead(t);
 			const c = compose(placed, t, (p) => request.bounds(p.scene));
 			const frame: CompositeFrame = {
 				a: await layer(c.a),

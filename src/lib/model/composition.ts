@@ -82,3 +82,44 @@ export function compose(
 
 	return check(i - 1) ?? check(i) ?? { a: layer(placed[i]), b: null, transition: null };
 }
+
+/** A scene needed over a span of time, and the source time it's first shown at. */
+export interface NeededScene {
+	placed: PlacedScene;
+	firstSourceTime: number;
+	/** The first timeline time it's shown at. */
+	firstTime: number;
+}
+
+/**
+ * Every scene `compose` will show between `from` and `to` (both included), in the order they
+ * first appear, with the first source time each needs. Uses the same rules as drawing (it calls
+ * `compose`), so preparing decoders from it never misses a scene or the footage a transition
+ * borrows from before a trim or after the end.
+ */
+export function scenesNeeded(
+	placed: PlacedScene[],
+	from: number,
+	to: number,
+	bounds: (p: PlacedScene) => SourceBounds
+): NeededScene[] {
+	if (!placed.length || to < from) return [];
+	// The picture only changes which scenes it uses at scene edges and transition edges.
+	const times = new Set<number>([from, to]);
+	for (let i = 0; i < placed.length; i++) {
+		const p = placed[i];
+		const next = placed[i + 1];
+		const d = next ? transitionLength(p, next) : 0;
+		for (const t of [p.start, p.end, p.end - d / 2, p.end + d / 2])
+			if (t > from && t < to) times.add(t);
+	}
+	const out = new Map<string, NeededScene>();
+	for (const t of [...times].sort((a, b) => a - b)) {
+		const c = compose(placed, t, bounds);
+		for (const ref of [c.a, c.b]) {
+			if (ref && !out.has(ref.placed.scene.id))
+				out.set(ref.placed.scene.id, { placed: ref.placed, firstSourceTime: ref.sourceTime, firstTime: t });
+		}
+	}
+	return [...out.values()];
+}

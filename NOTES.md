@@ -1496,6 +1496,94 @@ Overlays aren't linked to scenes any more.
     drops. It passed 24/24 in parallel and in a clean full run.
   - The voiceover test (`phase5-sound`) flaked once more and passes on its own (6/6).
 
+## Fix: black flash during transitions
+
+### Root cause (found before fixing)
+
+`e2e/transitions-frames.test.ts` plays, scrubs and saves ten solid red and blue scenes (every
+pair of video, photo and card, trimmed and at 0.5× / 2×). It checks the centre of every frame
+against the transition shader's own maths.
+
+**Preview:** black frames from about 0.3 s after every cut until the transition ended, with every
+type except slide.
+- Crossfade: 0.30–0.40 s after the cut; fade through black: 0.30–0.50 s; zoom: 0.30–0.35 s.
+- Slide is only 0.6 s long, so half of it ends right at 0.3 s.
+
+**Export:** clean (only a test artifact at slide's exact midpoint, where the sampled patch
+straddles the moving edge).
+
+Two things together caused it:
+
+1. **Two different ideas of "which scenes are needed".**
+   - `compose()` (what gets drawn) keeps the outgoing scene on screen until half the transition
+     after the cut, up to 0.5 s.
+   - `Player.manageSources` (which decoders to keep) had its own rule: a scene that ended more
+     than 0.3 s ago is "far" and gets `idle()`.
+   - `idle()` clears that scene's frame cache, so for the rest of the transition the outgoing
+     scene had no frame at all.
+   - The same separate rule also prefetched the incoming scene at its trimmed start. A transition
+     first shows it half a transition *before* that, in the footage before the trim, so its
+     first frames could arrive late.
+2. **A missing layer was drawn as black.**
+   - `Compositor.render` only blends when both layers are present. With the outgoing layer
+     missing it went to its "nothing to draw" branch and cleared the canvas to black, even
+     though the incoming scene was right there.
+   - (With the incoming one missing it showed only the outgoing scene, so the transition
+     popped.)
+
+The timing maths was fine. The windows are contiguous, speed and trimmed starts are handled in
+`extendedSourceTime`, and photos and cards behave like videos. Export was fine because its
+readers decode synchronously and are never idled, but it used the same compositor, so it would
+have flashed in the same way if a reader ever returned nothing.
+
+### The fix
+
+- **One rule for which scenes are needed:** `scenesNeeded(placed, from, to, bounds)` in
+  `model/composition.ts`.
+  - It calls `compose` at every scene edge and transition edge in the span, so it can't disagree
+    with drawing.
+  - It returns each scene with the first source time it needs, including the footage a
+    transition borrows from before a trim.
+  - It is used by:
+    - the preview (`Player.manageSources`): decoders stay awake for exactly these scenes; all
+      others sleep;
+    - export: the readers of scenes needed in the next 2 s are started early with `prepare`;
+    - thumbnails: the scene at 0 s comes from `compose`.
+- **Prepared early:** 2 seconds ahead while playing (was 1.5 s), 0.6 s while paused.
+  - The incoming scene's decoder starts at the source time the transition first shows, not at
+    its trimmed start.
+  - Export readers open in the background (`ExportFrameReader.prepare`), and `frameAt` waits
+    for that first.
+- **Never black for a missing frame:**
+  - The preview and export keep each scene's (and layer's) last good frame and use it while a
+    new one isn't ready. In development builds this is logged with `console.debug`.
+  - If a scene has never had a frame (right after a jump), the preview keeps the picture
+    already on screen for up to a second instead of drawing a gap.
+  - As a last resort the compositor draws whichever side of a transition has a picture,
+    instead of clearing to black.
+- **Test hook:** `Player.drawnTime` is the timeline time of the frame actually on screen, so the
+  test checks every drawn frame against the exact expected colour.
+- **Tests** (`transitions-frames.test.ts`, one per transition type):
+  - ten scenes covering every ordered pair of video, photo and card (VV VP PP PC CC CV VC CP PV),
+    with trimmed footage before and after, 2× and 0.5×, and red and blue fixtures
+    (`solid-red/blue.mp4/.png`, 6 s, 2 s keyframe interval so seeks have to decode through);
+  - every frame drawn during playback of the whole video;
+  - scrubbing through every frame from 1 s before to 1 s after each transition, without waiting;
+  - jumping from far away into the middle of each transition, and the exact mix once decoded;
+  - every frame of the saved MP4 (with ffmpeg).
+  - The centre colour must match the shader's maths (mix, darkening for fade through black,
+    edge position for slide) within 28/255. Before the fix 9–36 frames per type were black;
+    now none are.
+  - Unit: `scenesNeeded` matches `compose` at every time, including just after a cut.
+
+## Transition buttons: solid border
+
+The round buttons between scenes now have a solid 1px border in `--color-border` instead of a
+dashed one.
+- Hover: the ink border and icon, plus the small grow.
+- A set transition: filled with ink.
+- Open (picker showing): the accent border with a 1px accent ring, so it still reads at 1px.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
