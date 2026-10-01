@@ -27,7 +27,7 @@ export function textFrameState(item: TextItem, t: number): TextFrameState {
 	const enter = Math.min(TEXT_ENTER, item.duration / 2);
 	const exit = Math.min(TEXT_EXIT, item.duration / 4);
 	const p = enter > 0 ? Math.min(1, local / enter) : 1;
-	const out = item.animation === 'none' || exit <= 0 ? 1 : Math.min(1, remaining / exit);
+	const out = item.animation === 'none' || exit <= 0 || item.exitFade === false ? 1 : Math.min(1, remaining / exit);
 
 	switch (item.animation) {
 		case 'fade':

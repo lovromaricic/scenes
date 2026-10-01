@@ -71,6 +71,7 @@ import {
 	sceneKeyframeTimelineTime,
 	shiftKeyframes,
 	sortKeyframes,
+	splitKeyframeList,
 	textBaseValues,
 	upsertKeyframe,
 	type Easing,
@@ -1990,6 +1991,71 @@ export class EditorStore {
 			return sortKeyframes([...staying, ...pasted.map((p) => ({ id: p.id, time: p.time, values: p.values, easing: { ...p.easing } }))]);
 		});
 		this.selectKeyframes(pasted.map((p) => ({ itemId: id, id: p.id })));
+		return true;
+	}
+
+	/**
+	 * Split the selected layer or words at the playhead into two that look exactly as one did:
+	 * the keyframes are split so both halves keep the same motion (see splitKeyframeList), the
+	 * entrance stays on the first half and the exit on the second.
+	 */
+	splitItemAtPlayhead(id = this.selectedId): boolean {
+		if (!id || this.trackOfItem(id)?.locked) return false;
+		const t = this.time;
+		const o = this.project.overlays.find((x) => x.id === id);
+		const w = this.project.texts.find((x) => x.id === id);
+		const item = o ?? w;
+		if (!item) return false;
+		const local = t - item.start;
+		if (local < 0.1 || item.duration - local < 0.1) {
+			toasts.show('Move the playhead into it to split it there.');
+			return false;
+		}
+		const secondId = newId();
+		if (o) {
+			const [left, right] = splitKeyframeList(o.keyframes, local, overlayBaseValues(o), newId);
+			this.edit(
+				'Split layer',
+				(p) => ({
+					...p,
+					overlays: p.overlays.flatMap((x) =>
+						x.id !== id
+							? [x]
+							: [
+									{ ...x, duration: local, exit: 'none' as const, keyframes: left },
+									{
+										...structuredClone($state.snapshot(x) as Overlay),
+										id: secondId,
+										start: t,
+										duration: x.duration - local,
+										sourceStart: x.sourceStart + (x.kind === 'video' ? local : 0),
+										enter: 'none' as const,
+										keyframes: right
+									}
+								]
+					)
+				}),
+				{ select: secondId }
+			);
+		} else if (w) {
+			const [left, right] = splitKeyframeList(w.keyframes, local, textBaseValues(w), newId);
+			this.edit(
+				'Split words',
+				(p) => ({
+					...p,
+					texts: p.texts.flatMap((x) =>
+						x.id !== id
+							? [x]
+							: [
+									// No fade out at the split: the words carry on in the second half.
+									{ ...x, duration: local, exitFade: false, keyframes: left },
+									{ ...structuredClone($state.snapshot(x) as TextItem), id: secondId, start: t, duration: x.duration - local, animation: 'none' as const, keyframes: right }
+								]
+					)
+				}),
+				{ select: secondId }
+			);
+		}
 		return true;
 	}
 

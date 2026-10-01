@@ -84,6 +84,8 @@ export interface TextItem {
 	rotation?: number;
 	/** 0–1 (missing = 1). */
 	opacity?: number;
+	/** False for the first half of split words: no fade out at the split (missing = fades). */
+	exitFade?: boolean;
 	/** Animation (see keyframes.ts); times are seconds from `start`. */
 	keyframes?: Keyframe<ItemValues>[];
 }

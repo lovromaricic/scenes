@@ -78,3 +78,29 @@ describe('words that grow', () => {
 		expect(textSharpness(9)).toBe(4);
 	});
 });
+
+describe('entrance and exit on top of keyframes', () => {
+	const lin = { kind: 'bezier' as const, x1: 0, y1: 0, x2: 1, y2: 1 };
+	const kf = [
+		{ id: 'a', time: 0, values: { x: 0.25, y: 0.5, scaleX: 2, scaleY: 2, rotation: 30, opacity: 0.5 }, easing: lin }
+	];
+
+	it('a fade multiplies the keyframed opacity; pop multiplies the keyframed scale', () => {
+		const settled = overlayRect(placed({ keyframes: kf, enter: 'fade' }), 5, 1000, 1000);
+		expect(settled.opacity).toBeCloseTo(0.5);
+		expect(settled.rect.w).toBeCloseTo(800);
+		expect(settled.rotation).toBeCloseTo(Math.PI / 6);
+		const fading = overlayRect(placed({ keyframes: kf, enter: 'fade' }), 2.1, 1000, 1000);
+		expect(fading.opacity).toBeGreaterThan(0);
+		expect(fading.opacity).toBeLessThan(0.5);
+		const popping = overlayRect(placed({ keyframes: kf, enter: 'pop' }), 2.05, 1000, 1000);
+		expect(popping.rect.w).toBeLessThan(800);
+		expect(popping.rect.x + popping.rect.w / 2).toBeCloseTo(250);
+	});
+
+	it('slide up offsets the keyframed position', () => {
+		const sliding = overlayRect(placed({ keyframes: kf, enter: 'slide-up' }), 2.05, 1000, 1000);
+		expect(sliding.rect.x + sliding.rect.w / 2).toBeCloseTo(250);
+		expect(sliding.rect.y + sliding.rect.h / 2).toBeGreaterThan(500);
+	});
+});

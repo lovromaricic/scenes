@@ -146,3 +146,34 @@ describe('scene keyframes follow the clip', () => {
 		expect(sceneContentTime({ start: 10, scene: { kind: 'photo', sourceStart: 0, speed: 1 } }, 11.5)).toBe(1.5);
 	});
 });
+
+describe('splitting keyframes', () => {
+	const sample = (list: Keyframe<ItemValues>[], from: number, to: number) =>
+		Array.from({ length: 41 }, (_, i) => from + ((to - from) * i) / 40).map((t) => ({ t, x: interpolate(list, t, v(0)).x }));
+
+	for (const name of ['linear', 'ease-in', 'ease-out', 'ease-in-out', 'hold', 'overshoot', 'bounce'] as const) {
+		it(`keeps exactly the same motion across a split inside a stretch (${name})`, async () => {
+			const { splitKeyframeList } = await import('./keyframes');
+			const list = [kf(1, v(0.2), EASINGS[name]), kf(3, v(0.8), EASINGS.linear), kf(4, v(0.4))];
+			let n = 0;
+			const [left, right] = splitKeyframeList(list, 1.7, v(0), () => `n${n++}`);
+			for (const { t, x } of sample(list, 0, 1.7)) expect(interpolate(left!, t, v(0)).x).toBeCloseTo(x, 4);
+			for (const { t, x } of sample(list, 1.7, 5)) expect(interpolate(right!, t - 1.7, v(0)).x).toBeCloseTo(x, 4);
+		});
+	}
+
+	it('on a keyframe, before the first or after the last', async () => {
+		const { splitKeyframeList } = await import('./keyframes');
+		const list = [kf(1, v(0.2)), kf(3, v(0.8))];
+		let n = 0;
+		const id = () => `n${n++}`;
+		let [l, r] = splitKeyframeList(list, 1, v(0), id);
+		expect(l!.map((k) => k.time)).toEqual([1]);
+		expect(r!.map((k) => k.time)).toEqual([0, 2]);
+		[l, r] = splitKeyframeList(list, 0.5, v(0), id);
+		expect(interpolate(l!, 0.2, v(0)).x).toBeCloseTo(0.2);
+		expect(r!.map((k) => k.time)).toEqual([0.5, 2.5]);
+		[l, r] = splitKeyframeList(list, 3.5, v(0), id);
+		expect(interpolate(r!, 1, v(0)).x).toBeCloseTo(0.8);
+	});
+});

@@ -322,3 +322,107 @@ export function sceneKeyframeTimelineTime(
 	const rate = p.scene.kind === 'video' ? p.scene.speed : 1;
 	return p.start + (time - p.scene.sourceStart) / rate;
 }
+
+// ─── Splitting ───────────────────────────────────────────────────────────────────────────
+
+type Bez = Extract<Easing, { kind: 'bezier' }>;
+
+/** The curve parameter s where a bezier timing curve's x reaches p. */
+function bezierParam(e: Bez, p: number): number {
+	const x = (s: number) => 3 * (1 - s) * (1 - s) * s * e.x1 + 3 * (1 - s) * s * s * e.x2 + s * s * s;
+	let lo = 0;
+	let hi = 1;
+	for (let i = 0; i < 60; i++) {
+		const mid = (lo + hi) / 2;
+		if (x(mid) < p) lo = mid;
+		else hi = mid;
+	}
+	return (lo + hi) / 2;
+}
+
+/**
+ * Split a bezier timing curve at time-progress p into the two curves that, renormalised to
+ * 0–1 each, trace exactly the same motion (de Casteljau). Null if a half has no change in value
+ * (it can't be renormalised; that half is then still, which Linear reproduces).
+ */
+export function splitBezier(e: Bez, p: number): [Bez | null, Bez | null] {
+	const s = bezierParam(e, p);
+	const P = [
+		[0, 0],
+		[e.x1, e.y1],
+		[e.x2, e.y2],
+		[1, 1]
+	];
+	const lerp = (a: number[], b: number[]) => [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s];
+	const a1 = lerp(P[0], P[1]);
+	const b1 = lerp(P[1], P[2]);
+	const c1 = lerp(P[2], P[3]);
+	const a2 = lerp(a1, b1);
+	const b2 = lerp(b1, c1);
+	const m = lerp(a2, b2);
+	const norm = (q: number[][]): Bez | null => {
+		const [x0, y0] = q[0];
+		const [x3, y3] = q[3];
+		if (Math.abs(x3 - x0) < 1e-9 || Math.abs(y3 - y0) < 1e-9) return null;
+		const nx = (v: number) => (v - x0) / (x3 - x0);
+		const ny = (v: number) => (v - y0) / (y3 - y0);
+		return { kind: 'bezier', x1: nx(q[1][0]), y1: ny(q[1][1]), x2: nx(q[2][0]), y2: ny(q[2][1]) };
+	};
+	return [norm([P[0], a1, a2, m]), norm([m, b2, c1, P[3]])];
+}
+
+/**
+ * Split a keyframe list at item time `at` into the two halves' lists (the second shifted so `at`
+ * is 0), keeping exactly the same motion in both:
+ * - each half gets a keyframe at the split point with the values there, and the stretch around it
+ *   is cut into two curves that trace the original (bezier curves are subdivided exactly; Hold
+ *   stays Hold);
+ * - Overshoot and Bounce can't be cut, so that half keeps the keyframe on the other side
+ *   (hidden beyond its edge) instead, which keeps the motion identical too.
+ */
+export function splitKeyframeList<V extends object>(
+	list: Keyframe<V>[] | undefined,
+	at: number,
+	base: V,
+	newId: () => string
+): [Keyframe<V>[] | undefined, Keyframe<V>[] | undefined] {
+	if (!list?.length) return [list, list];
+	const kfs = sortKeyframes(list);
+	const shift = (k: Keyframe<V>): Keyframe<V> => ({ ...k, time: k.time - at });
+	const on = kfs.find((k) => Math.abs(k.time - at) < SAME_TIME);
+	if (on) {
+		return [
+			kfs.filter((k) => k.time <= on.time),
+			kfs.filter((k) => k.time >= on.time).map((k) => (k === on ? { ...shift(k), id: newId() } : shift(k)))
+		];
+	}
+	const values = interpolate(kfs, at, base);
+	const linear = EASINGS.linear;
+	const before = kfs.filter((k) => k.time < at);
+	const after = kfs.filter((k) => k.time > at);
+	// Outside the keyframes, the values are held: a still keyframe at the split point is enough.
+	if (!before.length) {
+		return [[{ id: newId(), time: at, values, easing: linear }], after.map(shift)];
+	}
+	if (!after.length) {
+		return [before, [{ id: newId(), time: 0, values, easing: linear }]];
+	}
+	const a = before[before.length - 1];
+	const b = after[0];
+	const p = (at - a.time) / (b.time - a.time);
+	if (a.easing.kind === 'overshoot' || a.easing.kind === 'bounce') {
+		// Keep the stretch whole in both halves (the outer keyframe hidden past the edge).
+		return [[...before, b], [shift(a), ...after.map(shift)]];
+	}
+	let left: Easing = a.easing;
+	let right: Easing = a.easing;
+	if (a.easing.kind === 'bezier') {
+		const [l, r] = splitBezier(a.easing, p);
+		left = l ?? linear;
+		right = r ?? linear;
+	}
+	return [
+		[...before.slice(0, -1), { ...a, easing: left }, { id: newId(), time: at, values, easing: linear }],
+		[{ id: newId(), time: 0, values, easing: right }, ...after.map(shift)]
+	];
+}

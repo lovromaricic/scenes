@@ -1805,6 +1805,40 @@ playhead sets the keyframe there.
   - From a scene onto a layer, keeping the layer's rotation.
   - Right-click Copy, and the message with nothing selected.
 
+### 6. With other features
+
+- **Entrance and exit animations play on top of keyframes** (built into `overlayRect` and
+  `textDraw` in section 1). A fade multiplies the keyframed opacity, slide up offsets the
+  keyframed position, and pop multiplies the keyframed scale.
+- **Splitting layers and words** (new: S splits the selected layer or words; scenes and sounds
+  as before). `splitItemAtPlayhead`:
+  - It cuts the item in two that look exactly like the one did.
+  - Entrances stay on the first half and exits on the second. A video layer's second half
+    starts later in its clip.
+  - Words get `exitFade: false` on the first half, so they don't fade out at the split.
+- **Splitting keyframes** (`splitKeyframeList`, exact):
+  - Both halves get a keyframe at the split point with the values there.
+  - The stretch around it is cut into two curves that trace the original: bezier easings are
+    subdivided with de Casteljau and renormalised (`splitBezier`), and Hold stays Hold.
+  - Overshoot and Bounce can't be cut into two of themselves, so that half keeps the keyframe on
+    the other side instead (hidden past its edge). The motion is still identical.
+  - Before the first keyframe or after the last, a still keyframe at the split point is enough.
+- **Scenes** already keep their framing keyframes on both halves of a split (they're in the
+  clip's time, so they're exact).
+- **Words that grow** are drawn from a larger sprite (section 1), independent of the font size
+  setting.
+- **Tests:**
+  - Unit: the split keeps the motion within 1e-4 for all seven easings, on a keyframe and
+    outside them; fade/pop/slide on keyframed values in `overlayRect`.
+  - E2E (`keyframes-interplay.test.ts`):
+    - A fade times a keyframed 50% opacity, checked in pixels; slide up below the keyframed
+      position.
+    - A layer split twice with S, once inside an eased stretch and once inside an overshoot:
+      position, rotation and scale identical at 50 times, the boundary keyframes, and the same
+      pixel on either side of the split.
+    - Words split with the same motion, no fade at the split, and no entrance on the second
+      half.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

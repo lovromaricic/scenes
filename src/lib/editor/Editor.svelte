@@ -236,8 +236,9 @@
 			case 's':
 			case 'S':
 				event.preventDefault();
-				// A selected sound clip splits; otherwise the scene under the playhead.
+				// A selected sound clip, layer or words split; otherwise the scene under the playhead.
 				if (editor.selectedSound) editor.splitSoundAtPlayhead();
+				else if (editor.selectedOverlay || editor.selectedText) editor.splitItemAtPlayhead();
 				else editor.splitAtPlayhead();
 				break;
 			case 'Delete':
