@@ -195,8 +195,15 @@
 		// Copy, cut and paste items on tracks (text fields keep their own).
 		if (mod && !event.altKey && !event.shiftKey && (key === 'c' || key === 'x' || key === 'v')) {
 			if (isTyping(event.target) || editor.recording) return;
+			// With keyframes selected, Ctrl/Cmd+C copies those rather than whole items.
 			const done =
-				key === 'c' ? editor.copySelection() : key === 'x' ? editor.cutSelection() : editor.paste();
+				key === 'c'
+					? editor.selectedKeyframes.length
+						? editor.copyKeyframes()
+						: editor.copySelection()
+					: key === 'x'
+						? editor.cutSelection()
+						: editor.paste();
 			if (done) event.preventDefault();
 			return;
 		}

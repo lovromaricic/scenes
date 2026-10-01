@@ -8,7 +8,7 @@
 	Click: select it (and its item) and go there. Shift-click: add to or take from the selection.
 	Drag: move the selected keyframes in time, snapping to the playhead, other keyframes, item
 	edges and scene boundaries (Alt: no snapping). Right-click: easing presets, Edit curve…, Copy,
-	Delete (Copy comes with copy and paste of keyframes).
+	Copy, Delete.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -162,6 +162,11 @@
 					const x = Math.min(innerWidth - 130, Math.max(130, r.left + r.width / 2));
 					curve = { x, y: above ? Math.max(8, r.top - CURVE_H - 8) : r.bottom + 8 };
 				}
+			},
+			{
+				label: 'Copy',
+				shortcut: navigator.platform.includes('Mac') ? '⌘C' : 'Ctrl+C',
+				onselect: () => void editor.copyKeyframes()
 			},
 			{ label: 'Delete', shortcut: '⌫', onselect: () => editor.deleteSelectedKeyframes() }
 		];

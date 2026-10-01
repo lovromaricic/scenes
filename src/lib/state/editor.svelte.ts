@@ -156,6 +156,26 @@ function retimed<T extends { start: number; duration: number; keyframes?: Keyfra
 	return out;
 }
 
+/**
+ * Keyframe values for another kind of item: overlays and words share everything; with a scene's
+ * framing they share position (the framing's offset from the centre) and size (scale ↔ zoom).
+ * What isn't shared comes from `own`, the target's values at that moment.
+ */
+function convertValues(
+	v: ItemValues | FrameValues,
+	from: 'item' | 'frame',
+	to: 'item' | 'frame',
+	own: ItemValues | FrameValues
+): ItemValues | FrameValues {
+	if (from === to) return { ...v };
+	if (to === 'frame') {
+		const i = v as ItemValues;
+		return { ...(own as FrameValues), x: i.x - 0.5, y: i.y - 0.5, zoom: i.scaleX };
+	}
+	const f = v as FrameValues;
+	return { ...(own as ItemValues), x: f.x + 0.5, y: f.y + 0.5, scaleX: f.zoom, scaleY: f.zoom };
+}
+
 /** A keyframe on an item (overlay, words or scene). */
 export interface KeyframeRef {
 	itemId: string;
@@ -1064,6 +1084,7 @@ export class EditorStore {
 		const items = this.selectedTrackItems();
 		if (!items.length) return false;
 		this.clipboard = { items };
+		this.keyframeClipboard = null;
 		return true;
 	}
 
@@ -1072,6 +1093,7 @@ export class EditorStore {
 		const items = this.selectedTrackItems().filter((c) => !this.track(c.item.trackId)?.locked);
 		if (!items.length) return false;
 		this.clipboard = { items };
+		this.keyframeClipboard = null;
 		const ids = new Set(items.map((c) => c.item.id));
 		if (this.editingTextId && ids.has(this.editingTextId)) this.stopEditingText();
 		this.edit(items.length > 1 ? `Cut ${items.length} items` : 'Cut', (p) => removeItems(p, ids), { select: null });
@@ -1090,6 +1112,7 @@ export class EditorStore {
 	 * items are selected.
 	 */
 	paste(): boolean {
+		if (this.keyframeClipboard) return this.pasteKeyframes();
 		const items = this.clipboard?.items;
 		if (!items?.length || !this.project.scenes.length) return false;
 		const shift = this.time - items[0].item.start;
@@ -1908,6 +1931,66 @@ export class EditorStore {
 			}
 		}
 		return out;
+	}
+
+	// ─── Copy and paste keyframes ──────────────────────────────────────────────────────────
+
+	/** Keyframes copied (Ctrl/Cmd+C with keyframes selected): when, relative to the first. */
+	private keyframeClipboard: {
+		kind: 'item' | 'frame';
+		keyframes: { offset: number; values: ItemValues | FrameValues; easing: Easing }[];
+	} | null = null;
+
+	/** Copy the selected keyframes (of one item: the first one's, if several are selected). */
+	copyKeyframes(): boolean {
+		const first = this.selectedKeyframes[0];
+		if (!first) return false;
+		const track = this.keyframeTrack(first.itemId);
+		if (!track) return false;
+		const ids = new Set(this.selectedKeyframes.filter((r) => r.itemId === first.itemId).map((r) => r.id));
+		const chosen = sortKeyframes(track.list.filter((k) => ids.has(k.id)));
+		if (!chosen.length) return false;
+		const t0 = track.toTimeline(chosen[0].time);
+		this.keyframeClipboard = {
+			kind: track.kind === 'scene' ? 'frame' : 'item',
+			keyframes: chosen.map((k) => ({
+				offset: track.toTimeline(k.time) - t0,
+				values: structuredClone($state.snapshot(k.values)) as ItemValues | FrameValues,
+				easing: structuredClone($state.snapshot(k.easing)) as Easing
+			}))
+		};
+		return true;
+	}
+
+	/**
+	 * Paste copied keyframes onto the selected item: the first at the playhead, the others keeping
+	 * their spacing. Onto a different kind of item (words ↔ a layer share everything; a layer or
+	 * words ↔ a scene's framing share position and size), only what both have is copied; the rest
+	 * keeps the item's own values at that moment. The pasted keyframes end up selected.
+	 */
+	pasteKeyframes(): boolean {
+		const clip = this.keyframeClipboard;
+		const id = this.selectedId;
+		const track = id ? this.keyframeTrack(id) : null;
+		if (!clip || !id || !track) {
+			if (clip) toasts.show('Select a layer, words, or a scene with Custom framing to paste the keyframes on.');
+			return false;
+		}
+		const target = track.kind === 'scene' ? 'frame' : 'item';
+		const pasted: { time: number; values: ItemValues | FrameValues; easing: Easing; id: string }[] = [];
+		for (const k of clip.keyframes) {
+			const t = this.time + k.offset;
+			const own = target === 'frame' ? this.frameValues(id, t) : this.itemValues(id, t);
+			if (!own) continue;
+			pasted.push({ time: track.fromTimeline(t), values: convertValues(k.values, clip.kind, target, own), easing: k.easing, id: newId() });
+		}
+		if (!pasted.length) return false;
+		this.updateKeyframes(id, pasted.length > 1 ? 'Paste keyframes' : 'Paste keyframe', (list) => {
+			const staying = list.filter((k) => !pasted.some((p) => Math.abs(p.time - k.time) < SAME_TIME));
+			return sortKeyframes([...staying, ...pasted.map((p) => ({ id: p.id, time: p.time, values: p.values, easing: { ...p.easing } }))]);
+		});
+		this.selectKeyframes(pasted.map((p) => ({ itemId: id, id: p.id })));
+		return true;
 	}
 
 	/** Give keyframes (the stretches that start at them) an easing. */

@@ -1779,6 +1779,32 @@ playhead sets the keyframe there.
     Ease out; Delete.
   - Scene card markers: a click seeks, and at 2× the same marker is at half the time.
 
+### 5. Copy and paste keyframes
+
+- **Ctrl/Cmd+C** copies the selected keyframes when keyframes (not items) are selected; right-click
+  → Copy does the same.
+  - It copies those of one item (the first selected keyframe's): their values, easing and spacing
+    on the timeline.
+  - Copying items clears copied keyframes and the other way round, so Ctrl/Cmd+V pastes
+    whatever was copied last.
+- **Ctrl/Cmd+V** with copied keyframes pastes them onto the selected item: the first at the
+  playhead, the others keeping their spacing (converted to that item's own times: seconds from
+  its start, or its clip's time for a scene).
+  - They replace keyframes at the same moments, and the pasted keyframes end up selected.
+  - With nothing suitable selected, a friendly message says what to select.
+- **Onto a different kind of item** (`convertValues`):
+  - Layers and words share every property.
+  - With a scene's Custom framing they share position (the framing's offset from the centre:
+    item x − 0.5) and size (scale ↔ zoom).
+  - What isn't shared (rotation and opacity onto a layer from a scene, and so on) keeps the
+    target's own value at that moment.
+- **Tests** (`keyframes-copy.test.ts`):
+  - Onto another layer: times relative to its start, values, easing; no new layer; pasted
+    keyframes selected.
+  - Onto words, then onto a Custom scene (x − 0.5, zoom = scale, only x/y/zoom).
+  - From a scene onto a layer, keeping the layer's rotation.
+  - Right-click Copy, and the message with nothing selected.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
