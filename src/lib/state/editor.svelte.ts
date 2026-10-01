@@ -59,6 +59,21 @@ import {
 	type AnyItem
 } from '$lib/model/items';
 import { reconcileTimeline } from '$lib/model/ripple';
+import {
+	DEFAULT_EASING,
+	EASINGS,
+	itemValuesAt,
+	overlayBaseValues,
+	sceneContentTime,
+	sceneFrameAt,
+	shiftKeyframes,
+	textBaseValues,
+	upsertKeyframe,
+	type EasingPreset,
+	type FrameValues,
+	type ItemValues,
+	type Keyframe
+} from '$lib/model/keyframes';
 import { mediaNoun } from '$lib/model/labels';
 import { TEXT_TRACK_NAME, accepts, fits, freeTrack, type ItemKind, type Track } from '$lib/model/tracks';
 import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
@@ -119,6 +134,32 @@ import { newCardScene, newId, newProject, sceneFromMedia } from './project';
 import { nameFromFile } from '$lib/media/kinds';
 import { defaultCard } from '$lib/model/card';
 import { toasts } from './toasts.svelte';
+
+/**
+ * An overlay or words with new timing. Trimmed from the left (the end stays put), its keyframes
+ * move the other way, so the motion stays where it was on the timeline. Moved, they go with it.
+ */
+function retimed<T extends { start: number; duration: number; keyframes?: Keyframe<ItemValues>[] }>(
+	item: T,
+	next: Partial<T> & { start: number; duration: number }
+): T {
+	const out = { ...item, ...next };
+	const endBefore = item.start + item.duration;
+	const endAfter = next.start + next.duration;
+	if (item.keyframes?.length && Math.abs(endBefore - endAfter) < 1e-6 && Math.abs(next.start - item.start) > 1e-9)
+		out.keyframes = shiftKeyframes(item.keyframes, item.start - next.start);
+	return out;
+}
+
+const EASING_KEY = 'scenes.defaultEasing';
+function readDefaultEasing(): EasingPreset {
+	try {
+		const v = localStorage.getItem(EASING_KEY);
+		return v && v in EASINGS ? (v as EasingPreset) : DEFAULT_EASING;
+	} catch {
+		return DEFAULT_EASING;
+	}
+}
 
 const RIPPLE_KEY = 'scenes.ripple';
 function readRipple(): boolean {
@@ -1258,7 +1299,9 @@ export class EditorStore {
 			'Layer timing',
 			(p) => {
 				const overlays = p.overlays.map((x) =>
-					x.id === id ? { ...x, start: at, duration: length, sourceStart: sourceStart ?? x.sourceStart } : x
+					x.id === id
+						? retimed(x, { start: at, duration: length, sourceStart: sourceStart ?? x.sourceStart })
+						: x
 				);
 				// Longer or moved, it may now overlap something on its track.
 				return settle({ ...p, overlays }, id, newId);
@@ -1447,6 +1490,127 @@ export class EditorStore {
 		const placed = this.placed.find((p) => p.scene.id === scene.id);
 		if (placed) this.seek(placed.start);
 		return scene.id;
+	}
+
+	// ─── Animatable values (keyframes) ───────────────────────────────────────────────────────
+
+	/** Easing for new keyframes (changeable in the settings, remembered on this device). */
+	defaultEasing = $state<EasingPreset>(readDefaultEasing());
+
+	/** An overlay's or words' values at timeline time `t` (default: the playhead). */
+	itemValues(id: string, t = this.time): ItemValues | null {
+		const o = this.project.overlays.find((x) => x.id === id);
+		if (o) return itemValuesAt(overlayBaseValues(o), o.keyframes, t - o.start);
+		const w = this.project.texts.find((x) => x.id === id);
+		if (w) return itemValuesAt(textBaseValues(w), w.keyframes, t - w.start);
+		return null;
+	}
+
+	/**
+	 * Change an overlay's or words' position, scale, rotation or opacity at the playhead. Without
+	 * keyframes this changes the item itself; with keyframes it adds a keyframe at the playhead
+	 * with the values there (or updates the one already there), so only that moment changes.
+	 */
+	setItemValues(id: string, change: Partial<ItemValues>, key?: string, label = 'Change'): void {
+		if (this.trackOfItem(id)?.locked || !this.itemValues(id)) return;
+		const kfId = newId();
+		this.edit(label, (p) => this.withItemValues(p, id, change, kfId), { key });
+	}
+
+	/** The same during a drag (a gesture: one undo step when it ends). */
+	liveItemValues(id: string, change: Partial<ItemValues>, kfId: string): void {
+		this.live((p) => {
+			const next = this.withItemValues(p, id, change, kfId);
+			p.overlays = next.overlays;
+			p.texts = next.texts;
+		});
+	}
+
+	private withItemValues(p: Project, id: string, change: Partial<ItemValues>, kfId: string): Project {
+		const easing = EASINGS[this.defaultEasing];
+		const t = this.time;
+		const apply = <T extends { start: number; keyframes?: Keyframe<ItemValues>[] }>(
+			item: T,
+			now: ItemValues,
+			statics: (v: ItemValues) => Partial<T>
+		): T => {
+			const v = { ...now, ...change };
+			if (item.keyframes?.length)
+				return { ...item, keyframes: upsertKeyframe(item.keyframes, t - item.start, v, () => kfId, easing) };
+			return { ...item, ...statics(v) };
+		};
+		return {
+			...p,
+			overlays: p.overlays.map((o) =>
+				o.id === id
+					? apply(o, itemValuesAt(overlayBaseValues(o), o.keyframes, t - o.start), (v) => ({
+							box: { ...o.box, x: v.x - o.box.w / 2, y: v.y - o.box.h / 2 },
+							scaleX: v.scaleX,
+							scaleY: v.scaleY,
+							rotation: v.rotation,
+							style: { ...o.style, opacity: v.opacity }
+						}))
+					: o
+			),
+			texts: p.texts.map((w) =>
+				w.id === id
+					? apply(w, itemValuesAt(textBaseValues(w), w.keyframes, t - w.start), (v) => ({
+							x: v.x,
+							y: v.y,
+							scaleX: v.scaleX,
+							scaleY: v.scaleY,
+							rotation: v.rotation,
+							opacity: v.opacity
+						}))
+					: w
+			)
+		};
+	}
+
+	/** A scene's Custom framing at timeline time `t` (default: the playhead), with its keyframes. */
+	frameValues(sceneId: string, t = this.time): FrameValues | null {
+		const placed = this.placed.find((p) => p.scene.id === sceneId);
+		const f = placed?.scene.frame;
+		if (!placed || !f) return null;
+		const at = sceneFrameAt(f, placed.scene.keyframes, sceneContentTime(placed, t)) ?? f;
+		return { x: at.x, y: at.y, zoom: at.zoom };
+	}
+
+	/**
+	 * Change a scene's Custom framing at the playhead: the framing itself without keyframes, or a
+	 * keyframe at the playhead (at the scene's content time) with them.
+	 */
+	setFrameValues(sceneId: string, change: Partial<FrameValues>, key?: string): void {
+		if (!this.frameValues(sceneId)) return;
+		const kfId = newId();
+		this.edit('Framing', (p) => this.withFrameValues(p, sceneId, change, kfId), { key });
+	}
+
+	/** The same during a drag (a gesture: one undo step when it ends). */
+	liveFrameValues(sceneId: string, change: Partial<FrameValues>, kfId: string): void {
+		this.live((p) => {
+			p.scenes = this.withFrameValues(p, sceneId, change, kfId).scenes;
+		});
+	}
+
+	private withFrameValues(p: Project, sceneId: string, change: Partial<FrameValues>, kfId: string): Project {
+		const placed = placeScenes(p.scenes).find((x) => x.scene.id === sceneId);
+		const f = placed?.scene.frame;
+		if (!placed || !f || f.mode !== 'custom') return p;
+		const t = Math.min(placed.end, Math.max(placed.start, this.time));
+		const time = sceneContentTime(placed, t);
+		const now = sceneFrameAt(f, placed.scene.keyframes, time) ?? f;
+		const values = { x: now.x, y: now.y, zoom: now.zoom, ...change };
+		return {
+			...p,
+			scenes: p.scenes.map((s) =>
+				s.id !== sceneId
+					? s
+					: s.keyframes?.length
+						? { ...s, keyframes: upsertKeyframe(s.keyframes, time, values, () => kfId, EASINGS[this.defaultEasing]) }
+						: { ...s, frame: { ...(s.frame ?? DEFAULT_FRAME), ...values } }
+			)
+		};
 	}
 
 	/** Where a layer sits and how big it is (fractions of the frame). `key` merges drags. */
@@ -1911,8 +2075,16 @@ export class EditorStore {
 		this.updateText('Animation', id, (t) => ({ ...t, animation }));
 	}
 
+	/** Move words (at the playhead, when they have keyframes). */
 	setTextPosition(id: string, x: number, y: number): void {
-		this.updateText('Move words', id, (t) => ({ ...t, x, y }), `pos:${id}`);
+		this.setItemValues(id, { x, y }, `pos:${id}`, 'Move words');
+	}
+
+	/** Whether an item's width and height scale together. */
+	setScaleLinked(id: string, linked: boolean): void {
+		if (this.project.overlays.some((o) => o.id === id))
+			this.updateOverlay('Link scale', id, (o) => ({ ...o, scaleLinked: linked }));
+		else this.updateText('Link scale', id, (t) => ({ ...t, scaleLinked: linked }));
 	}
 
 	setTextTiming(id: string, start: number, duration: number): void {
@@ -1922,7 +2094,7 @@ export class EditorStore {
 			'Timing',
 			(p) =>
 				settle(
-					{ ...p, texts: p.texts.map((t) => (t.id === id ? clampTextTiming({ ...t, start, duration }, d) : t)) },
+					{ ...p, texts: p.texts.map((t) => (t.id === id ? retimed(t, clampTextTiming({ ...t, start, duration }, d)) : t)) },
 					id,
 					newId
 				),

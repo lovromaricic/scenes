@@ -28,7 +28,12 @@
 	const info = $derived(scene ? editor.media[scene.mediaId] : null);
 	/** What framing works with: the cropped part of the clip. */
 	const size = $derived(info && scene ? croppedSize(scene.crop, info) : null);
-	const frame = $derived(scene?.frame ?? DEFAULT_FRAME);
+	/** The framing at the playhead (animated, when the scene has keyframes). */
+	const frame = $derived.by(() => {
+		const f = scene?.frame ?? DEFAULT_FRAME;
+		const v = scene ? editor.frameValues(scene.id) : null;
+		return v ? { ...f, ...v } : f;
+	});
 	const active = $derived(
 		!!placed &&
 			!!info &&
@@ -87,14 +92,15 @@
 			: f;
 	}
 
+	/** Id for a keyframe a drag may add (the same one all through the drag). */
+	let kfId = '';
+
 	function update(f: SceneFrame) {
 		const id = scene?.id;
 		if (!id) return;
 		const next = clamped(f);
-		editor.live((p) => {
-			const s = p.scenes.find((s) => s.id === id);
-			if (s) s.frame = { ...next };
-		});
+		// At the playhead: with keyframes, only the keyframe there changes.
+		editor.liveFrameValues(id, { x: next.x, y: next.y, zoom: next.zoom }, kfId);
 	}
 
 	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
@@ -112,7 +118,10 @@
 		// Each finger (or the mouse) is its own drag, so a second finger can pinch.
 		const id = event.pointerId;
 		drags.start(event, { move: onpointermove, end: () => onend(id) });
-		if (!start) editor.beginGesture();
+		if (!start) {
+			editor.beginGesture();
+			kfId = crypto.randomUUID();
+		}
 		const [p] = [...pointers.values()];
 		start = { frame: { ...frame }, x: p.x, y: p.y, distance: distance() };
 	}
@@ -137,7 +146,7 @@
 		if (!pointers.delete(pointerId)) return;
 		if (pointers.size > 0 && start) {
 			const [p] = [...pointers.values()];
-			start = { frame: { ...(scene?.frame ?? frame) }, x: p.x, y: p.y, distance: 0 };
+			start = { frame: { ...frame }, x: p.x, y: p.y, distance: 0 };
 			return;
 		}
 		start = null;
@@ -148,11 +157,7 @@
 		if (!scene) return;
 		event.preventDefault();
 		const factor = Math.exp(-event.deltaY * 0.0015);
-		editor.setSceneFrame(
-			scene.id,
-			clamped({ ...frame, zoom: frame.zoom * factor }),
-			`zoom:${scene.id}`
-		);
+		editor.setFrameValues(scene.id, { zoom: clamped({ ...frame, zoom: frame.zoom * factor }).zoom }, `zoom:${scene.id}`);
 	}
 
 	function onkeydown(event: KeyboardEvent) {
@@ -172,7 +177,8 @@
 		if (!next) return;
 		event.preventDefault();
 		event.stopPropagation();
-		editor.setSceneFrame(scene.id, clamped(next), `nudge:${scene.id}`);
+		const c = clamped(next);
+		editor.setFrameValues(scene.id, { x: c.x, y: c.y, zoom: c.zoom }, `nudge:${scene.id}`);
 	}
 </script>
 

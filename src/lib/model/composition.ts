@@ -1,6 +1,7 @@
 import type { SourceBounds } from './edits';
 import type { PlacedScene } from './timeline';
 import type { TransitionKind } from './types';
+import { sceneContentTime } from './keyframes';
 
 /**
  * Which frames make up the picture at timeline time `t`.
@@ -23,6 +24,8 @@ export interface LayerRef {
 	placed: PlacedScene;
 	/** Source time to show. */
 	sourceTime: number;
+	/** The scene's content time (for its keyframes): see `sceneContentTime`. */
+	contentTime: number;
 }
 
 export interface Composition {
@@ -61,7 +64,8 @@ export function compose(
 	if (i === -1) i = placed.length - 1;
 	const layer = (p: PlacedScene): LayerRef => ({
 		placed: p,
-		sourceTime: extendedSourceTime(p, t, bounds(p))
+		sourceTime: extendedSourceTime(p, t, bounds(p)),
+		contentTime: sceneContentTime(p, t)
 	});
 
 	const check = (from: number): Composition | null => {

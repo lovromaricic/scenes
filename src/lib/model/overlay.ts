@@ -7,6 +7,7 @@
 import type { CardContent } from './card';
 import type { Crop } from './crop';
 import type { TextAnimation } from './types';
+import type { ItemValues, Keyframe } from './keyframes';
 
 export type OverlayKind = 'video' | 'photo' | 'card';
 export type OverlayShadow = 'off' | 'soft' | 'strong';
@@ -54,6 +55,15 @@ export interface Overlay {
 	exit: TextAnimation;
 	/** Videos: the clip's own sound (off by default). */
 	sound: { on: boolean; volume: number };
+	/** Scale on top of the base size (`box.w`, `box.h`), around the centre (missing = 1). */
+	scaleX?: number;
+	scaleY?: number;
+	/** Whether width and height scale together (missing = linked). */
+	scaleLinked?: boolean;
+	/** Degrees, clockwise (missing = 0). */
+	rotation?: number;
+	/** Animation (see keyframes.ts); times are seconds from `start`. */
+	keyframes?: Keyframe<ItemValues>[];
 }
 
 

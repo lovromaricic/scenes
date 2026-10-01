@@ -1584,6 +1584,82 @@ dashed one.
 - A set transition: filled with ink.
 - Open (picker showing): the accent border with a 1px accent ring, so it still reads at 1px.
 
+## Keyframes and export options
+
+Follows the usual keyframe workflow (as in CapCut / Premiere): one keyframe holds every
+animatable value, a diamond adds one at the playhead, and changing an animated item at the
+playhead sets the keyframe there.
+
+### 1. The model
+
+- **`model/keyframes.ts`** (pure, unit-tested):
+  - `Keyframe<V> {id, time, values, easing}`.
+  - Overlays and words animate `ItemValues`: centre x/y as fractions of the frame, scaleX and
+    scaleY, rotation in degrees clockwise, and opacity.
+  - Scenes with Custom framing animate `FrameValues` (x, y, zoom).
+  - `interpolate` holds the first or last keyframe outside them and eases in between, using the
+    easing of the first keyframe of each stretch.
+  - `itemValuesAt` and `sceneFrameAt` are the one way to get values at a time. The preview,
+    Watch, thumbnails, export and the on-preview handles all use them.
+  - `tidyItemValues` keeps opacity within 0–100% and the scale above 0, whatever the easing does.
+- **Base size and scale:**
+  - An overlay's `box.w`/`box.h` are its base size. `scaleX`/`scaleY` (shown as %, 100% = base
+    size) apply on top of it, around the centre, and are what keyframes animate.
+  - Changing the base size (the Width/Height fields, or resize handles on an item without
+    keyframes) affects the whole animation.
+  - Width and height scale are linked by default (`scaleLinked`); there's an unlink button.
+  - Words get the same scale, rotation and an opacity. Their font size stays separate.
+- **Times:**
+  - Overlays and words: seconds from the item's start, so keyframes move with the item.
+  - Trimming from the left (the end stays put) shifts them the other way, so the motion stays
+    where it was on the timeline (`retimed` in the store).
+  - Keyframes outside the visible part are kept and come back if the item is extended.
+  - Scenes: the clip's own time (source seconds; for photos and cards, seconds into the scene;
+    `sceneContentTime`). Changing the speed or trimming keeps them on the same moments of the
+    video, so their timeline positions move with it.
+  - `compose()` now gives each layer its `contentTime`.
+- **Drawing:**
+  - `overlayRect` returns the keyframed rect, rotation and opacity, with the entrance/exit on
+    top: a fade multiplies the opacity, slide up offsets the position, pop multiplies the scale.
+  - The overlay and text shaders turn their quads around the centre. An overlay's shadow offset
+    is turned back, so the shadow still falls down the screen.
+  - Words that grow are drawn from a larger sprite (`textSharpness`: in steps of 0.5, up to
+    4×), so they stay sharp.
+  - Thumbnails turn layers with the canvas transform and use the scene's framing at its first
+    moment.
+- **Editing at the playhead:**
+  - `setItemValues` / `liveItemValues` (drags) and `setFrameValues` / `liveFrameValues` change
+    the item itself when it has no keyframes.
+  - With keyframes they add a keyframe at the playhead holding the values there, or update the
+    one already there, so only that moment changes.
+  - Everything that moves, scales, turns or fades an item goes through them: the box on the
+    preview, the words on the preview, Custom reframing on the preview, the X/Y fields, quick
+    placement, the opacity slider, and the new scale/rotation fields.
+- **The box on the preview:**
+  - It follows the item at the playhead: keyframed centre, base size × scale, rotation (CSS
+    `rotate`).
+  - Resizing works in the item's own turned frame and snaps to the frame's edges only when
+    upright.
+  - With keyframes, resizing changes the scale at the playhead; without, it changes the base
+    size.
+- **Settings:** Scale (%) with a link/unlink button, and Rotation (°), for layers and words.
+  Words also get Opacity.
+- **Tests:**
+  - Unit (`keyframes.test.ts`): easings (CSS-matching bezier, hold, overshoot, bounce),
+    interpolation and holding, opacity clamping, upsert, neighbours, shifting, base values,
+    scene content time and speed.
+  - Store: values with and without keyframes; left trim versus move.
+  - E2E (`keyframes-model.test.ts`):
+    - A blue square moves, doubles, turns 45° and fades. A point inside the diamond is blue; a
+      point inside an upright square but outside the diamond is red. Checked in the preview and
+      the saved MP4.
+    - A quads video's framing zooms into its red quarter, and at 2× the zoom lands at half the
+      times.
+    - The words' scale, unlink and rotation fields work.
+- **New fixture:** `quads.mp4` (the quads picture as a 6 s video).
+- `project-files`' damaged-file test failed once under full-suite load and passes on its own
+  (3/3).
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

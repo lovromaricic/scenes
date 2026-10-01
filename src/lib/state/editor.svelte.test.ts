@@ -126,3 +126,58 @@ describe('EditorStore editing with undo/redo', () => {
 		expect(store.canUndo).toBe(false);
 	});
 });
+
+describe('EditorStore animatable values', () => {
+	it('changes the item itself without keyframes, and the keyframe at the playhead with them', () => {
+		const store = setup();
+		const id = store.addCardOverlay(1)!;
+		store.seek(2);
+		store.setItemValues(id, { x: 0.25, rotation: 30 });
+		let o = store.project.overlays[0];
+		expect(o.box.x + o.box.w / 2).toBeCloseTo(0.25);
+		expect(o.rotation).toBe(30);
+		expect(o.keyframes).toBeUndefined();
+
+		// With keyframes: a new keyframe at the playhead, the item's own values untouched.
+		store.edit('Keyframes', (p) => ({
+			...p,
+			overlays: p.overlays.map((x) => ({
+				...x,
+				keyframes: [{ id: 'a', time: 0, values: store.itemValues(id, 1)!, easing: { kind: 'bezier', x1: 0, y1: 0, x2: 1, y2: 1 } }]
+			}))
+		}));
+		store.seek(3);
+		store.setItemValues(id, { x: 0.75 });
+		o = store.project.overlays[0];
+		expect(o.box.x + o.box.w / 2).toBeCloseTo(0.25);
+		expect(o.keyframes!.map((k) => k.time)).toEqual([0, 2]);
+		expect(store.itemValues(id, 3)!.x).toBeCloseTo(0.75);
+		expect(store.itemValues(id, 2)!.x).toBeCloseTo(0.5);
+		// Updating it again at the same time changes that keyframe.
+		store.setItemValues(id, { rotation: 90 });
+		expect(store.project.overlays[0].keyframes).toHaveLength(2);
+		expect(store.itemValues(id, 3)!.rotation).toBe(90);
+	});
+
+	it('trimming from the left keeps the motion where it was; moving takes it along', () => {
+		const store = setup();
+		const id = store.addCardOverlay(1)!;
+		store.edit('Keyframes', (p) => ({
+			...p,
+			overlays: p.overlays.map((x) => ({
+				...x,
+				keyframes: [
+					{ id: 'a', time: 1, values: { ...store.itemValues(id, 1)!, x: 0.1 }, easing: { kind: 'hold' } },
+					{ id: 'b', time: 3, values: { ...store.itemValues(id, 1)!, x: 0.9 }, easing: { kind: 'hold' } }
+				]
+			}))
+		}));
+		// Keyframes at 2 s and 4 s on the timeline.
+		store.setOverlayTiming(id, 1.5, 4.5); // trim 0.5 s off the left (end stays at 6)
+		expect(store.project.overlays[0].keyframes!.map((k) => k.time)).toEqual([0.5, 2.5]);
+		expect(store.itemValues(id, 4)!.x).toBeCloseTo(0.9);
+		store.setOverlayTiming(id, 2.5, 4.5); // moved 1 s later
+		expect(store.project.overlays[0].keyframes!.map((k) => k.time)).toEqual([0.5, 2.5]);
+		expect(store.itemValues(id, 5)!.x).toBeCloseTo(0.9);
+	});
+});

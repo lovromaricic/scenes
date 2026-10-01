@@ -63,14 +63,33 @@
 	/** Every drag ends on release, cancel, lost capture or a move with no button (see drag.ts). */
 	const drags = new DragScope();
 	onDestroy(() => drags.dispose());
+
+	/**
+	 * Where a layer shows at the playhead, in project pixels: its (keyframed) centre, its base size
+	 * times its scale, and its rotation.
+	 */
+	function shown(o: Overlay) {
+		const v = editor.itemValues(o.id) ?? { x: 0.5, y: 0.5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
+		return {
+			cx: v.x * format.width,
+			cy: v.y * format.height,
+			w: o.box.w * format.width * v.scaleX,
+			h: o.box.h * format.height * v.scaleY,
+			rotation: v.rotation,
+			values: v
+		};
+	}
+
 	let dragging = $state<{
 		id: string;
 		handle: CropHandle;
 		pointerId: number;
 		x: number;
 		y: number;
-		start: Box;
+		start: ReturnType<typeof shown>;
 		moved: boolean;
+		/** Id for a keyframe this drag may add (the same one all through the drag). */
+		kfId: string;
 	} | null>(null);
 
 	function onpointerdown(event: PointerEvent, o: Overlay, handle: CropHandle) {
@@ -88,11 +107,18 @@
 			pointerId: event.pointerId,
 			x: event.clientX,
 			y: event.clientY,
-			start: toPixels(o.box),
-			moved: false
+			start: shown(o),
+			moved: false,
+			kfId: crypto.randomUUID()
 		};
 		drags.start(event, { move: onpointermove, end: onend });
 	}
+
+	/** Turn a vector by `deg` degrees (clockwise on screen). */
+	const turn = (x: number, y: number, deg: number) => {
+		const r = (deg * Math.PI) / 180;
+		return { x: x * Math.cos(r) - y * Math.sin(r), y: x * Math.sin(r) + y * Math.cos(r) };
+	};
 
 	function onpointermove(event: PointerEvent) {
 		const d = dragging;
@@ -105,6 +131,7 @@
 		}
 		const o = editor.project.overlays.find((x) => x.id === d.id);
 		if (!o) return;
+		const st = d.start;
 		const corner = d.handle.length === 2;
 		// Photos and videos always scale in their own shape (every handle), unless Shift is held;
 		// cropping is what the Crop tool is for. Cards are free-form; Shift on a corner keeps
@@ -119,26 +146,47 @@
 			pictureRatio && !event.shiftKey
 				? pictureRatio
 				: o.kind === 'card' && corner && event.shiftKey
-					? d.start.w / d.start.h
+					? st.w / st.h
 					: null;
+		// Work in the layer's own (turned) frame; snap to the frame's edges only when upright.
+		const local = turn((event.clientX - d.x) / scale, (event.clientY - d.y) / scale, -st.rotation);
 		const box = dragBox(
-			d.start,
+			{ x: st.cx - st.w / 2, y: st.cy - st.h / 2, w: st.w, h: st.h },
 			d.handle,
-			(event.clientX - d.x) / scale,
-			(event.clientY - d.y) / scale,
+			local.x,
+			local.y,
 			format,
 			{
 				bounded: false,
 				min: 16,
 				keepRatio: ratio,
 				keepRatioOnEdges: !!pictureRatio,
-				snapDistance: 8 / scale
+				snapDistance: st.rotation % 360 === 0 ? 8 / scale : 0
 			}
 		);
-		editor.live((p) => {
-			const target = p.overlays.find((x) => x.id === d.id);
-			if (target) target.box = fromPixels(box);
-		});
+		const off = turn(box.x + box.w / 2 - st.cx, box.y + box.h / 2 - st.cy, st.rotation);
+		const cx = st.cx + off.x;
+		const cy = st.cy + off.y;
+		const x = cx / format.width;
+		const y = cy / format.height;
+		if (d.handle === 'move') {
+			editor.liveItemValues(d.id, { x, y }, d.kfId);
+		} else if (o.keyframes?.length) {
+			// Animated: resizing changes the scale at the playhead.
+			editor.liveItemValues(
+				d.id,
+				{ x, y, scaleX: box.w / (o.box.w * format.width), scaleY: box.h / (o.box.h * format.height) },
+				d.kfId
+			);
+		} else {
+			// Not animated: resizing changes the base size (the scale stays).
+			const w = box.w / st.values.scaleX / format.width;
+			const h = box.h / st.values.scaleY / format.height;
+			editor.live((p) => {
+				const target = p.overlays.find((t) => t.id === d.id);
+				if (target) target.box = { x: x - w / 2, y: y - h / 2, w, h };
+			});
+		}
 	}
 
 	function onend() {
@@ -160,8 +208,8 @@
 		if (!m) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const px = toPixels(o.box);
-		editor.setOverlayBox(o.id, fromPixels({ ...px, x: px.x + m[0], y: px.y + m[1] }), `nudge:${o.id}`);
+		const v = shown(o).values;
+		editor.setItemValues(o.id, { x: v.x + m[0] / format.width, y: v.y + m[1] / format.height }, `nudge:${o.id}`, 'Move layer');
 	}
 
 	function actions(o: Overlay) {
@@ -197,8 +245,16 @@
 	}
 
 	function geometry(p: PlacedOverlay) {
-		const px = toPixels(p.overlay.box);
-		return { px, left: px.x * scale, top: px.y * scale, w: px.w * scale, h: px.h * scale };
+		const g = shown(p.overlay);
+		const px = { w: Math.round(g.w), h: Math.round(g.h) };
+		return {
+			px,
+			left: (g.cx - g.w / 2) * scale,
+			top: (g.cy - g.h / 2) * scale,
+			w: g.w * scale,
+			h: g.h * scale,
+			rotation: g.rotation
+		};
 	}
 </script>
 
@@ -217,6 +273,7 @@
 		style:top="{g.top}px"
 		style:width="{g.w}px"
 		style:height="{g.h}px"
+		style:rotate={g.rotation ? `${g.rotation}deg` : undefined}
 	>
 		<button
 			type="button"

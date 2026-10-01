@@ -1,5 +1,6 @@
 import { placeOverlays, type PlacedOverlay } from '$lib/model/overlay';
 import { isTextVisible, textFrameState } from '$lib/model/textAnimation';
+import { itemValuesAt, maxItemScale, textBaseValues } from '$lib/model/keyframes';
 import { overlayTracksBottomUp, type Track } from '$lib/model/tracks';
 import type { Overlay } from '$lib/model/overlay';
 import type { TextItem } from '$lib/model/types';
@@ -39,7 +40,12 @@ export function visualsAt(
 	return out;
 }
 
-/** A text item's sprite placed in a frame of the given size at time `t` (with its animation). */
+/**
+ * A text item's sprite placed in a frame of the given size at time `t`: its keyframed (or fixed)
+ * position, scale, rotation and opacity, with the entrance animation on top (a fade multiplies
+ * the opacity, slide up offsets the position, pop multiplies the scale). Words that grow are
+ * drawn from a larger sprite, so they stay sharp however big they get.
+ */
 export function textDraw(
 	item: TextItem,
 	t: number,
@@ -49,17 +55,29 @@ export function textDraw(
 ): TextDraw | null {
 	const state = textFrameState(item, t);
 	if (!state.visible) return null;
-	const { key, sprite } = sprites.get(item, width, height);
+	const base = textBaseValues(item);
+	const v = itemValuesAt(base, item.keyframes, t - item.start);
+	const sharp = textSharpness(maxItemScale(base, item.keyframes));
+	const { key, sprite } = sprites.get(item, width * sharp, height * sharp);
 	return {
 		key,
 		image: sprite.canvas,
 		// Position comes from the item itself, not the cached sprite (which is only keyed by
 		// words, style and size), so moving words shows up immediately.
-		cx: item.x * width,
-		cy: item.y * height + state.dy * Math.min(width, height),
+		cx: v.x * width,
+		cy: v.y * height + state.dy * Math.min(width, height),
 		width: sprite.canvas.width,
 		height: sprite.canvas.height,
-		scale: state.scale,
-		opacity: state.opacity
+		scale: state.scale / sharp,
+		scaleX: v.scaleX,
+		scaleY: v.scaleY,
+		rotation: (v.rotation * Math.PI) / 180,
+		opacity: state.opacity * v.opacity
 	};
+}
+
+/** How much larger than normal to draw words that reach `maxScale` (in steps, so it's cached). */
+export function textSharpness(maxScale: number): number {
+	if (maxScale <= 1.05) return 1;
+	return Math.min(4, Math.ceil(maxScale * 2) / 2);
 }

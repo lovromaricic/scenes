@@ -68,3 +68,13 @@ describe('overlay drawing', () => {
 		expect(d.uv[0] + d.uv[2]).toBeLessThanOrEqual(0.5 + 1e-9);
 	});
 });
+
+describe('words that grow', () => {
+	it('are drawn from a larger sprite, in steps, up to 4×', async () => {
+		const { textSharpness } = await import('./visuals');
+		expect(textSharpness(1)).toBe(1);
+		expect(textSharpness(1.2)).toBe(1.5);
+		expect(textSharpness(3)).toBe(3);
+		expect(textSharpness(9)).toBe(4);
+	});
+});

@@ -3,6 +3,7 @@ import { MOOD_GRADES, type GradeParams } from '$lib/model/moods';
 import { croppedSize, cropUv, type Size } from '$lib/model/crop';
 import type { Rect } from '$lib/model/framing';
 import { overlayAnimation, type OverlayShadow, type PlacedOverlay } from '$lib/model/overlay';
+import { itemValuesAt, overlayBaseValues } from '$lib/model/keyframes';
 import type { MoodId } from '$lib/model/types';
 
 /**
@@ -20,6 +21,8 @@ export interface OverlayDraw {
 	/** 0–1 RGB. */
 	borderColor: [number, number, number];
 	shadow: ShadowParams | null;
+	/** Turn around the box's centre, radians clockwise. */
+	rotation: number;
 	/** Overall opacity, including the entrance/exit animation. */
 	opacity: number;
 	grade: GradeParams;
@@ -71,15 +74,27 @@ export function coverUv(
 	return [u, v + (h * (1 - k)) / 2, w, h * k];
 }
 
-/** Where an overlay's box is at time `t` (with its animation), in output pixels. */
+/**
+ * Where an overlay's box is at time `t`, in output pixels: its keyframed (or fixed) centre, scale,
+ * rotation and opacity, with the entrance/exit animation on top (a fade multiplies the opacity,
+ * slide up offsets the position, pop multiplies the scale). `rect` is the box before rotation;
+ * `rotation` (radians, clockwise) turns it around its centre.
+ */
 export function overlayRect(p: PlacedOverlay, t: number, outW: number, outH: number) {
 	const o = p.overlay;
-	const anim = overlayAnimation(o, t - p.start);
-	const w = o.box.w * outW * anim.scale;
-	const h = o.box.h * outH * anim.scale;
-	const cx = (o.box.x + o.box.w / 2) * outW;
-	const cy = (o.box.y + o.box.h / 2) * outH + anim.dy * o.box.h * outH;
-	return { rect: { x: cx - w / 2, y: cy - h / 2, w, h }, alpha: anim.alpha, scale: anim.scale };
+	const local = t - p.start;
+	const v = itemValuesAt(overlayBaseValues(o), o.keyframes, local);
+	const anim = overlayAnimation(o, local);
+	const w = o.box.w * outW * v.scaleX * anim.scale;
+	const h = o.box.h * outH * v.scaleY * anim.scale;
+	const cx = v.x * outW;
+	const cy = v.y * outH + anim.dy * o.box.h * v.scaleY * outH;
+	return {
+		rect: { x: cx - w / 2, y: cy - h / 2, w, h },
+		rotation: (v.rotation * Math.PI) / 180,
+		opacity: v.opacity * anim.alpha,
+		scale: Math.min(v.scaleX, v.scaleY) * anim.scale
+	};
 }
 
 /**
@@ -99,7 +114,7 @@ export function overlayDraw(
 	source: Size = { width: frame.width, height: frame.height }
 ): OverlayDraw {
 	const o = p.overlay;
-	const { rect, alpha, scale } = overlayRect(p, t, outW, outH);
+	const { rect, rotation, opacity, scale } = overlayRect(p, t, outW, outH);
 	const card = o.kind === 'card';
 	const crop = card ? undefined : o.crop;
 	const cropped = croppedSize(crop, source);
@@ -115,7 +130,8 @@ export function overlayDraw(
 		borderWidth: border,
 		borderColor: hexToRgb(o.style.borderColor),
 		shadow: shadowParams(o.style.shadow, outW, outH),
-		opacity: Math.max(0, Math.min(1, o.style.opacity * alpha)),
+		rotation,
+		opacity: Math.max(0, Math.min(1, opacity)),
 		// Cards keep their exact colours; pictures follow the video's look.
 		grade: MOOD_GRADES[card ? 'natural' : mood]
 	};

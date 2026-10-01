@@ -220,7 +220,7 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 				.catch(() => {});
 		}
 	};
-	const layer = async (ref: { placed: PlacedScene; sourceTime: number } | null) => {
+	const layer = async (ref: { placed: PlacedScene; sourceTime: number; contentTime: number } | null) => {
 		if (!ref) return null;
 		if (ref.placed.scene.kind === 'card') {
 			const card = ref.placed.scene.card;
@@ -230,7 +230,9 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 						ref.placed.scene,
 						project.mood,
 						width,
-						height
+						height,
+						undefined,
+						ref.contentTime
 					)
 				: null;
 		}
@@ -247,7 +249,8 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 					project.mood,
 					width,
 					height,
-					request.sourceSize(ref.placed.scene.mediaId) ?? undefined
+					request.sourceSize(ref.placed.scene.mediaId) ?? undefined,
+					ref.contentTime
 				)
 			: null;
 	};

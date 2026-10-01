@@ -10,6 +10,7 @@
 	import FontPicker from './FontPicker.svelte';
 	import TextSizeField from './TextSizeField.svelte';
 	import TextColorSettings from './TextColorSettings.svelte';
+	import TransformFields from './TransformFields.svelte';
 
 	let { item }: { item: TextItem } = $props();
 
@@ -74,6 +75,10 @@
 			onchange={(v: Position) =>
 				editor.setTextPosition(item.id, 0.5, positions.find((p) => p.value === v)!.y)}
 		/>
+	</Field>
+
+	<Field label="Size and turn">
+		<TransformFields id={item.id} linked={item.scaleLinked ?? true} noun="Words" withOpacity />
 	</Field>
 
 	<div class="timing">

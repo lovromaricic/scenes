@@ -7,6 +7,7 @@ import { drawCard } from '$lib/render/card';
 import { visualsAt } from '$lib/render/visuals';
 import { placeScenes } from '$lib/model/timeline';
 import { compose } from '$lib/model/composition';
+import { sceneFrameAt } from '$lib/model/keyframes';
 import { overlayDraw } from '$lib/render/overlay';
 
 /**
@@ -22,7 +23,7 @@ export function thumbnailKey(project: Project): string {
 	// Layers showing at the start are part of the picture too.
 	const layers = startLayers(project).map((p) => p.overlay);
 	return s
-		? JSON.stringify([s.mediaId, s.kind, s.crop, s.frame, s.card, project.format.width, project.format.height, layers])
+		? JSON.stringify([s.mediaId, s.kind, s.crop, s.frame, s.keyframes, s.card, project.format.width, project.format.height, layers])
 		: '';
 }
 
@@ -61,7 +62,7 @@ export async function makeProjectThumbnail(project: Project, media: Record<strin
 		const k = image.width / info.width;
 		const crop = scene.crop ?? { x: 0, y: 0, w: info.width, h: info.height };
 		const size = croppedSize(scene.crop, info);
-		const r = frameRect(scene.frame, size.width, size.height, w, h);
+		const r = frameRect(sceneFrameAt(scene.frame, scene.keyframes, scene.sourceStart), size.width, size.height, w, h);
 		if (showsBars(r, w, h) && scene.frame?.bars === 'white') {
 			ctx.fillStyle = '#ffffff';
 			ctx.fillRect(0, 0, w, h);
@@ -111,6 +112,10 @@ async function drawLayers(
 			return p2;
 		};
 		ctx.save();
+		// Turned around its centre, like the compositor.
+		ctx.translate(x + bw / 2, y + bh / 2);
+		ctx.rotate(d.rotation);
+		ctx.translate(-(x + bw / 2), -(y + bh / 2));
 		ctx.globalAlpha = d.opacity;
 		if (d.shadow) {
 			ctx.shadowColor = `rgba(0,0,0,${d.shadow.alpha})`;

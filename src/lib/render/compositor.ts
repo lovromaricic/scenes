@@ -41,7 +41,13 @@ export interface TextDraw {
 	cy: number;
 	width: number;
 	height: number;
+	/** Entrance animation scale, times the drawn sprite's own (1 / its sharpness factor). */
 	scale: number;
+	/** Keyframed scale (missing = 1). */
+	scaleX?: number;
+	scaleY?: number;
+	/** Radians, clockwise (missing = 0). */
+	rotation?: number;
 	opacity: number;
 }
 
@@ -160,14 +166,19 @@ void main() {
 	outColor = vec4(c, 1.0);
 }`;
 
+/** Words: a quad of half-size uHalf around uCenter (output pixels, y down), turned by uRotation. */
 const SPRITE_VS = /* glsl */ `#version 300 es
 in vec2 aPos;
-uniform vec4 uRect; // x, y (bottom-left, clip space), width, height (clip units)
+uniform vec2 uViewport;
+uniform vec2 uCenter;
+uniform vec2 uHalf;
+uniform vec2 uRotation; // cos, sin (clockwise on screen)
 out vec2 vUv;
 void main() {
-	vec2 p = aPos * 0.5 + 0.5;
-	vUv = p;
-	gl_Position = vec4(uRect.xy + p * uRect.zw, 0.0, 1.0);
+	vUv = vec2(aPos.x * 0.5 + 0.5, aPos.y * 0.5 + 0.5);
+	vec2 local = vec2(aPos.x, -aPos.y) * uHalf;
+	vec2 px = uCenter + vec2(local.x * uRotation.x - local.y * uRotation.y, local.x * uRotation.y + local.y * uRotation.x);
+	gl_Position = vec4(px.x / uViewport.x * 2.0 - 1.0, 1.0 - px.y / uViewport.y * 2.0, 0.0, 1.0);
 }`;
 
 const SPRITE_FS = /* glsl */ `#version 300 es
@@ -191,10 +202,11 @@ uniform vec2 uViewport;
 uniform vec2 uCenter;
 uniform vec2 uHalf;
 uniform float uMargin;
+uniform vec2 uRotation; // cos, sin (clockwise on screen)
 out vec2 vLocal;
 void main() {
 	vLocal = aPos * (uHalf + vec2(uMargin));
-	vec2 px = uCenter + vLocal;
+	vec2 px = uCenter + vec2(vLocal.x * uRotation.x - vLocal.y * uRotation.y, vLocal.x * uRotation.y + vLocal.y * uRotation.x);
 	gl_Position = vec4(px.x / uViewport.x * 2.0 - 1.0, 1.0 - px.y / uViewport.y * 2.0, 0.0, 1.0);
 }`;
 
@@ -276,13 +288,17 @@ export class Compositor {
 		u: Uniforms<'rect' | 'a' | 'b' | 'kind' | 'progress'>;
 	};
 	private blur!: { program: WebGLProgram; u: Uniforms<'rect' | 'image' | 'texel'> };
-	private sprite!: { program: WebGLProgram; u: Uniforms<'rect' | 'opacity' | 'image'> };
+	private sprite!: {
+		program: WebGLProgram;
+		u: Uniforms<'viewport' | 'center' | 'half' | 'rotation' | 'opacity' | 'image'>;
+	};
 	private overlay!: {
 		program: WebGLProgram;
 		u: Uniforms<
 			| 'viewport'
 			| 'center'
 			| 'half'
+			| 'rotation'
 			| 'margin'
 			| 'radius'
 			| 'border'
@@ -361,7 +377,10 @@ export class Compositor {
 		});
 		this.blur = this.program(RECT_VS, BLUR_FS, { rect: 'uRect', image: 'uImage', texel: 'uTexel' });
 		this.sprite = this.program(SPRITE_VS, SPRITE_FS, {
-			rect: 'uRect',
+			viewport: 'uViewport',
+			center: 'uCenter',
+			half: 'uHalf',
+			rotation: 'uRotation',
 			opacity: 'uOpacity',
 			image: 'uImage'
 		});
@@ -370,6 +389,7 @@ export class Compositor {
 			viewport: 'uViewport',
 			center: 'uCenter',
 			half: 'uHalf',
+			rotation: 'uRotation',
 			margin: 'uMargin',
 			radius: 'uRadius',
 			border: 'uBorder',
@@ -532,13 +552,20 @@ export class Compositor {
 		this.bindImage(slot, o.image);
 		const s = o.shadow;
 		gl.uniform2f(u.center, o.rect.x + o.rect.w / 2, o.rect.y + o.rect.h / 2);
+		const cos = Math.cos(o.rotation ?? 0);
+		const sin = Math.sin(o.rotation ?? 0);
+		gl.uniform2f(u.rotation, cos, sin);
 		gl.uniform2f(u.half, o.rect.w / 2, o.rect.h / 2);
 		gl.uniform1f(u.margin, s ? s.blur + Math.hypot(s.offsetX, s.offsetY) + 2 : 1);
 		gl.uniform1f(u.radius, Math.min(o.radius, o.rect.w / 2, o.rect.h / 2));
 		gl.uniform1f(u.border, o.borderWidth);
 		gl.uniform3f(u.borderColor, ...o.borderColor);
 		gl.uniform1f(u.shadowBlur, s ? Math.max(1, s.blur) : 1);
-		gl.uniform2f(u.shadowOffset, s?.offsetX ?? 0, s?.offsetY ?? 0);
+		// The shadow falls down the screen whichever way the overlay is turned: its offset is
+		// given in the overlay's own (turned) space.
+		const ox = s?.offsetX ?? 0;
+		const oy = s?.offsetY ?? 0;
+		gl.uniform2f(u.shadowOffset, ox * cos + oy * sin, -ox * sin + oy * cos);
 		gl.uniform1f(u.shadowAlpha, s?.alpha ?? 0);
 		gl.uniform1f(u.opacity, o.opacity);
 		gl.uniform4f(u.uv, ...o.uv);
@@ -633,11 +660,11 @@ export class Compositor {
 		gl.activeTexture(gl.TEXTURE0);
 		gl.uniform1i(u.image, 0);
 		gl.bindTexture(gl.TEXTURE_2D, this.spriteTexture(t.key, t.image));
-		const w = t.width * t.scale;
-		const h = t.height * t.scale;
-		const left = t.cx - w / 2;
-		const bottom = t.cy + h / 2;
-		gl.uniform4f(u.rect, (left / W) * 2 - 1, 1 - (bottom / H) * 2, (w / W) * 2, (h / H) * 2);
+		gl.uniform2f(u.viewport, W, H);
+		gl.uniform2f(u.center, t.cx, t.cy);
+		gl.uniform2f(u.half, (t.width * t.scale * (t.scaleX ?? 1)) / 2, (t.height * t.scale * (t.scaleY ?? 1)) / 2);
+		const r = t.rotation ?? 0;
+		gl.uniform2f(u.rotation, Math.cos(r), Math.sin(r));
 		gl.uniform1f(u.opacity, t.opacity);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 	}

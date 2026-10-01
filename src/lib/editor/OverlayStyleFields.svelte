@@ -62,11 +62,12 @@
 		/>
 	</Field>
 	<Field label="Opacity">
+		<!-- At the playhead: with keyframes, this sets (or adds) the keyframe there. -->
 		<Slider
 			label="Layer opacity"
-			value={style.opacity}
-			min={0.05}
-			oninput={(v) => set({ opacity: v }, `opacity:${overlay.id}`)}
+			value={editor.itemValues(overlay.id)?.opacity ?? style.opacity}
+			min={0}
+			oninput={(v) => editor.setItemValues(overlay.id, { opacity: v }, `opacity:${overlay.id}`, 'Layer opacity')}
 		/>
 	</Field>
 </div>

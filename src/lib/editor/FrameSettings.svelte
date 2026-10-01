@@ -124,9 +124,9 @@
 			min={Math.round(lowest * 100) / 100}
 			max={MAX_ZOOM}
 			step={0.01}
-			value={Math.max(lowest, frame.zoom)}
+			value={Math.max(lowest, editor.frameValues(scene.id)?.zoom ?? frame.zoom)}
 			format={(v) => `${v.toFixed(2)}×`}
-			oninput={(zoom) => editor.setSceneFrame(scene.id, { ...frame, zoom }, `zoom:${scene.id}`)}
+			oninput={(zoom) => editor.setFrameValues(scene.id, { zoom }, `zoom:${scene.id}`)}
 		/>
 	</Field>
 	<p class="tip">Drag the {noun} on the preview to move it. Scroll or pinch to zoom.</p>
@@ -135,7 +135,7 @@
 			variant="soft"
 			size="sm"
 			icon={RotateCcw}
-			onclick={() => editor.setSceneFrame(scene.id, { ...frame, zoom: 1, x: 0, y: 0 })}
+			onclick={() => editor.setFrameValues(scene.id, { zoom: 1, x: 0, y: 0 })}
 			>Reset</Button
 		>
 	</div>

@@ -2,10 +2,9 @@ import type { FrameResult } from '$lib/media/frames';
 import { MOOD_GRADES } from '$lib/model/moods';
 import { frameRect } from '$lib/model/framing';
 import { croppedSize, cropUv, type Size } from '$lib/model/crop';
-import { textFrameState } from '$lib/model/textAnimation';
-import type { MoodId, Scene, TextItem } from '$lib/model/types';
-import type { LayerInput, TextDraw } from './compositor';
-import type { TextSpriteCache } from './text';
+import type { MoodId, Scene } from '$lib/model/types';
+import type { LayerInput } from './compositor';
+import { sceneFrameAt } from '$lib/model/keyframes';
 
 /**
  * Pieces of an output frame shared by the live preview and export, so both build frames the
@@ -14,7 +13,8 @@ import type { TextSpriteCache } from './text';
 
 /**
  * One scene's picture for an output frame of outW × outH: its crop (applied first), then its
- * framing, and its mood. `source` is the clip's own size in pixels (crop is measured in it).
+ * framing (animated at `contentTime`, see keyframes.ts), and its mood. `source` is the clip's
+ * own size in pixels (crop is measured in it).
  */
 export function layerInput(
 	frame: FrameResult,
@@ -22,7 +22,8 @@ export function layerInput(
 	projectMood: MoodId,
 	outW: number,
 	outH: number,
-	source: Size = { width: frame.width, height: frame.height }
+	source: Size = { width: frame.width, height: frame.height },
+	contentTime: number = scene.sourceStart
 ): LayerInput {
 	// The decoded image may be smaller than the source; crop maps across proportionally.
 	const cropped = croppedSize(scene.crop, source);
@@ -34,39 +35,9 @@ export function layerInput(
 		height: frame.height,
 		// Cards are drawn in their exact colours: no mood.
 		grade: MOOD_GRADES[scene.kind === 'card' ? 'natural' : (scene.mood ?? projectMood)],
-		rect: frameRect(scene.frame, aspectW, aspectH, outW, outH),
+		// Custom framing follows its keyframes, at the scene's own (content) time.
+		rect: frameRect(sceneFrameAt(scene.frame, scene.keyframes, contentTime), aspectW, aspectH, outW, outH),
 		bars: scene.frame?.bars ?? 'black',
 		uv: cropUv(scene.crop, source)
 	};
-}
-
-/** The text sprites showing at time `t` in a frame of the given size, with animation applied. */
-export function textDrawsAt(
-	texts: TextItem[],
-	t: number,
-	width: number,
-	height: number,
-	sprites: TextSpriteCache,
-	hiddenId: string | null = null
-): TextDraw[] {
-	const draws: TextDraw[] = [];
-	for (const item of texts) {
-		if (item.id === hiddenId) continue;
-		const state = textFrameState(item, t);
-		if (!state.visible) continue;
-		const { key, sprite } = sprites.get(item, width, height);
-		draws.push({
-			key,
-			image: sprite.canvas,
-			// Position comes from the item itself, not the cached sprite (which is only keyed by
-			// words, style and size), so moving words shows up immediately.
-			cx: item.x * width,
-			cy: item.y * height + state.dy * Math.min(width, height),
-			width: sprite.canvas.width,
-			height: sprite.canvas.height,
-			scale: state.scale,
-			opacity: state.opacity
-		});
-	}
-	return draws;
 }

@@ -26,6 +26,7 @@
 	import OverlayStyleFields from './OverlayStyleFields.svelte';
 	import OverlayAnimationFields from './OverlayAnimationFields.svelte';
 	import CardContentFields from './CardContentFields.svelte';
+	import TransformFields from './TransformFields.svelte';
 
 	let { placed }: { placed: PlacedOverlay } = $props();
 
@@ -33,9 +34,11 @@
 	const o = $derived(placed.overlay);
 	const format = $derived(editor.project.format);
 	const kindLabel = $derived({ video: 'Video', photo: 'Photo', card: 'Card' }[o.kind]);
+	/** At the playhead (keyframed): the top-left of the base box around the item's centre. */
+	const values = $derived(editor.itemValues(o.id));
 	const px = $derived({
-		x: Math.round(o.box.x * format.width),
-		y: Math.round(o.box.y * format.height),
+		x: Math.round(((values?.x ?? o.box.x + o.box.w / 2) - o.box.w / 2) * format.width),
+		y: Math.round(((values?.y ?? o.box.y + o.box.h / 2) - o.box.h / 2) * format.height),
 		w: Math.round(o.box.w * format.width),
 		h: Math.round(o.box.h * format.height)
 	});
@@ -58,17 +61,30 @@
 		if (value.trim() === '') return;
 		const n = Number(value);
 		if (!Number.isFinite(n)) return;
-		const next = { ...px, [field]: Math.round(field === 'w' || field === 'h' ? Math.max(16, n) : n) };
-		editor.setOverlayBox(
-			o.id,
-			{
-				x: next.x / format.width,
-				y: next.y / format.height,
-				w: next.w / format.width,
-				h: next.h / format.height
-			},
-			`box-${field}:${o.id}`
-		);
+		if (field === 'x' || field === 'y') {
+			// Position: at the playhead (a keyframe when animated).
+			const half = field === 'x' ? px.w / 2 : px.h / 2;
+			const size = field === 'x' ? format.width : format.height;
+			editor.setItemValues(o.id, { [field]: (Math.round(n) + half) / size }, `box-${field}:${o.id}`, 'Move layer');
+			return;
+		}
+		// The base size: the whole animation, around the same centre.
+		const next = { ...px, [field]: Math.round(Math.max(16, n)) };
+		const cx = (px.x + px.w / 2) / format.width;
+		const cy = (px.y + px.h / 2) / format.height;
+		const w = next.w / format.width;
+		const h = next.h / format.height;
+		editor.setOverlayBox(o.id, { x: cx - w / 2, y: cy - h / 2, w, h }, `box-${field}:${o.id}`);
+	}
+
+	/** Quick placement of what's shown (base size × scale): moves the centre at the playhead. */
+	function place(where: Placement) {
+		const sx = values?.scaleX ?? 1;
+		const sy = values?.scaleY ?? 1;
+		const w = o.box.w * sx;
+		const h = o.box.h * sy;
+		const box = placeBox({ x: px.x / format.width, y: px.y / format.height, w, h }, where, format);
+		editor.setItemValues(o.id, { x: box.x + w / 2, y: box.y + h / 2 }, undefined, 'Move layer');
 	}
 
 	const placements: { where: Placement; label: string; icon: typeof Crosshair }[] = [
@@ -104,6 +120,7 @@
 				</label>
 			{/each}
 		</div>
+		<TransformFields id={o.id} linked={o.scaleLinked ?? true} noun="Layer" />
 		<div class="placements" role="group" aria-label="Quick placement">
 			{#each placements as p (p.where)}
 				<IconButton
@@ -111,7 +128,7 @@
 					icon={p.icon}
 					variant="soft"
 					size="sm"
-					onclick={() => editor.setOverlayBox(o.id, placeBox(o.box, p.where, format))}
+					onclick={() => place(p.where)}
 				/>
 			{/each}
 		</div>

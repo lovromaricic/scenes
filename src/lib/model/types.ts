@@ -11,6 +11,7 @@ import type { CardContent } from './card';
 import type { TextColors, TextFont } from './textStyle';
 import type { Overlay } from './overlay';
 import type { Track } from './tracks';
+import type { FrameValues, ItemValues, Keyframe } from './keyframes';
 
 /** Shapes offered by the design-page demo switch. Projects use `ProjectFormat`. */
 export type AspectRatio = '16:9' | '9:16' | '1:1';
@@ -54,6 +55,8 @@ export interface Scene {
 	crop?: Crop;
 	/** Cards only: what's drawn. */
 	card?: CardContent;
+	/** Custom framing animation (see keyframes.ts); times are the clip's own (source) seconds. */
+	keyframes?: Keyframe<FrameValues>[];
 }
 
 export interface TextItem {
@@ -73,6 +76,16 @@ export interface TextItem {
 	/** Font size as a fraction of the frame's short side. */
 	size?: number;
 	colors?: TextColors;
+	/** Scale on top of the font size, around the centre (missing = 1). */
+	scaleX?: number;
+	scaleY?: number;
+	scaleLinked?: boolean;
+	/** Degrees, clockwise (missing = 0). */
+	rotation?: number;
+	/** 0–1 (missing = 1). */
+	opacity?: number;
+	/** Animation (see keyframes.ts); times are seconds from `start`. */
+	keyframes?: Keyframe<ItemValues>[];
 }
 
 export interface SoundItem {

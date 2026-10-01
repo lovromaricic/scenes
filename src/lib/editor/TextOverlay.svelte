@@ -47,13 +47,18 @@
 	function box(item: TextItem) {
 		// Re-measure when a font finishes loading (it changes the words' size).
 		void editor.fonts.version;
-		const l = layoutText(item, width, height);
+		// Where the words are at the playhead (keyframed), scaled and turned like the video draws.
+		const v = editor.itemValues(item.id);
+		const l = layoutText(v ? { ...item, x: v.x, y: v.y } : item, width, height);
 		return {
 			left: l.cx - l.width / 2,
 			top: l.cy - l.height / 2,
 			width: l.width,
 			height: l.height,
-			layout: l
+			layout: l,
+			scale: v && (v.scaleX !== 1 || v.scaleY !== 1) ? `${v.scaleX} ${v.scaleY}` : undefined,
+			rotate: v?.rotation ? `${v.rotation}deg` : undefined,
+			values: v
 		};
 	}
 
@@ -72,6 +77,7 @@
 		x0: number;
 		y0: number;
 		moved: boolean;
+		kfId: string;
 	} | null>(null);
 
 	function onpointerdown(event: PointerEvent, item: TextItem) {
@@ -87,9 +93,10 @@
 			pointerId: event.pointerId,
 			startX: event.clientX,
 			startY: event.clientY,
-			x0: item.x,
-			y0: item.y,
-			moved: false
+			x0: editor.itemValues(item.id)?.x ?? item.x,
+			y0: editor.itemValues(item.id)?.y ?? item.y,
+			moved: false,
+			kfId: crypto.randomUUID()
 		};
 		drags.start(event, { move: onpointermove, end: onend });
 	}
@@ -110,13 +117,8 @@
 		guides = { x: Math.abs(x - 0.5) < SNAP, y: Math.abs(y - 0.5) < SNAP };
 		if (guides.x) x = 0.5;
 		if (guides.y) y = 0.5;
-		editor.live((p) => {
-			const t = p.texts.find((t) => t.id === d.id);
-			if (t) {
-				t.x = x;
-				t.y = y;
-			}
-		});
+		// At the playhead: with keyframes, only the keyframe there moves.
+		editor.liveItemValues(d.id, { x, y }, d.kfId);
 	}
 
 	function onend() {
@@ -143,10 +145,11 @@
 		if (!dir) return;
 		event.preventDefault();
 		const step = event.shiftKey ? 0.05 : 0.01;
+		const v = editor.itemValues(item.id) ?? item;
 		editor.setTextPosition(
 			item.id,
-			clamp(item.x + dir[0] * step, 0.04, 0.96),
-			clamp(item.y + dir[1] * step, 0.04, 0.96)
+			clamp(v.x + dir[0] * step, 0.04, 0.96),
+			clamp(v.y + dir[1] * step, 0.04, 0.96)
 		);
 	}
 
@@ -256,6 +259,8 @@
 			style:top="{b.top}px"
 			style:width="{b.width}px"
 			style:height="{b.height}px"
+			style:scale={b.scale}
+			style:rotate={b.rotate}
 		>
 			{#if isEditing}
 				<div

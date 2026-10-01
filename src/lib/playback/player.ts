@@ -387,7 +387,8 @@ export class Player {
 					this.mood,
 					this.canvas.width,
 					this.canvas.height,
-					this.lookup.sourceSize(ref.placed.scene.mediaId) ?? undefined
+					this.lookup.sourceSize(ref.placed.scene.mediaId) ?? undefined,
+					ref.contentTime
 				)
 			: null;
 	}
@@ -568,7 +569,8 @@ export class Player {
 			};
 			const ref = {
 				placed: { ...cropPlaced, scene: whole },
-				sourceTime: cropPlaced.sourceTime
+				sourceTime: cropPlaced.sourceTime,
+				contentTime: cropPlaced.sourceTime
 			};
 			const frame = this.layerFrame(ref, false);
 			composite = {
