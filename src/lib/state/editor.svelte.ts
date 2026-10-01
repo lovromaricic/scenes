@@ -136,8 +136,10 @@ import type {
 import { Player } from '$lib/playback/player';
 import { Autosaver, emergencyCopy, type SaveStatus } from './autosave';
 import {
+	exportAudio,
 	exportFrame,
 	exportVideo,
+	type AudioFormat,
 	type ExportProgress,
 	type ExportRange,
 	type ExportResult,
@@ -2538,6 +2540,27 @@ export class EditorStore {
 			preset: presetById(presetId),
 			bounds: (scene) => this.bounds(scene),
 			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null),
+			hasAudio: (id) => !!media[id]?.hasAudio,
+			onProgress,
+			signal
+		});
+	}
+
+	/** Just the sound (the same mix as the video), as WAV, M4A or MP3. */
+	async saveAudio(
+		format: AudioFormat,
+		bitrate: number,
+		onProgress: (p: ExportProgress) => void,
+		signal: AbortSignal,
+		range?: ExportRange | null
+	): Promise<ExportResult> {
+		this.player.pause();
+		const media = this.media;
+		return exportAudio({
+			project: this.snapshot(),
+			format,
+			bitrate,
+			range,
 			hasAudio: (id) => !!media[id]?.hasAudio,
 			onProgress,
 			signal

@@ -101,7 +101,7 @@ export function formatTimeLeft(progress: number, elapsed: number): string {
 }
 
 /** A safe file name from the video title. */
-export function exportFileName(title: string, extension: 'mp4' | 'webm'): string {
+export function exportFileName(title: string, extension: string): string {
 	const clean = Array.from(title)
 		.filter((ch) => ch.charCodeAt(0) >= 32)
 		.join('')

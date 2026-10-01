@@ -4,8 +4,10 @@ import {
 	CanvasSource,
 	canEncodeAudio,
 	canEncodeVideo,
+	Mp3OutputFormat,
 	Mp4OutputFormat,
 	Output,
+	WavOutputFormat,
 	StreamTarget,
 	WebMOutputFormat,
 	type Target
@@ -290,4 +292,95 @@ export function frameFileName(title: string, t: number, format: FrameFormat): st
 	const s = t - m * 60;
 	const stamp = `${m}-${s.toFixed(2).padStart(5, '0')}`;
 	return `${base} ${stamp}.${format}`;
+}
+
+// ─── Audio only ────────────────────────────────────────────────────────────────────────────
+
+export type AudioFormat = 'wav' | 'm4a' | 'mp3';
+export const AUDIO_BITRATES = [128_000, 192_000, 320_000] as const;
+
+export interface AudioRequest {
+	project: Project;
+	format: AudioFormat;
+	/** M4A and MP3 (bits per second). */
+	bitrate?: number;
+	range?: ExportRange | null;
+	hasAudio: (mediaId: string) => boolean;
+	onProgress?: (p: ExportProgress) => void;
+	signal?: AbortSignal;
+}
+
+let mp3Registered: Promise<void> | null = null;
+/** MP3: browsers don't encode it, so Mediabunny's LAME (WebAssembly) encoder is loaded once. */
+function ensureMp3Encoder(): Promise<void> {
+	mp3Registered ??= (async () => {
+		if (await canEncodeAudio('mp3')) return;
+		const { registerMp3Encoder } = await import('@mediabunny/mp3-encoder');
+		registerMp3Encoder();
+	})();
+	return mp3Registered;
+}
+
+/** Whether this browser can save audio in a format (WAV always; M4A needs an AAC encoder). */
+export async function canSaveAudio(format: AudioFormat): Promise<boolean> {
+	if (format === 'wav' || format === 'mp3') return true;
+	return canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: SAMPLE_RATE, bitrate: 128_000 });
+}
+
+/** Rough size in bytes of audio saved for `seconds`. */
+export function estimateAudioBytes(format: AudioFormat, seconds: number, bitrate = 192_000): number {
+	return format === 'wav' ? seconds * SAMPLE_RATE * 2 * 2 : (bitrate * seconds) / 8;
+}
+
+/**
+ * Just the sound, from the same mix as the video export (scene sound, layers with sound, music,
+ * voiceovers, their volumes, fades and volume points), as WAV (16-bit), M4A (AAC) or MP3.
+ */
+export async function exportAudio(request: AudioRequest): Promise<ExportResult> {
+	const { project, format, signal } = request;
+	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
+	const range = exportRange(duration, request.range);
+	const length = range.end - range.start;
+	if (length <= 0) throw new ExportError('The range is empty. Set its start (I) before its end (O).');
+	if (format === 'm4a' && !(await canSaveAudio('m4a')))
+		throw new ExportError('This browser can’t make M4A files. Try WAV or MP3.');
+	if (format === 'mp3') await ensureMp3Encoder();
+
+	const started = performance.now();
+	const elapsed = () => (performance.now() - started) / 1000;
+	const { target, finish, discard } = await openTarget(format);
+	const output = new Output({
+		format:
+			format === 'wav'
+				? new WavOutputFormat()
+				: format === 'mp3'
+					? new Mp3OutputFormat()
+					: new Mp4OutputFormat({ fastStart: false }),
+		target
+	});
+	const source = new AudioBufferSource(
+		format === 'wav'
+			? { codec: 'pcm-s16' }
+			: { codec: format === 'mp3' ? 'mp3' : 'aac', bitrate: request.bitrate ?? 192_000 }
+	);
+	output.addAudioTrack(source);
+	const clips = projectAudioClips(project, request.hasAudio);
+	try {
+		await output.start();
+		for (let from = range.start; from < range.end - 1e-6; from += AUDIO_CHUNK) {
+			if (signal?.aborted) throw new DOMException('Saving was cancelled', 'AbortError');
+			const to = Math.min(range.end, from + AUDIO_CHUNK);
+			await source.add(await mixdown(clips, from, to, SAMPLE_RATE));
+			request.onProgress?.({ progress: (to - range.start) / length, elapsed: elapsed() });
+		}
+		await output.finalize();
+		const file = await finish();
+		const name = exportFileName(project.title, format);
+		return { file: new File([file], name, { type: output.format.mimeType }), name, width: 0, height: 0 };
+	} catch (error) {
+		await output.cancel().catch(() => {});
+		await discard();
+		throw error;
+	}
 }

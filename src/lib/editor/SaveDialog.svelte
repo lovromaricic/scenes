@@ -12,8 +12,12 @@
 	import { Button, ChipGroup, Field, IconButton, Slider } from '$lib/ui';
 	import { formatClock } from '$lib/model/time';
 	import {
+		AUDIO_BITRATES,
+		canSaveAudio,
 		chooseFormat,
+		estimateAudioBytes,
 		ExportError,
+		type AudioFormat,
 		type ExportFormat,
 		type ExportResult
 	} from '$lib/export/exporter';
@@ -38,13 +42,21 @@
 	/** What to save: all of it, or the range set with I and O. */
 	let what = $state<'whole' | 'range'>(editor.project.range ? 'range' : 'whole');
 	/** What to save it as. */
-	type SaveAs = 'video' | 'frame';
+	type SaveAs = 'video' | 'audio' | 'frame';
 	let saveAs = $state<SaveAs>('video');
 	/** Per kind: what the button and headings say. */
 	const KINDS: Record<SaveAs, { button: string; saving: string; ready: string }> = {
 		video: { button: 'Save video', saving: 'Saving your video', ready: 'Your video is ready' },
+		audio: { button: 'Save audio', saving: 'Saving the sound', ready: 'Your sound is ready' },
 		frame: { button: 'Save frame', saving: 'Saving the frame', ready: 'Your frame is ready' }
 	};
+	/** Audio only: format and bitrate; M4A only where the browser can encode AAC. */
+	let audioFormat = $state<AudioFormat>('wav');
+	let audioBitrate = $state(192_000);
+	let m4aOk = $state<boolean | null>(null);
+	$effect(() => {
+		void canSaveAudio('m4a').then((ok) => (m4aOk = ok));
+	});
 	const kind = $derived(KINDS[saveAs]);
 	/** Current frame: PNG or JPG, and JPG quality. */
 	let frameFormat = $state<'png' | 'jpg'>('png');
@@ -67,11 +79,19 @@
 	]);
 	const saveAsOptions: { value: SaveAs; label: string; description: string }[] = [
 		{ value: 'video', label: 'Video', description: 'An MP4 video with sound' },
+		{ value: 'audio', label: 'Audio only', description: 'Just the sound: WAV, M4A or MP3' },
 		{ value: 'frame', label: 'Current frame', description: 'The picture at the playhead, as PNG or JPG' }
 	];
 	/** The line under the choices: size, length and about how big the file will be. */
 	const summary = $derived.by(() => {
 		const f = editor.project.format;
+		if (saveAs === 'audio') {
+			return {
+				size: 'Sound · 48 kHz stereo',
+				length: formatLength(length),
+				bytes: formatBytes(estimateAudioBytes(audioFormat, length, audioBitrate))
+			};
+		}
 		if (saveAs === 'frame') {
 			// Rough: PNG pictures of video are about 1.5 bytes a pixel; JPG far less, more with quality.
 			const perPixel = frameFormat === 'png' ? 1.5 : 0.08 + 0.5 * jpgQuality ** 3;
@@ -138,7 +158,9 @@
 			result =
 				saveAs === 'frame'
 					? await editor.saveFrame(frameFormat, jpgQuality)
-					: await editor.saveVideo(preset, onProgress, controller.signal, range);
+					: saveAs === 'audio'
+						? await editor.saveAudio(audioFormat, audioBitrate, onProgress, controller.signal, range)
+						: await editor.saveVideo(preset, onProgress, controller.signal, range);
 			url = URL.createObjectURL(result.file);
 			phase = 'done';
 			download();
@@ -254,6 +276,40 @@
 				{/each}
 			</div>
 		{/if}
+		{#if saveAs === 'audio'}
+			<div class="options">
+				<Field label="Format">
+					<ChipGroup
+						label="Sound format"
+						size="sm"
+						options={[
+							{ value: 'wav', label: 'WAV', description: 'Uncompressed: exact, but big' },
+							{
+								value: 'm4a',
+								label: 'M4A',
+								disabled: m4aOk === false,
+								description: m4aOk === false ? 'This browser can’t make M4A (AAC) files' : 'AAC: small, plays almost everywhere'
+							},
+							{ value: 'mp3', label: 'MP3', description: 'Plays everywhere' }
+						]}
+						bind:value={audioFormat}
+					/>
+				</Field>
+				{#if audioFormat !== 'wav'}
+					<Field label="Bitrate">
+						<ChipGroup
+							label="Bitrate"
+							size="sm"
+							options={AUDIO_BITRATES.map((b) => ({ value: b, label: `${b / 1000} kbps` }))}
+							bind:value={audioBitrate}
+						/>
+					</Field>
+				{/if}
+				{#if m4aOk === false}
+					<p class="hint">This browser can’t make M4A files, so WAV and MP3 are offered.</p>
+				{/if}
+			</div>
+		{/if}
 		{#if saveAs === 'frame'}
 			<div class="options">
 				<Field label="Format">
@@ -321,7 +377,7 @@
 			<div>
 				<p class="file">{result.name}</p>
 				<p class="meta mono">
-					{result.width} × {result.height} · {formatBytes(result.file.size)}
+					{result.width ? `${result.width} × ${result.height} · ` : ""}{formatBytes(result.file.size)}
 				</p>
 			</div>
 		</div>

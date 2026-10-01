@@ -2011,6 +2011,29 @@ playhead sets the keyframe there.
   - JPG at 60% is a real JPEG and smaller than the PNG.
   - The right-click menu, F, and the shortcuts dialog.
 
+### 12. Audio only
+
+- **`exportAudio`** saves just the sound from the same mix as the video export (`projectAudioClips`
+  + `mixdown`, in 2 s chunks): scene sound, layers with sound, music, voiceovers, their volumes,
+  fades and volume points. It respects the range.
+- **Formats** (all through Mediabunny's writers):
+  - **WAV:** always, 16-bit PCM, 48 kHz stereo.
+  - **M4A:** AAC in an MP4 container, only when the browser can encode AAC (`canSaveAudio`).
+    Otherwise the chip is greyed out with a note.
+  - **MP3:** browsers can't encode it, so `@mediabunny/mp3-encoder` (Mediabunny's own extension:
+    the LAME encoder in WebAssembly, from Mediabunny's author) is loaded on first use and
+    registered, unless the browser can do MP3 itself.
+  - M4A and MP3 offer 128, 192 or 320 kbps.
+- **Dialog:** Save as → Audio only with Format and Bitrate, a summary "Sound · 48 kHz stereo ·
+  length · about …", "Save audio", and "Your sound is ready" (no picture size shown).
+- **New dependency:** `@mediabunny/mp3-encoder` (^1.61.0, same version as Mediabunny).
+- **Tests** (`export-audio.test.ts`; a song with a −20 dB dip at 4–5 s, range 2–6 s):
+  - WAV: RIFF, `pcm_s16le`, 48 kHz, 2 channels, 4 s long. The dip is at 2–3 s in the file, and
+    its loudness ratio matches the app's own mix.
+  - M4A at 128 kbps is AAC, 4 s long and under 170 kbps (or the chip is disabled where AAC
+    isn't available).
+  - MP3 at 320 kbps is MP3, 4 s long, above 280 kbps, with the dip.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
