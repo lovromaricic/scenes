@@ -138,6 +138,7 @@ import { Autosaver, emergencyCopy, type SaveStatus } from './autosave';
 import {
 	exportAudio,
 	exportFrame,
+	exportGif,
 	exportVideo,
 	type AudioFormat,
 	type ExportProgress,
@@ -2541,6 +2542,26 @@ export class EditorStore {
 			bounds: (scene) => this.bounds(scene),
 			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null),
 			hasAudio: (id) => !!media[id]?.hasAudio,
+			onProgress,
+			signal
+		});
+	}
+
+	/** An animated GIF or WebP of the video (or its range). */
+	async saveGif(
+		options: { format: 'gif' | 'webp'; width: number; fps: number; loop: boolean; dither: boolean },
+		onProgress: (p: ExportProgress) => void,
+		signal: AbortSignal,
+		range?: ExportRange | null
+	): Promise<ExportResult> {
+		this.player.pause();
+		const media = this.media;
+		return exportGif({
+			project: this.snapshot(),
+			...options,
+			range,
+			bounds: (scene) => this.bounds(scene),
+			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null),
 			onProgress,
 			signal
 		});

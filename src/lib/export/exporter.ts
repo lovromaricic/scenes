@@ -19,6 +19,7 @@ import { placeScenes } from '$lib/model/timeline';
 import type { Project, Scene } from '$lib/model/types';
 import { exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
 import { FrameRenderer } from './renderer';
+import { GifWriter, gifSize, muxAnimatedWebp } from './gif';
 
 /**
  * Saves the project as a video file, frame by frame through the same compositor as the preview.
@@ -382,5 +383,66 @@ export async function exportAudio(request: AudioRequest): Promise<ExportResult> 
 		await output.cancel().catch(() => {});
 		await discard();
 		throw error;
+	}
+}
+
+// ─── GIF and animated WebP ─────────────────────────────────────────────────────────────────
+
+export interface GifRequest {
+	project: Project;
+	/** 'gif', or 'webp' for animated WebP. */
+	format: 'gif' | 'webp';
+	/** Width in pixels (the height keeps the video's shape). */
+	width: number;
+	fps: number;
+	loop: boolean;
+	/** GIF only: Floyd–Steinberg dithering. */
+	dither: boolean;
+	range?: ExportRange | null;
+	bounds: (scene: Scene) => SourceBounds;
+	sourceSize: (mediaId: string) => { width: number; height: number } | null;
+	onProgress?: (p: ExportProgress) => void;
+	signal?: AbortSignal;
+}
+
+/** An animated GIF (or WebP) of the video or its range, drawn like the video export. */
+export async function exportGif(request: GifRequest): Promise<ExportResult> {
+	const { project, signal } = request;
+	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
+	const range = exportRange(duration, request.range);
+	const length = range.end - range.start;
+	if (length <= 0) throw new ExportError('The range is empty. Set its start (I) before its end (O).');
+	const { width, height } = gifSize(project.format, request.width);
+	const renderer = new FrameRenderer({ project, width, height, bounds: request.bounds, sourceSize: request.sourceSize });
+	// The WebGL picture is read back through a 2D canvas.
+	const readback = new OffscreenCanvas(width, height);
+	const ctx = readback.getContext('2d', { willReadFrequently: true })!;
+	const frames = Math.max(1, Math.round(length * request.fps));
+	const started = performance.now();
+	const gif = request.format === 'gif' ? new GifWriter(width, height, request.fps, request.loop, request.dither) : null;
+	const webp: Uint8Array[] = [];
+	try {
+		await renderer.ready();
+		for (let i = 0; i < frames; i++) {
+			if (signal?.aborted) throw new DOMException('Saving was cancelled', 'AbortError');
+			await renderer.render(range.start + i / request.fps);
+			if (gif) {
+				ctx.drawImage(renderer.canvas, 0, 0);
+				gif.add(ctx.getImageData(0, 0, width, height).data);
+			} else {
+				const blob = await renderer.canvas.convertToBlob({ type: 'image/webp', quality: 0.82 });
+				webp.push(new Uint8Array(await blob.arrayBuffer()));
+			}
+			if (i % 3 === 0)
+				request.onProgress?.({ progress: i / frames, elapsed: (performance.now() - started) / 1000 });
+		}
+		const bytes = gif ? gif.finish() : muxAnimatedWebp(webp, width, height, 1000 / request.fps, request.loop);
+		const name = exportFileName(project.title, request.format);
+		const type = request.format === 'gif' ? 'image/gif' : 'image/webp';
+		request.onProgress?.({ progress: 1, elapsed: (performance.now() - started) / 1000 });
+		return { file: new File([bytes as BlobPart], name, { type }), name, width, height };
+	} finally {
+		renderer.dispose();
 	}
 }

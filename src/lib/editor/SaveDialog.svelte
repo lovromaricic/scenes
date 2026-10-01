@@ -9,7 +9,16 @@
 	import X from '@lucide/svelte/icons/x';
 	import Check from '@lucide/svelte/icons/check';
 	import { onMount } from 'svelte';
-	import { Button, ChipGroup, Field, IconButton, Slider } from '$lib/ui';
+	import { Button, ChipGroup, Field, IconButton, Slider, Switch } from '$lib/ui';
+	import {
+		GIF_RATES,
+		GIF_WARN_BYTES,
+		GIF_WARN_SECONDS,
+		GIF_WIDTHS,
+		canMakeWebp,
+		estimateGifBytes,
+		gifSize
+	} from '$lib/export/gif';
 	import { formatClock } from '$lib/model/time';
 	import {
 		AUDIO_BITRATES,
@@ -42,11 +51,12 @@
 	/** What to save: all of it, or the range set with I and O. */
 	let what = $state<'whole' | 'range'>(editor.project.range ? 'range' : 'whole');
 	/** What to save it as. */
-	type SaveAs = 'video' | 'audio' | 'frame';
+	type SaveAs = 'video' | 'gif' | 'audio' | 'frame';
 	let saveAs = $state<SaveAs>('video');
 	/** Per kind: what the button and headings say. */
 	const KINDS: Record<SaveAs, { button: string; saving: string; ready: string }> = {
 		video: { button: 'Save video', saving: 'Saving your video', ready: 'Your video is ready' },
+		gif: { button: 'Save GIF', saving: 'Making your GIF', ready: 'Your GIF is ready' },
 		audio: { button: 'Save audio', saving: 'Saving the sound', ready: 'Your sound is ready' },
 		frame: { button: 'Save frame', saving: 'Saving the frame', ready: 'Your frame is ready' }
 	};
@@ -66,6 +76,22 @@
 	const range = $derived(what === 'range' && editor.project.range ? editor.project.range : null);
 	/** How long what's saved lasts. */
 	const length = $derived(range ? Math.max(0, range.end - range.start) : editor.duration);
+	/** GIF: format (GIF or animated WebP where the browser can make WebP), size, rate, loop, dither. */
+	let gifFormat = $state<'gif' | 'webp'>('gif');
+	let gifWidth = $state(480);
+	let gifFps = $state(15);
+	let gifLoop = $state(true);
+	let gifDither = $state(true);
+	let webpOk = $state<boolean | null>(null);
+	$effect(() => {
+		void canMakeWebp().then((ok) => (webpOk = ok));
+	});
+	const gifDims = $derived(gifSize(editor.project.format, gifWidth));
+	const gifBytes = $derived(
+		estimateGifBytes(gifDims.width, gifDims.height, gifFps, length, gifDither) *
+			(gifFormat === 'webp' ? 0.35 : 1)
+	);
+	const gifHeavy = $derived(length > GIF_WARN_SECONDS || gifBytes > GIF_WARN_BYTES);
 	const whatOptions = $derived([
 		{ value: 'whole' as const, label: 'Whole video', description: formatLength(editor.duration) },
 		{
@@ -79,12 +105,24 @@
 	]);
 	const saveAsOptions: { value: SaveAs; label: string; description: string }[] = [
 		{ value: 'video', label: 'Video', description: 'An MP4 video with sound' },
+		{ value: 'gif', label: 'GIF', description: 'A silent animated picture (or animated WebP)' },
 		{ value: 'audio', label: 'Audio only', description: 'Just the sound: WAV, M4A or MP3' },
-		{ value: 'frame', label: 'Current frame', description: 'The picture at the playhead, as PNG or JPG' }
+		{
+			value: 'frame',
+			label: 'Current frame',
+			description: 'The picture at the playhead, as PNG or JPG'
+		}
 	];
 	/** The line under the choices: size, length and about how big the file will be. */
 	const summary = $derived.by(() => {
 		const f = editor.project.format;
+		if (saveAs === 'gif') {
+			return {
+				size: `${gifDims.width} × ${gifDims.height} · ${gifFps} fps`,
+				length: formatLength(length),
+				bytes: formatBytes(gifBytes)
+			};
+		}
 		if (saveAs === 'audio') {
 			return {
 				size: 'Sound · 48 kHz stereo',
@@ -158,9 +196,28 @@
 			result =
 				saveAs === 'frame'
 					? await editor.saveFrame(frameFormat, jpgQuality)
-					: saveAs === 'audio'
-						? await editor.saveAudio(audioFormat, audioBitrate, onProgress, controller.signal, range)
-						: await editor.saveVideo(preset, onProgress, controller.signal, range);
+					: saveAs === 'gif'
+						? await editor.saveGif(
+								{
+									format: gifFormat,
+									width: gifWidth,
+									fps: gifFps,
+									loop: gifLoop,
+									dither: gifDither
+								},
+								onProgress,
+								controller.signal,
+								range
+							)
+						: saveAs === 'audio'
+							? await editor.saveAudio(
+									audioFormat,
+									audioBitrate,
+									onProgress,
+									controller.signal,
+									range
+								)
+							: await editor.saveVideo(preset, onProgress, controller.signal, range);
 			url = URL.createObjectURL(result.file);
 			phase = 'done';
 			download();
@@ -276,6 +333,78 @@
 				{/each}
 			</div>
 		{/if}
+		{#if saveAs === 'gif'}
+			<div class="options">
+				{#if webpOk}
+					<Field label="Format">
+						<ChipGroup
+							label="Animation format"
+							size="sm"
+							options={[
+								{ value: 'gif', label: 'GIF', description: 'Plays everywhere' },
+								{ value: 'webp', label: 'Animated WebP', description: 'Better quality and smaller' }
+							]}
+							bind:value={gifFormat}
+						/>
+					</Field>
+					{#if gifFormat === 'webp'}
+						<p class="hint">
+							Animated WebP looks better and is smaller, but not every app or site shows it.
+						</p>
+					{/if}
+				{/if}
+				<Field label="Width">
+					<ChipGroup
+						label="GIF width"
+						size="sm"
+						options={[
+							...GIF_WIDTHS.filter((w) => w < editor.project.format.width).map((w) => ({
+								value: w,
+								label: `${w} px`
+							})),
+							{
+								value: editor.project.format.width,
+								label: `Full (${editor.project.format.width} px)`
+							}
+						]}
+						bind:value={gifWidth}
+					/>
+				</Field>
+				<Field label="Frame rate">
+					<ChipGroup
+						label="GIF frame rate"
+						size="sm"
+						options={GIF_RATES.map((r) => ({ value: r, label: `${r} fps` }))}
+						bind:value={gifFps}
+					/>
+				</Field>
+				<Field label="Plays">
+					<ChipGroup
+						label="Loop"
+						size="sm"
+						options={[
+							{ value: 'loop', label: 'Over and over' },
+							{ value: 'once', label: 'Once' }
+						]}
+						value={gifLoop ? 'loop' : 'once'}
+						onchange={(v) => (gifLoop = v === 'loop')}
+					/>
+				</Field>
+				{#if gifFormat === 'gif'}
+					<Switch
+						label="Dithering"
+						hint="Smoother gradients, a slightly bigger file"
+						bind:checked={gifDither}
+					/>
+				{/if}
+				{#if gifHeavy}
+					<p class="note" role="note" data-testid="gif-warning">
+						That’s a long or heavy GIF. A shorter range (I and O) or a smaller size keeps it light —
+						but you can still save it.
+					</p>
+				{/if}
+			</div>
+		{/if}
 		{#if saveAs === 'audio'}
 			<div class="options">
 				<Field label="Format">
@@ -288,7 +417,10 @@
 								value: 'm4a',
 								label: 'M4A',
 								disabled: m4aOk === false,
-								description: m4aOk === false ? 'This browser can’t make M4A (AAC) files' : 'AAC: small, plays almost everywhere'
+								description:
+									m4aOk === false
+										? 'This browser can’t make M4A (AAC) files'
+										: 'AAC: small, plays almost everywhere'
 							},
 							{ value: 'mp3', label: 'MP3', description: 'Plays everywhere' }
 						]}
@@ -377,7 +509,9 @@
 			<div>
 				<p class="file">{result.name}</p>
 				<p class="meta mono">
-					{result.width ? `${result.width} × ${result.height} · ` : ""}{formatBytes(result.file.size)}
+					{result.width ? `${result.width} × ${result.height} · ` : ''}{formatBytes(
+						result.file.size
+					)}
 				</p>
 			</div>
 		</div>
@@ -398,6 +532,9 @@
 <style>
 	.dialog {
 		width: min(560px, calc(100vw - 32px));
+		/* Short windows: the options scroll inside the dialog. */
+		max-height: calc(100dvh - 32px);
+		overflow-y: auto;
 		padding: var(--space-6);
 		border: none;
 		border-radius: var(--radius-card-lg);

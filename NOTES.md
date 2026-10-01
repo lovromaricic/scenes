@@ -2034,6 +2034,45 @@ playhead sets the keyframe there.
     isn't available).
   - MP3 at 320 kbps is MP3, 4 s long, above 280 kbps, with the dip.
 
+### 13. GIF
+
+- **`exportGif`** draws frames with the same `FrameRenderer` at the GIF's size and reads them
+  back through a 2D canvas.
+  - **GIF** (`gif.ts`, using `gifenc`):
+    - Every frame gets its own 256-colour palette (gifenc's PnnQuant quantizer).
+    - Optional Floyd–Steinberg dithering is ours (`ditherToPalette`, with a nearest-colour cache)
+      because gifenc has none.
+    - Loop forever writes the NETSCAPE2.0 block; once leaves it out.
+  - **Animated WebP:** Chrome encodes each frame as a WebP picture (`convertToBlob`, quality
+    0.82). `muxAnimatedWebp` packs them into one RIFF/WEBP file with VP8X (animation flag,
+    canvas size), ANIM (loop count) and one ANMF per frame (duration, no blending).
+    - It's offered only where the browser can encode WebP (`canMakeWebp`; the canvas needs a
+      context first, or the check wrongly says no).
+    - The dialog notes it's better and smaller but not shown everywhere.
+- **Options:**
+  - Width 320, 480 or 640 px (those under the project's width), or Full; the height keeps the
+    shape (`gifSize`).
+  - 10, 15 or 20 fps; plays over and over or once; dithering on or off (GIF only).
+  - The range applies.
+- **Estimate and warning:**
+  - About a third of a byte per pixel per frame (half with dithering; WebP about a third of
+    the GIF).
+  - Over 15 seconds or 20 MB, a gentle note suggests a shorter range or smaller size; saving
+    stays possible.
+- The Save dialog now scrolls inside itself on short windows (GIF has the most options).
+- **New dependency:** `gifenc` (^1.0.3), with type declarations in `src/gifenc.d.ts` (it ships
+  none).
+- **Tests:**
+  - Unit (`gif.test.ts`): sizes, GIF89a with three frames and the loop block (or not),
+    dithering a mid grey into about half white, and the WebP container layout.
+  - E2E (`export-gif.test.ts`):
+    - A 0.5–2.5 s range at 320 px and 10 fps is 320 × 180 with 20 frames; the card is where the
+      video has it at frames 0 and 5 (ffmpeg).
+    - "Once" has no loop block. The whole video at full size and 20 fps shows the warning, and
+      Save stays enabled.
+    - Animated WebP: Chrome's own ImageDecoder reads 20 frames at 320 × 180, with the card
+      halfway at frame 5.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
