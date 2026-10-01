@@ -9,7 +9,7 @@
 	import X from '@lucide/svelte/icons/x';
 	import Check from '@lucide/svelte/icons/check';
 	import { onMount } from 'svelte';
-	import { Button, ChipGroup, Field, IconButton } from '$lib/ui';
+	import { Button, ChipGroup, Field, IconButton, Slider } from '$lib/ui';
 	import { formatClock } from '$lib/model/time';
 	import {
 		chooseFormat,
@@ -38,8 +38,19 @@
 	/** What to save: all of it, or the range set with I and O. */
 	let what = $state<'whole' | 'range'>(editor.project.range ? 'range' : 'whole');
 	/** What to save it as. */
-	type SaveAs = 'video';
+	type SaveAs = 'video' | 'frame';
 	let saveAs = $state<SaveAs>('video');
+	/** Per kind: what the button and headings say. */
+	const KINDS: Record<SaveAs, { button: string; saving: string; ready: string }> = {
+		video: { button: 'Save video', saving: 'Saving your video', ready: 'Your video is ready' },
+		frame: { button: 'Save frame', saving: 'Saving the frame', ready: 'Your frame is ready' }
+	};
+	const kind = $derived(KINDS[saveAs]);
+	/** Current frame: PNG or JPG, and JPG quality. */
+	let frameFormat = $state<'png' | 'jpg'>('png');
+	let jpgQuality = $state(0.9);
+	/** A single frame is at the playhead (the range doesn't apply). */
+	const usesWhat = $derived(saveAs !== 'frame');
 	const range = $derived(what === 'range' && editor.project.range ? editor.project.range : null);
 	/** How long what's saved lasts. */
 	const length = $derived(range ? Math.max(0, range.end - range.start) : editor.duration);
@@ -55,15 +66,26 @@
 		}
 	]);
 	const saveAsOptions: { value: SaveAs; label: string; description: string }[] = [
-		{ value: 'video', label: 'Video', description: 'An MP4 video with sound' }
+		{ value: 'video', label: 'Video', description: 'An MP4 video with sound' },
+		{ value: 'frame', label: 'Current frame', description: 'The picture at the playhead, as PNG or JPG' }
 	];
 	/** The line under the choices: size, length and about how big the file will be. */
 	const summary = $derived.by(() => {
+		const f = editor.project.format;
+		if (saveAs === 'frame') {
+			// Rough: PNG pictures of video are about 1.5 bytes a pixel; JPG far less, more with quality.
+			const perPixel = frameFormat === 'png' ? 1.5 : 0.08 + 0.5 * jpgQuality ** 3;
+			return {
+				size: `${f.width} × ${f.height}`,
+				length: `1 frame at ${formatClock(editor.time)}`,
+				bytes: formatBytes(f.width * f.height * perPixel)
+			};
+		}
 		const p = PRESETS.find((x) => x.id === preset)!;
 		return {
 			size: `${size.width} × ${size.height}`,
 			length: formatLength(length),
-			bytes: formatBytes(estimateBytes(p, editor.project.format, length))
+			bytes: formatBytes(estimateBytes(p, f, length))
 		};
 	});
 	let phase = $state<'choose' | 'saving' | 'done' | 'error'>('choose');
@@ -109,15 +131,14 @@
 		elapsed = 0;
 		controller = new AbortController();
 		try {
-			result = await editor.saveVideo(
-				preset,
-				(p) => {
-					progress = p.progress;
-					elapsed = p.elapsed;
-				},
-				controller.signal,
-				range
-			);
+			const onProgress = (p: { progress: number; elapsed: number }) => {
+				progress = p.progress;
+				elapsed = p.elapsed;
+			};
+			result =
+				saveAs === 'frame'
+					? await editor.saveFrame(frameFormat, jpgQuality)
+					: await editor.saveVideo(preset, onProgress, controller.signal, range);
 			url = URL.createObjectURL(result.file);
 			phase = 'done';
 			download();
@@ -186,11 +207,7 @@
 <dialog bind:this={dialog} class="dialog" aria-labelledby="save-title" {oncancel} {onkeydown}>
 	<header>
 		<h2 id="save-title" class="serif">
-			{phase === 'done'
-				? 'Your video is ready'
-				: phase === 'saving'
-					? 'Saving your video'
-					: 'Save video'}
+			{phase === 'done' ? kind.ready : phase === 'saving' ? kind.saving : 'Save video'}
 		</h2>
 		<IconButton label="Close" icon={X} size="sm" onclick={close} />
 	</header>
@@ -200,9 +217,11 @@
 			“{editor.project.title}”. It’s made right here on your device — nothing is uploaded.
 		</p>
 		<div class="choices">
-			<Field label="What">
-				<ChipGroup label="What" size="sm" options={whatOptions} bind:value={what} />
-			</Field>
+			{#if usesWhat}
+				<Field label="What">
+					<ChipGroup label="What" size="sm" options={whatOptions} bind:value={what} />
+				</Field>
+			{/if}
 			<Field label="Save as">
 				<ChipGroup label="Save as" size="sm" options={saveAsOptions} bind:value={saveAs} />
 			</Field>
@@ -235,10 +254,39 @@
 				{/each}
 			</div>
 		{/if}
+		{#if saveAs === 'frame'}
+			<div class="options">
+				<Field label="Format">
+					<ChipGroup
+						label="Picture format"
+						size="sm"
+						options={[
+							{ value: 'png', label: 'PNG', description: 'Exact colours, bigger file' },
+							{ value: 'jpg', label: 'JPG', description: 'Smaller file' }
+						]}
+						bind:value={frameFormat}
+					/>
+				</Field>
+				{#if frameFormat === 'jpg'}
+					<Field label="Quality">
+						<Slider
+							label="JPG quality"
+							min={0.4}
+							max={1}
+							step={0.01}
+							value={jpgQuality}
+							format={(v) => `${Math.round(v * 100)}%`}
+							oninput={(v) => (jpgQuality = v)}
+						/>
+					</Field>
+				{/if}
+				<p class="hint">The frame at the playhead, at the video’s full size.</p>
+			</div>
+		{/if}
 		<p class="summary mono" data-testid="export-summary">
 			{summary.size} · {summary.length} · about {summary.bytes}
 		</p>
-		{#if format?.fallback}
+		{#if saveAs === 'video' && format?.fallback}
 			<p class="note" role="note">
 				This browser can’t make MP4 files, so your video will be saved as <strong>WebM</strong>. It
 				plays in Chrome, Firefox, VLC and most video apps.
@@ -246,7 +294,7 @@
 		{/if}
 		<footer>
 			<Button variant="ghost" onclick={close}>Not now</Button>
-			<Button variant="accent" icon={Download} onclick={start}>Save video</Button>
+			<Button variant="accent" icon={Download} onclick={start}>{kind.button}</Button>
 		</footer>
 	{:else if phase === 'saving'}
 		<p class="lede">Keep this tab open until it’s finished. Your project stays just as it is.</p>
@@ -321,6 +369,14 @@
 	.lede {
 		color: var(--color-muted);
 		margin-bottom: var(--space-5);
+	}
+	.options {
+		display: grid;
+		gap: var(--space-3);
+	}
+	.hint {
+		font-size: var(--text-sm);
+		color: var(--color-muted);
 	}
 	.choices {
 		display: grid;

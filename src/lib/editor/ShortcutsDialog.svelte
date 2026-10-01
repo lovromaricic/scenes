@@ -36,7 +36,8 @@
 				[['Alt', '←'], 'Move the selected scene earlier (Alt + → later)'],
 				[['Esc'], 'Deselect'],
 				[['I'], 'Start the range at the playhead (O ends it)'],
-				[['Alt', 'X'], 'Clear the range']
+				[['Alt', 'X'], 'Clear the range'],
+				[['F'], 'Save the frame at the playhead as a PNG']
 			]
 		},
 		{

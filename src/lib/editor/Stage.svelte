@@ -5,7 +5,7 @@
 	import Pause from '@lucide/svelte/icons/pause';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import { onMount } from 'svelte';
-	import { Button, IconButton } from '$lib/ui';
+	import { Button, IconButton, Menu, type MenuItem } from '$lib/ui';
 	import { formatRatio } from '$lib/model/format';
 	import { formatClock } from '$lib/model/time';
 	import { useEditor } from '$lib/state/context';
@@ -126,7 +126,34 @@
 			editor.player.detach(canvas);
 		};
 	});
+
+	// ─── Right-click: save this frame ───────────────────────────────────────────────────────
+	let frameMenu = $state<{ x: number; y: number } | null>(null);
+	let frameMenuAnchor = $state<HTMLElement>();
+	function onpreviewcontextmenu(event: MouseEvent) {
+		if (empty || editor.cropping) return;
+		event.preventDefault();
+		frameMenu = { x: event.clientX, y: event.clientY };
+	}
+	const frameMenuItems: MenuItem[] = [
+		{ label: 'Save this frame as PNG', shortcut: 'F', onselect: () => void editor.downloadFrame('png') },
+		{ label: 'Save this frame as JPG', onselect: () => void editor.downloadFrame('jpg') }
+	];
 </script>
+
+{#if frameMenu}
+	<span
+		bind:this={frameMenuAnchor}
+		class="menu-anchor"
+		style:left="{frameMenu.x}px"
+		style:top="{frameMenu.y}px"
+		aria-hidden="true"
+	></span>
+	{#if frameMenuAnchor}
+		<Menu label="Frame" items={frameMenuItems} anchor={frameMenuAnchor} onclose={() => (frameMenu = null)} />
+	{/if}
+{/if}
+
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc deselects from the keyboard) -->
 <section class="stage" aria-label="Preview" onpointerdown={onstagepointerdown}>
@@ -144,6 +171,7 @@
 			{ondragleave}
 			{ondrop}
 			class:drop-hover={dropHover > 0}
+			oncontextmenu={onpreviewcontextmenu}
 			ondblclick={() => {
 				// Double-click the picture to crop the scene under the playhead.
 				if (!editor.cropping && !empty) editor.enterCrop();
@@ -225,6 +253,12 @@
 </section>
 
 <style>
+	.menu-anchor {
+		position: fixed;
+		width: 1px;
+		height: 1px;
+		pointer-events: none;
+	}
 	/* Dropping onto the picture: where the new layer will go. */
 	.drop-target {
 		position: absolute;

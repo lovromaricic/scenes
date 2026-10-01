@@ -1987,6 +1987,30 @@ playhead sets the keyframe there.
   - An experiment with the old storyboard height confirmed the saved video itself hadn't
     changed.
 
+### 11. Current frame
+
+- **`exportFrame`** draws the frame at the playhead with the same `FrameRenderer` as the video
+  export, at the project's own size. It's saved as PNG, or as JPG with a quality from 40% to
+  100%.
+  - At the very end of the video it saves the last frame.
+  - File name: "Title 0-03.20.png" (minutes-seconds, no characters files can't have).
+- **Three ways to save it:**
+  - The Save dialog, Save as → Current frame. It has PNG/JPG and a quality slider for JPG. The
+    What row is hidden (a frame is at the playhead), and the summary says "1280 × 720 · 1 frame
+    at 0:03 · about …".
+  - Right-click on the preview: "Save this frame as PNG / JPG".
+  - **F** (it wasn't used), listed in the shortcuts.
+  - The last two save straight away (`downloadFrame`) with a "Saved …" message.
+- **The dialog** is now table-driven per kind (button, "Saving …" and "… is ready" headings),
+  ready for the next three kinds. Video results keep their container and codecs
+  (`ExportResult.format` is optional now).
+- **Tests** (`export-frame.test.ts`):
+  - PNG from the dialog: no What row, the summary, the file name, a real PNG at 1280 × 720.
+    The card's pixel matches the preview, and the same moment of the saved MP4 matches the
+    PNG (ffmpeg).
+  - JPG at 60% is a real JPEG and smaller than the PNG.
+  - The right-click menu, F, and the shortcuts dialog.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

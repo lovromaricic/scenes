@@ -135,7 +135,14 @@ import type {
 } from '$lib/model/types';
 import { Player } from '$lib/playback/player';
 import { Autosaver, emergencyCopy, type SaveStatus } from './autosave';
-import { exportVideo, type ExportProgress, type ExportRange, type ExportResult } from '$lib/export/exporter';
+import {
+	exportFrame,
+	exportVideo,
+	type ExportProgress,
+	type ExportRange,
+	type ExportResult,
+	type FrameFormat
+} from '$lib/export/exporter';
 import { presetById, type PresetId } from '$lib/export/presets';
 import { newCardScene, newId, newProject, sceneFromMedia } from './project';
 import { nameFromFile } from '$lib/media/kinds';
@@ -2535,6 +2542,39 @@ export class EditorStore {
 			onProgress,
 			signal
 		});
+	}
+
+	/** The frame at the playhead as a PNG or JPG, at the project's size (like the video export). */
+	async saveFrame(format: FrameFormat, quality = 0.9, time = this.time): Promise<ExportResult> {
+		this.player.pause();
+		const media = this.media;
+		return exportFrame({
+			project: this.snapshot(),
+			time,
+			format,
+			quality,
+			bounds: (scene) => this.bounds(scene),
+			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null)
+		});
+	}
+
+	/** Save the frame at the playhead straight away (F, or the preview's menu) and download it. */
+	async downloadFrame(format: FrameFormat = 'png', quality = 0.9): Promise<void> {
+		try {
+			const result = await this.saveFrame(format, quality);
+			const url = URL.createObjectURL(result.file);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = result.name;
+			document.body.append(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 60_000);
+			toasts.show(`Saved ${result.name}`);
+		} catch (error) {
+			console.error(error);
+			toasts.show(error instanceof Error ? error.message : 'Couldn’t save the frame.', 'error');
+		}
 	}
 
 	// ─── Voiceover ──────────────────────────────────────────────────────────────────────────

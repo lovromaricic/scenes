@@ -100,7 +100,8 @@ export interface ExportRequest {
 export interface ExportResult {
 	file: File;
 	name: string;
-	format: ExportFormat;
+	/** Video files: the container and codecs used. */
+	format?: ExportFormat;
 	width: number;
 	height: number;
 }
@@ -235,4 +236,58 @@ export async function exportVideo(request: ExportRequest): Promise<ExportResult>
 	} finally {
 		renderer.dispose();
 	}
+}
+
+// ─── Current frame ─────────────────────────────────────────────────────────────────────────
+
+export type FrameFormat = 'png' | 'jpg';
+
+export interface FrameRequest {
+	project: Project;
+	/** Timeline time of the frame. */
+	time: number;
+	format: FrameFormat;
+	/** JPG quality, 0–1. */
+	quality?: number;
+	bounds: (scene: Scene) => SourceBounds;
+	sourceSize: (mediaId: string) => { width: number; height: number } | null;
+}
+
+/**
+ * One frame as a picture, at the project's own size, drawn exactly as the video export draws that
+ * moment (the same renderer).
+ */
+export async function exportFrame(request: FrameRequest): Promise<ExportResult> {
+	const { project } = request;
+	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving a frame.');
+	const { width, height } = project.format;
+	// The very end of the video shows its last frame.
+	const t = Math.max(0, Math.min(request.time, duration - 1 / project.format.fps));
+	const renderer = new FrameRenderer({ project, width, height, bounds: request.bounds, sourceSize: request.sourceSize });
+	try {
+		await renderer.ready();
+		await renderer.render(t);
+		const blob = await renderer.canvas.convertToBlob(
+			request.format === 'png' ? { type: 'image/png' } : { type: 'image/jpeg', quality: request.quality ?? 0.9 }
+		);
+		const name = frameFileName(project.title, t, request.format);
+		return {
+			file: new File([blob], name, { type: blob.type }),
+			name,
+			width,
+			height
+		};
+	} finally {
+		renderer.dispose();
+	}
+}
+
+/** "Summer trip 0-03.20.png": the title and the moment (no characters files can't have). */
+export function frameFileName(title: string, t: number, format: FrameFormat): string {
+	const base = exportFileName(title, 'mp4').replace(/\.mp4$/, '');
+	const m = Math.floor(t / 60);
+	const s = t - m * 60;
+	const stamp = `${m}-${s.toFixed(2).padStart(5, '0')}`;
+	return `${base} ${stamp}.${format}`;
 }

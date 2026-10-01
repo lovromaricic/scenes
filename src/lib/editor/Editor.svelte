@@ -247,6 +247,14 @@
 				else if (editor.selectedOverlay || editor.selectedText) editor.splitItemAtPlayhead();
 				else editor.splitAtPlayhead();
 				break;
+			case 'f':
+			case 'F':
+				// Save the frame at the playhead as a PNG.
+				if (editor.project.scenes.length) {
+					event.preventDefault();
+					void editor.downloadFrame('png');
+				}
+				break;
 			case 'i':
 			case 'I':
 				event.preventDefault();
