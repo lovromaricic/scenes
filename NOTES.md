@@ -2594,6 +2594,49 @@ was the browser's own text layout, which only approximated the renderer:
 - `keyframes-editing.test.ts` now drags the motion path at a point clear of the toolbar, which
   now stays inside the frame and can cover part of the path.
 
+## The floating toolbar at a fixed spot
+
+The selected object's toolbar (Edit words or Crop, Style, Animate, Remove, and the keyframe
+buttons) no longer follows the object. It replaces the above/below placement from the previous
+fix.
+
+- **Where:** centred at the bottom of the video frame, 16 px in (`toolbarSpot`,
+  `TOOLBAR_MARGIN`).
+  - The frame here is the part in view, so when zoomed in it's the frame cut to the stage.
+  - It stays put while the object is moved, resized, turned or animated, and stays visible during
+    drags (it used to hide).
+- **Top instead:** when the object's on-screen box covers the bottom spot (`toolbarSide`), for
+  example a caption at the bottom, it moves to the same spot at the top.
+  - The box is turned and scaled, with keyframed values.
+  - The side is only decided when nothing is being dragged (`frozen` while moving, resizing or
+    turning), so it switches once, when the drag ends.
+- **Narrow frames:** icons only (with tooltips) when the bar with names is wider than the frame.
+  The keyframe buttons wrap onto a second row if even that's too wide.
+- **One bar:** the actions and the keyframe buttons share one dark background (their own pills'
+  backgrounds and shadows are turned off inside it), with a thin divider between them.
+  - A 1 px border (white at 15%) and a soft two-layer shadow keep it clear on black, white and
+    colourful pictures.
+- **Popovers:** Style and Animate open upwards from the bottom spot, downwards from the top one.
+- **Removed:** `placeToolbar` and the above/below/pinned/edge logic.
+- **Tests:**
+  - Unit: the spot (bottom and top, centred, within the part in view), the side (a caption at the
+    bottom, turned and huge objects, objects off the frame), turned bounds.
+  - E2E (`toolbar-placement.test.ts`):
+    - bottom centre, 16 px in, keyframe buttons inside the bar;
+    - unmoved while dragging words around and after turning and scaling;
+    - a caption at the bottom puts it at the top; dragging onto the bottom spot keeps it there
+      until the drag ends, then it's at the top; 2000 px words: top;
+    - layers (bottom, then top for a card near the bottom), and zoomed to 100% inside the part in
+      view;
+    - 9:16: icons only, bottom centre; names back in 16:9;
+    - the border (1 px, white 15%) and shadow; the edge is lighter than a black card and the bar
+      much darker than a white card;
+    - a busy four-colour video.
+  - `layers-edit.test.ts` now checks the toolbar stays in place while dragging (it used to check
+    that it hid).
+  - `selection.test.ts` moves the first caption up: the toolbar's spot at the bottom covers a
+    caption there, and the test clicks it.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

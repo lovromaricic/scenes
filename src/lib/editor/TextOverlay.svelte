@@ -166,6 +166,9 @@
 		if (d.moved) editor.endGesture('Move words');
 	}
 
+	/** While the words are being turned (the toolbar keeps its place until it ends). */
+	let turning = $state(false);
+
 	/** Turn words with the handle above them; Shift snaps to 15° steps. */
 	function onrotatedown(event: PointerEvent, item: TextItem) {
 		if (event.button !== 0) return;
@@ -179,6 +182,7 @@
 		const r0 = editor.itemValues(item.id)?.rotation ?? 0;
 		const kfId = crypto.randomUUID();
 		let moved = false;
+		turning = true;
 		drags.start(event, {
 			move: (e) => {
 				if (!moved) {
@@ -191,6 +195,7 @@
 				editor.liveItemValues(item.id, { rotation: r }, kfId);
 			},
 			end: () => {
+				turning = false;
 				if (moved) editor.endGesture('Rotate words');
 			}
 		});
@@ -253,7 +258,7 @@
 
 	// Close the Style/Animate popover on Escape or a click anywhere else.
 	function onWindowPointerDown(event: PointerEvent) {
-		if (popover && !(event.target as HTMLElement).closest('.toolbar-anchor')) popover = null;
+		if (popover && !(event.target as HTMLElement).closest('[data-toolbar]')) popover = null;
 	}
 	function onWindowKeydown(event: KeyboardEvent) {
 		if (popover && event.key === 'Escape') {
@@ -337,12 +342,12 @@
 {#each visible as item (item.id)}
 	{@const isSelected = editor.selectedId === item.id}
 	{@const isEditing = editor.editingTextId === item.id}
-	{#if isSelected && !isEditing && !drag && selected}
+	{#if isSelected && !isEditing && selected}
 		{@const b = box(item)}
 		{@const sx = b.values?.scaleX ?? 1}
 		{@const sy = b.values?.scaleY ?? 1}
-		<!-- Inside the video frame (see SelectionToolbar): not cut off with the words at the stage's
-			edges, and not turned with them. -->
+		<!-- At a fixed spot in the video frame (see SelectionToolbar): it stays put while the words
+			are moved, turned or animated. -->
 		<SelectionToolbar
 			bounds={turnedBounds(
 				b.left + b.width / 2,
@@ -353,48 +358,39 @@
 			)}
 			{width}
 			{height}
+			frozen={!!drag || turning}
 		>
-			{#snippet children({ compact, up })}
-				<div class="toolbar-anchor">
-					<div class="toolbar-row">
-						<FloatingToolbar label="Text options" actions={actions(selected)} {compact} />
-						<KeyframeButtons id={selected.id} dark />
+			{#snippet bar({ compact })}
+				<FloatingToolbar label="Text options" actions={actions(selected)} {compact} />
+				<KeyframeButtons id={selected.id} dark />
+			{/snippet}
+			{#snippet panel({ up })}
+				{#if popover === 'style'}
+					<div class="popover" class:up role="dialog" aria-label="Text style">
+						<TextStylePicker
+							compact
+							value={selected.style}
+							onchange={(style) => editor.setTextStyle(selected.id, style)}
+						/>
 					</div>
-					{#if popover === 'style'}
-						<div class="popover" class:up role="dialog" aria-label="Text style">
-							<TextStylePicker
-								compact
-								value={selected.style}
-								onchange={(style) => editor.setTextStyle(selected.id, style)}
-							/>
-						</div>
-					{:else if popover === 'animate'}
-						<div class="popover narrow" class:up role="dialog" aria-label="Animation">
-							<p class="popover-label">How the words appear</p>
-							<ChipGroup
-								label="Animation"
-								size="sm"
-								options={animationOptions}
-								value={selected.animation}
-								onchange={(a: TextAnimation) => editor.setTextAnimation(selected.id, a)}
-							/>
-						</div>
-					{/if}
-				</div>
+				{:else if popover === 'animate'}
+					<div class="popover narrow" class:up role="dialog" aria-label="Animation">
+						<p class="popover-label">How the words appear</p>
+						<ChipGroup
+							label="Animation"
+							size="sm"
+							options={animationOptions}
+							value={selected.animation}
+							onchange={(a: TextAnimation) => editor.setTextAnimation(selected.id, a)}
+						/>
+					</div>
+				{/if}
 			{/snippet}
 		</SelectionToolbar>
 	{/if}
 {/each}
 
 <style>
-	.toolbar-row {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: var(--space-2);
-		align-items: center;
-	}
-
 	.overlay {
 		position: absolute;
 		z-index: 5;
@@ -460,12 +456,6 @@
 	}
 	.hit:focus-visible {
 		box-shadow: var(--focus-ring);
-	}
-	.toolbar-anchor {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
 	}
 	.popover {
 		position: absolute;

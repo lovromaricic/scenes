@@ -80,10 +80,18 @@ test.describe('Editing layers', () => {
 
 		// Move it towards the top left, then back near the middle: it snaps to the centre.
 		let b = (await box(page).boundingBox())!;
+		// (Measured once it has finished appearing.)
+		await expect
+			.poll(() => toolbar(page).evaluate((e) => e.closest('[data-toolbar]')!.getAnimations({ subtree: true }).length))
+			.toBe(0);
+		const bar = (await toolbar(page).boundingBox())!;
 		await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
 		await page.mouse.down();
 		await page.mouse.move(b.x + b.width / 2 - 150, b.y + b.height / 2 - 60, { steps: 6 });
-		await expect(toolbar(page)).toHaveCount(0); // hidden while dragging
+		// The toolbar stays where it is (a fixed spot in the frame) while dragging.
+		const during = (await toolbar(page).boundingBox())!;
+		expect(Math.abs(during.x - bar.x)).toBeLessThan(1);
+		expect(Math.abs(during.y - bar.y)).toBeLessThan(1);
 		await page.mouse.move(preview.x + preview.width / 2 + 3, preview.y + preview.height / 2 + 2, { steps: 8 });
 		await page.mouse.up();
 		let o = await layer(page, id);

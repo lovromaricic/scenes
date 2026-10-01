@@ -130,6 +130,8 @@ test.describe('Selecting and deselecting on the video', () => {
 				__scenes: { project: { texts: { id: string }[] }; setTextPosition(id: string, x: number, y: number): void };
 			}).__scenes;
 			s.setTextPosition(s.project.texts[1].id, 0.5, 0.3);
+			// And the first ones clear of the toolbar's spot at the bottom of the frame.
+			s.setTextPosition(s.project.texts[0].id, 0.5, 0.6);
 		});
 
 		// Clicking the other words selects those instead.

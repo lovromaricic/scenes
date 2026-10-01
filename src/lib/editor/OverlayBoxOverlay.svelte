@@ -276,7 +276,7 @@
 
 	// Close the popover on Escape or a click anywhere else.
 	function onWindowPointerDown(event: PointerEvent) {
-		if (popover && !(event.target as HTMLElement).closest('.layer-toolbar')) popover = null;
+		if (popover && !(event.target as HTMLElement).closest('[data-toolbar]')) popover = null;
 	}
 	function onWindowKeydown(event: KeyboardEvent) {
 		if (popover && event.key === 'Escape') {
@@ -354,30 +354,31 @@
 	{@const o = p.overlay}
 	{@const g = geometry(p)}
 	{@const selected = editor.selectedId === o.id}
-	{#if selected && !dragging && !rotating}
-		<!-- Inside the video frame (see SelectionToolbar), stacked above the words on the video: the
-			toolbar and its popovers must never have words (or other layers) on top of them. -->
+	{#if selected}
+		<!-- At a fixed spot in the video frame (see SelectionToolbar), stacked above the words on
+			the video: the toolbar and its popovers must never have words (or layers) on top. -->
 		<SelectionToolbar
 			bounds={turnedBounds(g.left + g.w / 2, g.top + g.h / 2, g.w, g.h, g.rotation)}
 			{width}
 			{height}
+			frozen={!!dragging || rotating}
 		>
-			{#snippet children({ compact, up })}
+			{#snippet bar({ compact })}
 				<div class="layer-toolbar" data-on-video>
-					<div class="toolbar-row">
-						<FloatingToolbar label="Layer options" actions={actions(o)} {compact} />
-						<KeyframeButtons id={o.id} dark />
-					</div>
-					{#if popover === 'style'}
-						<div class="popover" class:up role="dialog" aria-label="Layer style">
-							<OverlayStyleFields overlay={o} />
-						</div>
-					{:else if popover === 'animate'}
-						<div class="popover" class:up role="dialog" aria-label="Layer animation">
-							<OverlayAnimationFields overlay={o} />
-						</div>
-					{/if}
+					<FloatingToolbar label="Layer options" actions={actions(o)} {compact} />
+					<KeyframeButtons id={o.id} dark />
 				</div>
+			{/snippet}
+			{#snippet panel({ up })}
+				{#if popover === 'style'}
+					<div class="popover" class:up role="dialog" aria-label="Layer style">
+						<OverlayStyleFields overlay={o} />
+					</div>
+				{:else if popover === 'animate'}
+					<div class="popover" class:up role="dialog" aria-label="Layer animation">
+						<OverlayAnimationFields overlay={o} />
+					</div>
+				{/if}
 			{/snippet}
 		</SelectionToolbar>
 	{/if}
@@ -396,13 +397,6 @@
 {/each}
 
 <style>
-	.toolbar-row {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: var(--space-2);
-		align-items: center;
-	}
 
 	.boxes {
 		position: absolute;
@@ -549,10 +543,7 @@
 		pointer-events: none;
 	}
 	.layer-toolbar {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
+		display: contents;
 	}
 	.popover {
 		position: absolute;
