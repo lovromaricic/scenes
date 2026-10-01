@@ -23,6 +23,9 @@
 	import {
 		AUDIO_BITRATES,
 		canSaveAudio,
+		canSaveTransparentWebm,
+		estimateOverlaysBytes,
+		type OverlaysFormat,
 		chooseFormat,
 		estimateAudioBytes,
 		ExportError,
@@ -51,15 +54,30 @@
 	/** What to save: all of it, or the range set with I and O. */
 	let what = $state<'whole' | 'range'>(editor.project.range ? 'range' : 'whole');
 	/** What to save it as. */
-	type SaveAs = 'video' | 'gif' | 'audio' | 'frame';
+	type SaveAs = 'video' | 'gif' | 'audio' | 'frame' | 'overlays';
 	let saveAs = $state<SaveAs>('video');
 	/** Per kind: what the button and headings say. */
 	const KINDS: Record<SaveAs, { button: string; saving: string; ready: string }> = {
 		video: { button: 'Save video', saving: 'Saving your video', ready: 'Your video is ready' },
 		gif: { button: 'Save GIF', saving: 'Making your GIF', ready: 'Your GIF is ready' },
 		audio: { button: 'Save audio', saving: 'Saving the sound', ready: 'Your sound is ready' },
-		frame: { button: 'Save frame', saving: 'Saving the frame', ready: 'Your frame is ready' }
+		frame: { button: 'Save frame', saving: 'Saving the frame', ready: 'Your frame is ready' },
+		overlays: {
+			button: 'Save overlays',
+			saving: 'Saving the overlays',
+			ready: 'Your overlays are ready'
+		}
 	};
+	/** Overlays only: WebM with transparency where the browser can encode it, else PNG frames. */
+	let overlaysFormat = $state<OverlaysFormat>('png-zip');
+	let webmAlphaOk = $state<boolean | null>(null);
+	$effect(() => {
+		const { width, height } = editor.project.format;
+		void canSaveTransparentWebm(width, height).then((ok) => {
+			webmAlphaOk = ok;
+			if (ok) overlaysFormat = 'webm';
+		});
+	});
 	/** Audio only: format and bitrate; M4A only where the browser can encode AAC. */
 	let audioFormat = $state<AudioFormat>('wav');
 	let audioBitrate = $state(192_000);
@@ -111,6 +129,11 @@
 			value: 'frame',
 			label: 'Current frame',
 			description: 'The picture at the playhead, as PNG or JPG'
+		},
+		{
+			value: 'overlays',
+			label: 'Overlays only',
+			description: 'Just the layers and words, on a transparent background'
 		}
 	];
 	/** The line under the choices: size, length and about how big the file will be. */
@@ -121,6 +144,13 @@
 				size: `${gifDims.width} × ${gifDims.height} · ${gifFps} fps`,
 				length: formatLength(length),
 				bytes: formatBytes(gifBytes)
+			};
+		}
+		if (saveAs === 'overlays') {
+			return {
+				size: `${f.width} × ${f.height} · ${f.fps} fps · transparent`,
+				length: formatLength(length),
+				bytes: formatBytes(estimateOverlaysBytes(overlaysFormat, f.width, f.height, f.fps, length))
 			};
 		}
 		if (saveAs === 'audio') {
@@ -183,6 +213,30 @@
 			});
 	});
 
+	/** Save what was chosen, as what was chosen. */
+	function run(
+		onProgress: (p: { progress: number; elapsed: number }) => void,
+		signal: AbortSignal
+	) {
+		switch (saveAs) {
+			case 'frame':
+				return editor.saveFrame(frameFormat, jpgQuality);
+			case 'gif':
+				return editor.saveGif(
+					{ format: gifFormat, width: gifWidth, fps: gifFps, loop: gifLoop, dither: gifDither },
+					onProgress,
+					signal,
+					range
+				);
+			case 'audio':
+				return editor.saveAudio(audioFormat, audioBitrate, onProgress, signal, range);
+			case 'overlays':
+				return editor.saveOverlays(overlaysFormat, onProgress, signal, range);
+			default:
+				return editor.saveVideo(preset, onProgress, signal, range);
+		}
+	}
+
 	async function start() {
 		phase = 'saving';
 		progress = 0;
@@ -193,31 +247,7 @@
 				progress = p.progress;
 				elapsed = p.elapsed;
 			};
-			result =
-				saveAs === 'frame'
-					? await editor.saveFrame(frameFormat, jpgQuality)
-					: saveAs === 'gif'
-						? await editor.saveGif(
-								{
-									format: gifFormat,
-									width: gifWidth,
-									fps: gifFps,
-									loop: gifLoop,
-									dither: gifDither
-								},
-								onProgress,
-								controller.signal,
-								range
-							)
-						: saveAs === 'audio'
-							? await editor.saveAudio(
-									audioFormat,
-									audioBitrate,
-									onProgress,
-									controller.signal,
-									range
-								)
-							: await editor.saveVideo(preset, onProgress, controller.signal, range);
+			result = await run(onProgress, controller.signal);
 			url = URL.createObjectURL(result.file);
 			phase = 'done';
 			download();
@@ -403,6 +433,39 @@
 						but you can still save it.
 					</p>
 				{/if}
+			</div>
+		{/if}
+		{#if saveAs === 'overlays'}
+			<div class="options">
+				<Field label="Format">
+					<ChipGroup
+						label="Overlays format"
+						size="sm"
+						options={[
+							...(webmAlphaOk
+								? [
+										{
+											value: 'webm' as const,
+											label: 'WebM with transparency',
+											description: 'VP9 video with alpha, for other editors'
+										}
+									]
+								: []),
+							{
+								value: 'png-zip' as const,
+								label: 'PNG frames (ZIP)',
+								description: 'One transparent picture per frame'
+							}
+						]}
+						bind:value={overlaysFormat}
+					/>
+				</Field>
+				{#if webmAlphaOk === false}
+					<p class="hint" data-testid="no-alpha-webm">
+						This browser can’t make transparent videos, so the frames are saved as PNG pictures.
+					</p>
+				{/if}
+				<p class="hint">Only the overlay tracks and words, without the scenes or sound.</p>
 			</div>
 		{/if}
 		{#if saveAs === 'audio'}

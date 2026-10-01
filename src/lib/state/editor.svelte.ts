@@ -139,7 +139,9 @@ import {
 	exportAudio,
 	exportFrame,
 	exportGif,
+	exportOverlays,
 	exportVideo,
+	type OverlaysFormat,
 	type AudioFormat,
 	type ExportProgress,
 	type ExportRange,
@@ -2559,6 +2561,26 @@ export class EditorStore {
 		return exportGif({
 			project: this.snapshot(),
 			...options,
+			range,
+			bounds: (scene) => this.bounds(scene),
+			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null),
+			onProgress,
+			signal
+		});
+	}
+
+	/** Only the overlay tracks and words on a transparent background (WebM with alpha, or PNGs). */
+	async saveOverlays(
+		format: OverlaysFormat,
+		onProgress: (p: ExportProgress) => void,
+		signal: AbortSignal,
+		range?: ExportRange | null
+	): Promise<ExportResult> {
+		this.player.pause();
+		const media = this.media;
+		return exportOverlays({
+			project: this.snapshot(),
+			format,
 			range,
 			bounds: (scene) => this.bounds(scene),
 			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null),

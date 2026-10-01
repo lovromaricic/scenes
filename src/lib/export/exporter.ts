@@ -446,3 +446,127 @@ export async function exportGif(request: GifRequest): Promise<ExportResult> {
 		renderer.dispose();
 	}
 }
+
+// ─── Overlays only (transparent) ───────────────────────────────────────────────────────────
+
+export type OverlaysFormat = 'webm' | 'png-zip';
+
+export interface OverlaysRequest {
+	project: Project;
+	format: OverlaysFormat;
+	range?: ExportRange | null;
+	bounds: (scene: Scene) => SourceBounds;
+	sourceSize: (mediaId: string) => { width: number; height: number } | null;
+	onProgress?: (p: ExportProgress) => void;
+	signal?: AbortSignal;
+}
+
+/** Bitrate for transparent WebM: generous, since the overlays are what matters. */
+const OVERLAY_BITS_PER_PIXEL = 0.12;
+
+/**
+ * Whether this browser can encode VP9 with its transparency (WebM with alpha). Checked the way
+ * WebCodecs asks for it: `VideoEncoder.isConfigSupported` with `alpha: 'keep'`.
+ */
+export async function canSaveTransparentWebm(width: number, height: number): Promise<boolean> {
+	if (typeof VideoEncoder === 'undefined') return false;
+	try {
+		const { supported } = await VideoEncoder.isConfigSupported({
+			codec: 'vp09.00.10.08',
+			width,
+			height,
+			bitrate: Math.round(width * height * 30 * OVERLAY_BITS_PER_PIXEL),
+			alpha: 'keep'
+		});
+		return !!supported;
+	} catch {
+		return false;
+	}
+}
+
+/** Rough size in bytes of overlays saved for `seconds`. */
+export function estimateOverlaysBytes(format: OverlaysFormat, width: number, height: number, fps: number, seconds: number): number {
+	const frames = Math.max(1, Math.round(seconds * fps));
+	return format === 'webm'
+		? (width * height * fps * OVERLAY_BITS_PER_PIXEL * seconds) / 8
+		: frames * width * height * 0.25;
+}
+
+/**
+ * Only the overlay tracks and words, on a transparent background, at the project's size and frame
+ * rate: a WebM (VP9 with alpha) to put over other footage, or a ZIP of PNG frames.
+ */
+export async function exportOverlays(request: OverlaysRequest): Promise<ExportResult> {
+	const { project, format, signal } = request;
+	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
+	const range = exportRange(duration, request.range);
+	const length = range.end - range.start;
+	if (length <= 0) throw new ExportError('The range is empty. Set its start (I) before its end (O).');
+	const { width, height, fps } = project.format;
+	if (format === 'webm' && !(await canSaveTransparentWebm(width, height)))
+		throw new ExportError('This browser can’t make transparent videos. Save PNG frames instead.');
+	const renderer = new FrameRenderer({
+		project,
+		width,
+		height,
+		bounds: request.bounds,
+		sourceSize: request.sourceSize,
+		overlaysOnly: true
+	});
+	const frames = Math.max(1, Math.round(length * fps));
+	const started = performance.now();
+	const progress = (i: number) =>
+		request.onProgress?.({ progress: i / frames, elapsed: (performance.now() - started) / 1000 });
+	const abort = () => {
+		if (signal?.aborted) throw new DOMException('Saving was cancelled', 'AbortError');
+	};
+	const base = exportFileName(project.title, 'x').replace(/\.x$/, '');
+	try {
+		await renderer.ready();
+		if (format === 'png-zip') {
+			const { ZipWriter, BlobWriter, BlobReader } = await import('@zip.js/zip.js');
+			const zip = new ZipWriter(new BlobWriter('application/zip'));
+			const digits = String(frames).length;
+			for (let i = 0; i < frames; i++) {
+				abort();
+				await renderer.render(range.start + i / fps);
+				const png = await renderer.canvas.convertToBlob({ type: 'image/png' });
+				// PNGs are compressed already: stored, not deflated again.
+				await zip.add(`frame_${String(i + 1).padStart(Math.max(5, digits), '0')}.png`, new BlobReader(png), { level: 0 });
+				if (i % 3 === 0) progress(i);
+			}
+			const blob = await zip.close();
+			const name = `${base} overlays.zip`;
+			return { file: new File([blob], name, { type: 'application/zip' }), name, width, height };
+		}
+		const { target, finish, discard } = await openTarget('webm');
+		const output = new Output({ format: new WebMOutputFormat(), target });
+		const source = new CanvasSource(renderer.canvas, {
+			codec: 'vp9',
+			bitrate: Math.round(width * height * fps * OVERLAY_BITS_PER_PIXEL),
+			keyFrameInterval: 2,
+			alpha: 'keep'
+		});
+		output.addVideoTrack(source, { frameRate: fps });
+		try {
+			await output.start();
+			for (let i = 0; i < frames; i++) {
+				abort();
+				await renderer.render(range.start + i / fps);
+				await source.add(i / fps, 1 / fps);
+				if (i % 5 === 0) progress(i);
+			}
+			await output.finalize();
+		} catch (error) {
+			await output.cancel().catch(() => {});
+			await discard();
+			throw error;
+		}
+		const file = await finish();
+		const name = `${base} overlays.webm`;
+		return { file: new File([file], name, { type: 'video/webm' }), name, width, height };
+	} finally {
+		renderer.dispose();
+	}
+}

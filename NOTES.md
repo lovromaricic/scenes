@@ -2073,6 +2073,32 @@ playhead sets the keyframe there.
     - Animated WebP: Chrome's own ImageDecoder reads 20 frames at 320 × 180, with the card
       halfway at frame 5.
 
+### 14. Overlays only (transparent)
+
+- **`exportOverlays`** draws only the overlay tracks and words (`FrameRenderer` in `overlaysOnly`
+  mode, so no scenes) on a transparent compositor, at the project's size and frame rate. The
+  range applies, and there's no sound.
+- **WebM with transparency:** VP9 with `alpha: 'keep'` in WebM (Mediabunny).
+  - It's offered only when `VideoEncoder.isConfigSupported({ codec: 'vp09.00.10.08', …,
+    alpha: 'keep' })` says yes (`canSaveTransparentWebm`) and is then the default.
+  - Otherwise the WebM option is hidden, with one line: "This browser can't make transparent
+    videos, so the frames are saved as PNG pictures."
+- **ZIP of PNG frames:** always offered. `frame_00001.png` and so on, one transparent PNG per
+  frame, stored without recompressing (zip.js).
+- **Dialog:** "Overlays only", with the format and a summary "1280 × 720 · 30 fps ·
+  transparent · length · about …".
+- **The Save dialog** now picks what to run with a plain `switch` (`run()`) instead of a chain
+  of conditions.
+- **Tests** (`export-overlays.test.ts`):
+  - ZIP: 30 frames for a 1 s range; a real PNG; fully transparent around the card and opaque
+    blue on it.
+  - WebM: where supported, a single VP9 stream with `alpha_mode` 1, about 1 s long, with
+    transparent corners and an opaque card (decoded with libvpx). Where not, the option is
+    hidden and the explanation shows.
+- **Not verified here:** in this test Chrome (153), `isConfigSupported` refuses alpha for every
+  VP9 and VP8 configuration. So only the "not supported" path ran; the WebM-with-alpha path
+  is untested on a real encoder.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
