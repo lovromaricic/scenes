@@ -8,8 +8,20 @@
 	import { Button, ChipGroup, Field } from '$lib/ui';
 	import { CROP_RATIOS, setSide, sidesOf, type CropRatio, type Sides } from '$lib/model/crop';
 	import { useEditor } from '$lib/state/context';
+	import { mediaNoun } from '$lib/model/labels';
 
 	const editor = useEditor();
+
+	/** The scene or layer being cropped (for "video" or "picture" in the words). */
+	const target = $derived.by(() => {
+		const id = editor.cropping?.sceneId;
+		if (!id) return null;
+		return (
+			editor.project.scenes.find((s) => s.id === id) ??
+			editor.project.overlays.find((o) => o.id === id) ??
+			null
+		);
+	});
 
 	// What's being cropped: a scene or a layer (its source picture's size).
 	const source = $derived(editor.croppingSource);
@@ -34,7 +46,10 @@
 {#if source && draft && sides}
 	<div class="head">
 		<h2 class="serif title">Crop</h2>
-		<p class="subtitle">Drag the box on the preview, or type how much to cut from each side.</p>
+		<p class="subtitle">
+			Drag the box on the {target ? mediaNoun(target) : 'picture'}, or type how much to cut from
+			each side.
+		</p>
 	</div>
 
 	<dl class="sizes">

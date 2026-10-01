@@ -59,6 +59,7 @@ import {
 	type AnyItem
 } from '$lib/model/items';
 import { reconcileTimeline } from '$lib/model/ripple';
+import { mediaNoun } from '$lib/model/labels';
 import { TEXT_TRACK_NAME, accepts, fits, freeTrack, type ItemKind, type Track } from '$lib/model/tracks';
 import { MicrophoneError, VoiceRecorder } from '$lib/media/recorder';
 import { computePeaks, PEAKS_PER_SECOND } from '$lib/media/waveform';
@@ -811,7 +812,7 @@ export class EditorStore {
 		const scene = this.project.scenes.find((s) => s.id === sceneId);
 		if (!scene) return;
 		const crop = scene.crop ? { ...scene.crop } : undefined;
-		this.edit('Crop for every scene from this clip', (p) => ({
+		this.edit(`Crop for every scene from this ${mediaNoun(scene)}`, (p) => ({
 			...p,
 			scenes: p.scenes.map((s) => (s.mediaId === scene.mediaId ? { ...s, crop } : s))
 		}));
@@ -845,7 +846,7 @@ export class EditorStore {
 	}
 
 	setSceneVolume(id: string, volume: number): void {
-		this.updateScene('Clip sound', id, (s) => ({ ...s, volume }), `volume:${id}`);
+		this.updateScene('Video sound', id, (s) => ({ ...s, volume }), `volume:${id}`);
 	}
 
 	/** Finish dragging a card edge. `delta` is in timeline seconds. */

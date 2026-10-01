@@ -114,9 +114,9 @@
 				</Field>
 
 				{#if scene.kind === 'video' && editor.media[scene.mediaId]?.hasAudio}
-					<Field label="Clip sound">
+					<Field label="Video sound">
 						<Slider
-							label="Clip sound volume"
+							label="Video sound volume"
 							value={scene.volume}
 							oninput={(v) => editor.setSceneVolume(scene.id, v)}
 						/>

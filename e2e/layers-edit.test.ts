@@ -193,7 +193,7 @@ test.describe('Editing layers', () => {
 		// Sound: off by default; on, with a volume.
 		expect(o.sound.on).toBe(false);
 		await expect(s.getByRole('slider', { name: 'Layer volume' })).toHaveCount(0);
-		await s.getByRole('switch', { name: /Play the clip’s sound/ }).click();
+		await s.getByRole('switch', { name: /Play the video’s sound/ }).click();
 		await s.getByRole('slider', { name: 'Layer volume' }).fill('0.4');
 		expect((await layer(page, id)).sound).toEqual({ on: true, volume: 0.4 });
 

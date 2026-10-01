@@ -189,7 +189,7 @@
 		<section aria-label="Sound">
 			<h3 class="section-title">Sound</h3>
 			<Switch
-				label="Play the clip’s sound"
+				label="Play the video’s sound"
 				checked={o.sound.on}
 				onchange={(on) => editor.setOverlaySound(o.id, { ...o.sound, on })}
 			/>

@@ -279,7 +279,7 @@ test.describe('Crop', () => {
 		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
 		expect(await sceneCrop(page, 1)).toBeNull();
 		await page.getByRole('button', { name: /^Scene 1, / }).click();
-		await page.getByRole('button', { name: 'Apply crop to all scenes from this clip' }).click();
+		await page.getByRole('button', { name: 'Apply crop to all scenes from this video' }).click();
 		expect(await sceneCrop(page, 1)).toEqual({ x: 0, y: 80, w: 1280, h: 720 });
 
 		await page.reload();

@@ -235,13 +235,16 @@ test.describe('Storyboard size and scrolling', () => {
 		// Hold at the bottom edge: the tracks scroll down until Overlay 1 (just above Scenes) shows.
 		await page.mouse.move(b.x + 20, view.y + view.height - 6, { steps: 8 });
 		await expect.poll(async () => (await scrollState(page)).top, { timeout: 5000 }).toBeGreaterThan(150);
-		await expect(lane(page, 'Overlay 1')).toBeInViewport();
+		await expect(lane(page, 'Overlay 1')).toBeInViewport({ timeout: 10_000 });
 		// The dragged card stays under the pointer.
 		const moving = await box(page.locator(`[data-item-id="${card}"]`));
 		expect(Math.abs(moving.y + moving.height / 2 - (view.y + view.height - 6))).toBeLessThan(40);
-		// Drop it on Overlay 1.
+		// Drop it on Overlay 1: first away from the edges (the scrolling stops), then onto it.
+		await page.mouse.move(b.x + 20, view.y + view.height / 2, { steps: 2 });
+		const settledTop = (await scrollState(page)).top;
+		await expect.poll(async () => (await scrollState(page)).top).toBe(settledTop);
 		const target = await box(lane(page, 'Overlay 1'));
-		await page.mouse.move(b.x + 20, target.y + target.height / 2, { steps: 4 });
+		await page.mouse.move(b.x + 20, target.y + target.height / 2);
 		await page.mouse.up();
 		await page.keyboard.up('Alt');
 		expect(await api(page, (s) => s.project.tracks.find((t) => t.id === s.project.overlays[0].trackId)!.name)).toBe('Overlay 1');

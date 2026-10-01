@@ -19,12 +19,16 @@
 	import type { Scene } from '$lib/model/types';
 	import { croppedSize } from '$lib/model/crop';
 	import { useEditor } from '$lib/state/context';
+	import { MediaNoun, mediaNoun } from '$lib/model/labels';
 
 	let { scene }: { scene: Scene } = $props();
 
 	const editor = useEditor();
 
 	const frame = $derived(scene.frame ?? DEFAULT_FRAME);
+	/** "video" or "picture", after what the scene shows. */
+	const noun = $derived(mediaNoun(scene));
+	const Noun = $derived(MediaNoun(scene));
 	const info = $derived(editor.media[scene.mediaId]);
 	const out = $derived(editor.project.format);
 	const size = $derived(info ? croppedSize(scene.crop, info) : null);
@@ -49,11 +53,11 @@
 		editor.project.scenes.filter((s) => s.mediaId === scene.mediaId).length
 	);
 
-	const modes: { value: FrameMode; label: string; description: string }[] = [
+	const modes: { value: FrameMode; label: string; description: string }[] = $derived([
 		{ value: 'fill', label: 'Fill', description: 'Covers the whole frame; the edges are cropped' },
-		{ value: 'fit', label: 'Fit', description: 'Shows the whole picture, with bars around it' },
+		{ value: 'fit', label: 'Fit', description: `Shows the whole ${noun}, with bars around it` },
 		{ value: 'custom', label: 'Custom', description: 'Move and zoom it yourself on the preview' }
-	];
+	]);
 	const barOptions: { value: FrameBars; label: string }[] = [
 		{ value: 'black', label: 'Black' },
 		{ value: 'white', label: 'White' },
@@ -74,7 +78,7 @@
 
 <div class="crop-row">
 	<div class="crop-text">
-		<span class="crop-label">Picture</span>
+		<span class="crop-label">{Noun}</span>
 		<span class="mono crop-size" data-testid="crop-summary">{cropSummary}</span>
 	</div>
 	<Button
@@ -93,7 +97,7 @@
 {#if scene.crop && sameClip > 1}
 	<button type="button" class="link" onclick={() => editor.applyCropToClip(scene.id)}>
 		<Copy size={13} strokeWidth={2} aria-hidden="true" />
-		Apply crop to all scenes from this clip
+		Apply crop to all scenes from this {noun}
 	</button>
 {/if}
 
@@ -102,7 +106,7 @@
 </Field>
 
 {#if frame.mode !== 'fill'}
-	<Field label="Around the picture">
+	<Field label="Around the {noun}">
 		<ChipGroup
 			label="Bars"
 			size="sm"
@@ -125,7 +129,7 @@
 			oninput={(zoom) => editor.setSceneFrame(scene.id, { ...frame, zoom }, `zoom:${scene.id}`)}
 		/>
 	</Field>
-	<p class="tip">Drag the picture on the preview to move it. Scroll or pinch to zoom.</p>
+	<p class="tip">Drag the {noun} on the preview to move it. Scroll or pinch to zoom.</p>
 	<div class="row">
 		<Button
 			variant="soft"

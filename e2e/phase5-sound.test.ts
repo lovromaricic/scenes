@@ -73,7 +73,7 @@ test.describe('Phase 5: sound', () => {
 		const musicVolume = page.getByRole('slider', { name: 'Music volume' });
 		await musicVolume.fill('0.3');
 		await page.getByRole('button', { name: /^Scene 1, Red/ }).click();
-		await page.getByRole('slider', { name: 'Clip sound volume' }).fill('0.5');
+		await page.getByRole('slider', { name: 'Video sound volume' }).fill('0.5');
 		await expect.poll(async () => (await sounds(page))[0].volume).toBeCloseTo(0.3);
 
 		// In the middle of scene 1, both tones are there at the chosen balance (same source level).
@@ -114,7 +114,7 @@ test.describe('Phase 5: sound', () => {
 		// Mute the clips so only the voice is left in the mix.
 		for (const n of [1, 2, 3]) {
 			await page.getByRole('button', { name: new RegExp(`^Scene ${n}, `) }).click();
-			await page.getByRole('slider', { name: 'Clip sound volume' }).fill('0');
+			await page.getByRole('slider', { name: 'Video sound volume' }).fill('0');
 		}
 
 		await seekTo(page, 4);

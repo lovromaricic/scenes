@@ -1458,6 +1458,44 @@ Overlays aren't linked to scenes any more.
     check was replaced by the tests above.
   - Totals: 251 unit and 123 Playwright tests pass.
 
+## Labels that match the media
+
+- **One helper:** `model/labels.ts`. `mediaNoun(item)` gives "video" for scenes or layers made
+  from a video clip and "picture" for photos and cards. `MediaNoun(item)` gives the capitalised
+  form.
+- **Changed to follow the scene's or layer's type:**
+  - Scene settings: the "Picture" heading above the size and Crop becomes "Video" or "Picture",
+    and "Around the picture" becomes "Around the video" or "Around the picture".
+  - Scene settings: the Fit chip's description ("Shows the whole video/picture, with bars around
+    it"), the Custom tip ("Drag the video/picture on the preview…") and "Apply crop to all scenes
+    from this video/picture" (it said "clip"), with its undo label.
+  - Scene settings: "Clip sound" becomes "Video sound" (it only shows for video scenes).
+  - The reframe handle on the preview: "drag to move the video/picture".
+  - Crop mode, for scenes and layers: "Drag the box on the video/picture…".
+  - Layers: "Play the clip’s sound" becomes "Play the video’s sound" (only video layers have
+    it).
+- **Left as they are:**
+  - Wording about the whole video's frame or the preview: "Same shape as the video", "Covers
+    the whole frame", "Drop on the picture…", "drag onto the storyboard or the picture" in Your
+    media, and "Layer … on the video".
+  - Messages about files or imports, where the type isn't known yet or both are meant ("Add a
+    photo or video first…", "Adding a clip", file errors).
+  - The layer subtitle already said Video / Photo / Card.
+- **Tests:**
+  - Unit: `labels.test.ts`.
+  - E2E (`media-labels.test.ts`), for a video scene and a photo scene: the heading, "Around
+    the …", the Fit description, the sound slider (video only), the Custom tip, the reframe
+    handle, the crop-mode subtitle, and "Same shape as the video" left unchanged. For video and
+    photo layers: the sound switch (video only) and the crop wording.
+  - Existing tests were updated for the new names ("Video sound volume", "Play the video’s
+    sound", "…from this video").
+- **Test stability:**
+  - The auto-scroll test from the last change failed once under full-suite load. Its drop target
+    sat in the bottom auto-scroll zone, so the view kept moving while the pointer travelled.
+  - The test now parks the pointer mid-view, waits for scrolling to stop, re-measures, then
+    drops. It passed 24/24 in parallel and in a clean full run.
+  - The voiceover test (`phase5-sound`) flaked once more and passes on its own (6/6).
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
