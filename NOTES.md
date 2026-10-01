@@ -1887,6 +1887,37 @@ playhead sets the keyframe there.
     - Video scenes and sound-on video layers have the line, and a point silences a scene's own
       sound.
 
+### 8. Everywhere
+
+- **One set of functions** gives keyframed values and volume, used by the preview, Watch (the
+  same player), thumbnails and export: `itemValuesAt` / `sceneFrameAt` (in `overlayRect`,
+  `textDraw`, `layerInput`) and `clipGainAt`.
+- **The home picture** now shows the video's very first moment, layers included with their
+  keyframes there (without their entrance). It used to draw layers a moment after they appeared,
+  which no longer matches once they move.
+- **Undo and autosave:** every keyframe, easing and volume-point change goes through `edit()`,
+  so each is an undo step and autosaved. Collapsed tracks stay the exception (section on
+  slimmer tracks).
+- **`.scenes` files: format 3** (`FILE_FORMAT_VERSION`).
+  - New fields: `keyframes` and `volumePoints` on layers, words, scenes and sounds, plus scale,
+    rotation and opacity on layers and words.
+  - The 2 → 3 step changes nothing (there were no keyframes).
+  - `migrateProject` now runs `tidyKeyframes` for both files and stored projects: keyframe lists
+    are sorted; entries without a time or values are dropped; an easing this version doesn't
+    know becomes Linear; empty lists are removed. A damaged or hand-edited file can't break the
+    editor.
+  - Older apps refuse format 3 files ("made with a newer version") rather than open them and
+    lose the animation.
+- **Tests:**
+  - Unit (`zip.test.ts`): keyframes and volume points round-trip; out-of-order, broken and
+    unknown-easing keyframes are tidied; the manifest says format 3.
+  - E2E (`keyframes-everywhere.test.ts`):
+    - Watch shows the moving card where the preview does.
+    - The home picture has the card at its 0 s keyframe position.
+    - Diamond, undo and redo; a rotation keyframe, saved and still exact after a reload.
+  - The saved MP4 matching the preview for keyframes and for volume is checked in sections 1
+    and 7.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

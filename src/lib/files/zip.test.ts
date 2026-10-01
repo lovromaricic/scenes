@@ -59,7 +59,7 @@ describe('project files', () => {
 		expect(progress.every((p, i) => i === 0 || p >= progress[i - 1])).toBe(true);
 
 		const opened = await readProjectFile(file);
-		expect(opened.manifest).toMatchObject({ app: 'Scenes', formatVersion: 2, name: 'Summer trip' });
+		expect(opened.manifest).toMatchObject({ app: 'Scenes', formatVersion: 3, name: 'Summer trip' });
 		expect(opened.data.project).toEqual(input.project);
 		expect(opened.data.view).toEqual({ time: 1.5, selectedId: null });
 		expect(opened.data.media[0]).toMatchObject({ id: 'm1', path: 'media/m1.mp4', thumbnailPath: 'thumbnails/m1.jpg' });
@@ -157,5 +157,39 @@ describe('project files', () => {
 		expect(projectFileName('Summer trip')).toBe('Summer trip.scenes');
 		expect(projectFileName('a/b: c?')).toBe('a b c.scenes');
 		expect(projectFileName('  ')).toBe('Untitled video.scenes');
+	});
+
+	it('keeps keyframes and volume points (format 3), sorted and well formed', async () => {
+		const input = bundle();
+		const lin = { kind: 'bezier' as const, x1: 0, y1: 0, x2: 1, y2: 1 };
+		const values = { x: 0.5, y: 0.5, scaleX: 2, scaleY: 2, rotation: 45, opacity: 1 };
+		input.project = {
+			...input.project,
+			sounds: [
+				{
+					id: 's1', mediaId: 'm1', name: 'song', start: 0, sourceStart: 0, duration: 2, volume: 1, kind: 'music',
+					fadeIn: 0, fadeOut: 0, trackId: input.project.tracks.find((t) => t.kind === 'audio')!.id,
+					volumePoints: [{ id: 'v1', time: 1, values: { gain: 0.5 }, easing: { kind: 'hold' } }]
+				}
+			],
+			texts: [
+				{
+					id: 't1', trackId: input.project.tracks[0].id, text: 'Hi', start: 0, duration: 2, x: 0.5, y: 0.5,
+					style: 'title', animation: 'fade', scaleX: 1.5, rotation: 10,
+					// Out of order, one broken, one with an easing this version doesn't know.
+					keyframes: [
+						{ id: 'b', time: 1.5, values, easing: { kind: 'wobble' } as never },
+						{ id: 'a', time: 0.5, values, easing: lin },
+						{ id: 'x', time: Number.NaN, values, easing: lin }
+					]
+				}
+			]
+		};
+		const opened = await readProjectFile(await toBlob(input));
+		const t = opened.data.project.texts[0];
+		expect(t.keyframes!.map((k) => k.id)).toEqual(['a', 'b']);
+		expect(t.keyframes![1].easing).toEqual(lin);
+		expect(t).toMatchObject({ scaleX: 1.5, rotation: 10 });
+		expect(opened.data.project.sounds[0].volumePoints).toEqual([{ id: 'v1', time: 1, values: { gain: 0.5 }, easing: { kind: 'hold' } }]);
 	});
 });

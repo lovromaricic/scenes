@@ -20,8 +20,10 @@ export const APP_NAME = 'Scenes';
  * 1: the first version.
  * 2: tracks. Layers rows, the Words lane and Sound rows became tracks, and overlays have a fixed
  *    start instead of a link to a scene (see migrateProjectJson).
+ * 3: keyframes and volume points (`keyframes`, `volumePoints`, scale and rotation on layers and
+ *    words). Older apps can't show them, so they refuse the file rather than lose the animation.
  */
-export const FILE_FORMAT_VERSION = 2;
+export const FILE_FORMAT_VERSION = 3;
 export const FILE_EXTENSION = '.scenes';
 export const FILE_MIME = 'application/x-scenes-project';
 export const FILE_TYPES = [{ description: 'Scenes project', accept: { [FILE_MIME]: [FILE_EXTENSION] } }];
@@ -114,6 +116,8 @@ export function migrateProjectJson(value: unknown, version: number): ProjectJson
 	// `migrateProject` does it (the same step brings projects stored in the browser up to date);
 	// a version 1 file never has tracks, so they're always rebuilt from its rows.
 	if (version < 2) delete (project as { tracks?: unknown }).tracks;
+	// Version 2 → 3 (keyframes): nothing to change (there are none yet); `migrateProject` keeps
+	// any keyframes sorted and well formed, so a hand-edited or damaged list can't break the app.
 	return {
 		project: migrateProject(project),
 		view: data.view,

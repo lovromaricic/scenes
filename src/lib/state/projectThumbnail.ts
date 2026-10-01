@@ -93,11 +93,12 @@ async function drawLayers(
 			image = await createImageBitmap(blob);
 			size = info;
 		}
-		// Fully shown (no entrance), as it is once it has appeared.
+		// Fully shown (no entrance) at the very start, where its keyframes have it.
 		const d = overlayDraw(
 			{ image: (image ?? new OffscreenCanvas(1, 1)) as never, width: size.width, height: size.height, exact: true } as never,
 			{ ...p, overlay: { ...o, enter: 'none' } },
-			p.start + Math.min(1, o.duration / 2),
+			// The video's first moment (keyframes there), without the entrance.
+			Math.max(0, p.start),
 			project.mood,
 			w,
 			h,

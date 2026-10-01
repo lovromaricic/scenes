@@ -426,3 +426,30 @@ export function splitKeyframeList<V extends object>(
 		[{ id: newId(), time: 0, values, easing: right }, ...after.map(shift)]
 	];
 }
+
+// ─── Tidying (projects and files) ────────────────────────────────────────────────────────
+
+/**
+ * Keyframes as stored, made safe to use: sorted by time, without ones that are missing their time
+ * or values, without an easing this version doesn't know (they become Linear), and no list at
+ * all when it's empty. Used when projects and `.scenes` files are opened.
+ */
+export function tidyKeyframes<V extends object>(list: unknown): Keyframe<V>[] | undefined {
+	if (!Array.isArray(list)) return undefined;
+	const ok = list
+		.filter(
+			(k): k is Keyframe<V> =>
+				!!k && typeof k.id === 'string' && Number.isFinite(k.time) && !!k.values && typeof k.values === 'object'
+		)
+		.map((k) => {
+			const e = k.easing as Easing | undefined;
+			const known =
+				e &&
+				(e.kind === 'hold' ||
+					e.kind === 'overshoot' ||
+					e.kind === 'bounce' ||
+					(e.kind === 'bezier' && [e.x1, e.y1, e.x2, e.y2].every(Number.isFinite)));
+			return known ? k : { ...k, easing: { ...EASINGS.linear } };
+		});
+	return ok.length ? sortKeyframes(ok) : undefined;
+}

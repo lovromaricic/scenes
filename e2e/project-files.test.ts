@@ -186,7 +186,7 @@ test.describe('Project files', () => {
 			expect(e.compressionMethod).toBe(0);
 		}
 		const manifest = JSON.parse(await (entries[0] as FileEntry).getData(new TextWriter()));
-		expect(manifest).toMatchObject({ app: 'Scenes', formatVersion: 2, name: 'Summer trip' });
+		expect(manifest).toMatchObject({ app: 'Scenes', formatVersion: 3, name: 'Summer trip' });
 
 		// Delete it from the app: its media and fonts go too.
 		await page.getByRole('link', { name: 'Projects' }).click();

@@ -4,6 +4,7 @@ import type { Project } from './types';
 import { migrateSounds } from './sound';
 import { migrateToTracks } from './tracks';
 import { placeScenes } from './timeline';
+import { tidyKeyframes } from './keyframes';
 
 /**
  * Pure helpers for managing many projects: what each one uses, what becomes unused when one is
@@ -69,6 +70,27 @@ export function migrateProject<T extends Partial<Project> & { aspect?: string }>
 	const sceneStarts = new Map(placeScenes(project.scenes).map((p) => [p.scene.id, p.start]));
 	const withTracks = migrateToTracks(project as never, sceneStarts, () => crypto.randomUUID());
 	Object.assign(project, withTracks);
+	// Keyframes and volume points (format 3): sorted and well formed, or none.
+	for (const o of project.overlays) {
+		o.keyframes = tidyKeyframes(o.keyframes);
+		o.volumePoints = tidyKeyframes(o.volumePoints);
+		if (!o.keyframes) delete o.keyframes;
+		if (!o.volumePoints) delete o.volumePoints;
+	}
+	for (const t of project.texts) {
+		t.keyframes = tidyKeyframes(t.keyframes);
+		if (!t.keyframes) delete t.keyframes;
+	}
+	for (const sc of project.scenes) {
+		sc.keyframes = tidyKeyframes(sc.keyframes);
+		sc.volumePoints = tidyKeyframes(sc.volumePoints);
+		if (!sc.keyframes) delete sc.keyframes;
+		if (!sc.volumePoints) delete sc.volumePoints;
+	}
+	for (const sd of project.sounds) {
+		sd.volumePoints = tidyKeyframes(sd.volumePoints);
+		if (!sd.volumePoints) delete sd.volumePoints;
+	}
 	project.mood ??= 'natural';
 	project.title ??= 'My video';
 	// Words in a style this version doesn't know are shown in the plain style.
