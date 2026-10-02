@@ -172,7 +172,7 @@
 				<button type="button" class="clean" onclick={removeUnused}>Remove unused</button>
 			{/if}
 		</div>
-		<p class="hint">Double-click or drag to add. Right-click for more.</p>
+		<p class="hint">Double-click to add, drag onto the storyboard or the picture, or right-click for more.</p>
 		<ul class="grid">
 			{#each items as info (info.id)}
 				{@const thumb = editor.thumbnails[info.id]}

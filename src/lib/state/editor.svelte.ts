@@ -1067,9 +1067,11 @@ export class EditorStore {
 	}
 
 	/** The transition from a scene into the next one. */
-	/** The transition into the next scene, at its usual length unless `duration` is given. */
-	setTransition(id: string, kind: TransitionKind, duration = TRANSITION_SECONDS[kind]): void {
-		this.updateScene('Transition', id, (s) => ({ ...s, transition: { kind, duration } }));
+	setTransition(id: string, kind: TransitionKind): void {
+		this.updateScene('Transition', id, (s) => ({
+			...s,
+			transition: { kind, duration: TRANSITION_SECONDS[kind] }
+		}));
 	}
 
 	setSceneVolume(id: string, volume: number): void {

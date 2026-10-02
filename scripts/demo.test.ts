@@ -14,15 +14,16 @@ const read = (entry: string) => execFileSync('unzip', ['-p', FILE, entry], { max
 const project = (): Project => JSON.parse(read('project.json').toString()).project;
 
 describe('the Casa Rossa demo file', () => {
-	it('exists, with its five files and a picture', () => {
+	it('exists, with its eleven files and a picture', () => {
 		expect(existsSync(FILE)).toBe(true);
 		const list = execFileSync('unzip', ['-Z1', FILE]).toString().split('\n');
-		expect(list.filter((f) => f.startsWith('media/'))).toHaveLength(5);
+		// The clips, the photo, the tomato, the music and six voice lines (not the full voiceover).
+		expect(list.filter((f) => f.startsWith('media/'))).toHaveLength(11);
 		expect(list).toContain('project.json');
 		expect(list).toContain('thumbnail.jpg');
 	});
 
-	it('is a 15-second, 1920 × 1080, 24 fps ad with six scenes, on the beat', () => {
+	it('is a 22-second, 1920 × 1080, 24 fps ad with six scenes, changing where specified', () => {
 		const p = project();
 		expect(p.title).toBe('Casa Rossa ad');
 		expect(p.format).toMatchObject({ width: 1920, height: 1080, fps: 24 });
@@ -30,9 +31,7 @@ describe('the Casa Rossa demo file', () => {
 		expect(kinds).toEqual(['card', 'video', 'photo', 'card', 'video', 'card']);
 		const lengths = p.scenes.map((s) => (s.sourceEnd - s.sourceStart) / (s.kind === 'video' ? s.speed : 1));
 		const ends = lengths.map((_, i) => lengths.slice(0, i + 1).reduce((a, b) => a + b, 0));
-		expect(ends.at(-1)).toBeCloseTo(15, 3);
-		// Scene changes at 2, 5, 8, 10.5 and 13 s, or on a beat within 0.15 s of them.
-		[2, 5, 8, 10.5, 13].forEach((t, i) => expect(Math.abs(ends[i] - t)).toBeLessThanOrEqual(0.15 + 1e-6));
+		expect(ends.map((t) => Math.round(t * 1000) / 1000)).toEqual([3.8, 8.9, 13.4, 16.8, 18.8, 22]);
 		expect(p.scenes.map((s) => s.card?.background ?? null)).toEqual(['#d63f1f', null, null, '#141417', null, '#ffffff']);
 		expect(p.scenes.slice(0, 5).map((s) => [s.transition.kind, s.transition.duration])).toEqual([
 			['slide', 0.4],
@@ -57,7 +56,7 @@ describe('the Casa Rossa demo file', () => {
 	it('named tracks, layers, words in the right fonts, and the music', () => {
 		const p = project();
 		const names = p.tracks.map((t) => t.name);
-		for (const name of ['Headlines', 'Captions', 'Picture-in-picture', 'Badge', 'Shapes', 'Tomato · large', 'Tomato · medium', 'Tomato · small', 'Music'])
+		for (const name of ['Headlines', 'Captions', 'Picture-in-picture', 'Badge', 'Shapes', 'Tomato · large', 'Tomato · medium', 'Tomato · small', 'Voiceover', 'Music'])
 			expect(names).toContain(name);
 		expect(p.overlays).toHaveLength(7);
 		// Every video layer muted.
@@ -73,8 +72,17 @@ describe('the Casa Rossa demo file', () => {
 		expect(words['100%'].style).toBe('outline');
 		expect(words['Ready in'].style).toBe('boxed');
 		expect(Object.keys(words)).toHaveLength(17);
-		const [music] = p.sounds;
-		expect(music).toMatchObject({ start: 0, duration: 15, volume: 1, fadeOut: 1.5 });
+		const [music, ...voice] = p.sounds;
+		expect(music).toMatchObject({ kind: 'music', start: 0, sourceStart: 0, duration: 22, volume: 1 });
 		expect(p.tracks.find((t) => t.id === music.trackId)?.name).toBe('Music');
+		// 100%, down to 35% under the voice by 0.2 s, until 21 s, then out by 22 s.
+		expect(music.volumePoints?.map((k) => [k.time, Math.round(k.values.gain * 100) / 100])).toEqual([
+			[0, 1],
+			[0.2, 0.35],
+			[21, 0.35],
+			[22, 0]
+		]);
+		expect(voice.map((v) => [v.kind, v.start, v.volume])).toEqual([0.2, 3.9, 9, 13.5, 16.9, 18.85].map((t) => ['voice', t, 1]));
+		expect(new Set(voice.map((v) => p.tracks.find((t) => t.id === v.trackId)?.name))).toEqual(new Set(['Voiceover']));
 	});
 });
