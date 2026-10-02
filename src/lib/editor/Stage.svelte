@@ -89,7 +89,9 @@
 	 * otherwise its zoom (screen pixels per project pixel) and its centre's offset from the
 	 * stage's centre, in screen pixels.
 	 */
-	let view = $state<{ zoom: number; x: number; y: number } | null>(null);
+	// Raw (not a deep proxy): views are only ever replaced, and fit() checks the view is still
+	// the one it set (by identity) before going back to following the stage's size.
+	let view = $state.raw<{ zoom: number; x: number; y: number } | null>(null);
 	const MAX_ZOOM = 8;
 	/** Largest pasteboard drawing buffer (its longer side), to keep it light. */
 	const MAX_PASTEBOARD = 2560;

@@ -3547,6 +3547,32 @@ PNG layers.
     line height, at 22 px, on one line, with 8 px under each (with "Remove unused" showing);
   - every section heading in Settings (a card layer selected) has the same style.
 
+## Fix: the stage zoom said "47%" after going back to Fit (and a flaky test)
+
+- **What failed:** `stage-zoom.test.ts` › "plain scroll zooms the picture only in Custom
+  framing…" sometimes failed in full runs. The zoom label read "47%" where "Fit" was expected,
+  though the test passed on its own.
+- **The cause was a real bug, not just test timing.** Double-clicking the zoom percentage (or
+  choosing Fit) glides the frame back to Fit over 240 ms. The label shows "Fit" during the
+  glide. At its end, `fit()` checks that the view is still the one it set (`view === fitted`)
+  before going back to "follow the stage" (no fixed zoom). But `view` was a deep `$state`, which
+  wraps the object it's given in a proxy. So the check was never true and the view was never
+  cleared. After the 240 ms:
+  - the label switched to the fit zoom as a percentage ("47%");
+  - the frame stopped resizing with the stage.
+  The test passed whenever it read the label inside those 240 ms, which a busy full run
+  sometimes missed.
+- **The fix** (`Stage.svelte`): `view` is `$state.raw`. The view is only ever replaced whole,
+  never changed in place, so a plain (unproxied) value is right, and the identity check works.
+  Nothing else changes.
+- **The test** is now deterministic and covers the bug:
+  - it waits for the zoom to show a percentage after Cmd/Ctrl + scroll (instead of reading
+    once);
+  - after the double-click, it checks "Fit" right away and again once the glide is over (after
+    400 ms), with the frame centred at its Fit size.
+  With the old code it now fails every time ("47%"); with the fix it passed 60 of 60 runs
+  (`--repeat-each=10`) and two full runs.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

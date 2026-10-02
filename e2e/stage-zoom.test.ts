@@ -194,9 +194,17 @@ test.describe('Zooming the stage', () => {
 		// Cmd/Ctrl + scroll there: the stage zooms; the picture doesn't.
 		const z1 = await frameZoom();
 		await zoomWheel(page, c.x, c.y, -100);
-		expect((await stage(page)).zoom).toMatch(/^\d+%$/);
+		await expect.poll(async () => (await stage(page)).zoom).toMatch(/^\d+%$/);
 		expect(await frameZoom()).toBeCloseTo(z1, 6);
+		// Double-click the percentage: Fit, and still Fit once it has settled back (its 240 ms
+		// glide), with the frame centred at its Fit size again.
 		await page.getByTestId('zoom').dblclick();
+		expect((await stage(page)).zoom).toBe('Fit');
+		await page.waitForTimeout(400);
+		const settled = await stage(page);
+		expect(settled.zoom).toBe('Fit');
+		expectCentred(settled);
+		expect(settled.frame.w).toBeCloseTo(fit.frame.w, 0);
 
 		// Not selected: plain scroll does nothing to it (or to the stage at Fit).
 		await api(page, 's => s.deselect()');
