@@ -20,7 +20,7 @@
 	import VolumeLine from './VolumeLine.svelte';
 	import { BLOCKED, type DropTarget, type LaneServices } from './lanes';
 	import { accepts, type ItemKind } from '$lib/model/tracks';
-	import { allItems, itemKind } from '$lib/model/items';
+	import { allItems, displayName, itemKind } from '$lib/model/items';
 	import { formatRatio } from '$lib/model/format';
 	import { dragHasVisual, dragIsOnlySound, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
@@ -574,6 +574,21 @@
 	/** Right-click on the ruler: the range's options, for the time clicked. */
 	let rulerMenu = $state<{ x: number; y: number; t: number } | null>(null);
 	let rulerMenuAnchor = $state<HTMLElement>();
+	// ─── Right-click on a scene ──────────────────────────────────────────────────────────────
+	let sceneMenu = $state<{ id: string; x: number; y: number } | null>(null);
+	let sceneMenuAnchor = $state<HTMLSpanElement>();
+	function onSceneContextMenu(event: MouseEvent, id: string) {
+		event.preventDefault();
+		editor.select(id);
+		sceneMenu = { id, x: event.clientX, y: event.clientY };
+	}
+	const sceneMenuItems = $derived.by<MenuItem[]>(() => {
+		if (!sceneMenu) return [];
+		// The scene, kept here: the menu closes (and forgets it) before an item runs.
+		const id = sceneMenu.id;
+		return [{ label: 'Rename', icon: Pencil, onselect: () => (editor.renamingId = id) }];
+	});
+
 	function onRulerContextMenu(event: MouseEvent) {
 		event.preventDefault();
 		rulerMenu = {
@@ -1019,6 +1034,18 @@
 	/>
 {/if}
 
+{#if sceneMenu}
+	<span
+		bind:this={sceneMenuAnchor}
+		class="menu-anchor"
+		style:left="{sceneMenu.x}px"
+		style:top="{sceneMenu.y}px"
+		aria-hidden="true"
+	></span>
+	{#if sceneMenuAnchor}
+		<Menu label="Scene" items={sceneMenuItems} anchor={sceneMenuAnchor} onclose={() => (sceneMenu = null)} />
+	{/if}
+{/if}
 {#if rulerMenu}
 	<span
 		bind:this={rulerMenuAnchor}
@@ -1240,10 +1267,11 @@
 									style:width="{item.width}px"
 									role="presentation"
 									onpointerdown={(e) => onCardPointerDown(e, item)}
+									oncontextmenu={(e) => onSceneContextMenu(e, item.scene.id)}
 								>
 									<SceneCard
 										index={item.index}
-										name={item.scene.name}
+										name={displayName(item.scene)}
 										duration={item.duration}
 										width={Math.max(24, item.width - CARD_GAP)}
 										thumbnail={thumbnailFor(item.scene)}
@@ -1254,6 +1282,12 @@
 										{selected}
 										onselect={() => onCardClick(item.scene.id)}
 										onkeydown={(e) => onCardKeydown(e, item)}
+										renaming={editor.renamingId === item.scene.id}
+										onrenamestart={() => (editor.renamingId = item.scene.id)}
+										onrename={(name) => {
+											editor.renamingId = null;
+											if (name !== null) editor.rename(item.scene.id, name);
+										}}
 									/>
 									{#if item.scene.kind === 'video' && item.scene.volume > 0 && editor.media[item.scene.mediaId]?.hasAudio && !drag?.active && !trim}
 										{@const p = editor.placed.find((x) => x.scene.id === item.scene.id)}

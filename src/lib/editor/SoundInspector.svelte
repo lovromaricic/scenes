@@ -4,6 +4,7 @@
 	volume, fade in and out, and Split here / Remove.
 -->
 <script lang="ts">
+	import NameTitle from './NameTitle.svelte';
 	import Scissors from '@lucide/svelte/icons/scissors';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { Button, Field, PillStepper, Slider } from '$lib/ui';
@@ -26,7 +27,7 @@
 </script>
 
 <div class="head">
-	<h2 class="serif title">{isMusic ? 'Music' : 'Voiceover'}</h2>
+	<NameTitle prefix={isMusic ? 'Music' : 'Voiceover'} item={sound} />
 	<p class="subtitle">
 		{sound.name} · plays for <span class="mono">{formatClock(plays)}</span>
 		{#if sound.start + sound.duration > editor.duration + 0.05}
@@ -111,10 +112,6 @@
 </div>
 
 <style>
-	.title {
-		font-size: var(--text-heading);
-		line-height: 1;
-	}
 	.subtitle {
 		margin-top: var(--space-2);
 		color: var(--color-muted);

@@ -38,6 +38,8 @@ export interface Overlay {
 	/** The source file (videos and photos); '' for cards. */
 	mediaId: string;
 	name: string;
+	/** A name given in this project (missing = the default: `name`, or a text's words). */
+	label?: string;
 	/** The overlay track it's on. */
 	trackId: string;
 	/** When it starts on the timeline, in seconds. */

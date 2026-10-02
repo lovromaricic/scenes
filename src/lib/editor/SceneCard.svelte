@@ -2,6 +2,7 @@
 	import { formatShort } from '$lib/model/time';
 	import type { Scene } from '$lib/model/types';
 	import Filmstrip from './Filmstrip.svelte';
+	import NameEditor from './NameEditor.svelte';
 
 	interface Props {
 		index: number;
@@ -22,6 +23,12 @@
 		onkeydown?: (event: KeyboardEvent) => void;
 		/** While dragging: the filmstrip stretches instead of being made again. */
 		frozen?: boolean;
+		/** Being renamed: the name is a field (the number stays). */
+		renaming?: boolean;
+		/** Double-click on the name: start renaming. */
+		onrenamestart?: () => void;
+		/** Renaming done: the new name, or null when cancelled. */
+		onrename?: (name: string | null) => void;
 	}
 
 	let {
@@ -36,7 +43,10 @@
 		selected = false,
 		onselect,
 		onkeydown,
-		frozen = false
+		frozen = false,
+		renaming = false,
+		onrenamestart,
+		onrename
 	}: Props = $props();
 </script>
 
@@ -70,12 +80,50 @@
 		{/if}
 	</span>
 	<span class="meta">
-		<span class="name"><span class="num">{index + 1}</span> · {name}</span>
+		<span
+			class="name"
+			class:hidden={renaming}
+			role="presentation"
+			ondblclick={(e) => {
+				e.stopPropagation();
+				onrenamestart?.();
+			}}><span class="num">{index + 1}</span> · {name}</span
+		>
 		<span class="dur mono">{formatShort(duration)}</span>
 	</span>
 </button>
+{#if renaming}
+	<!-- Over the name, outside the card's button (a field can't be inside one). -->
+	<span class="renaming" style:width="{width - 10}px">
+		<span class="num" aria-hidden="true">{index + 1} ·</span>
+		<NameEditor
+			value={name}
+			label="Scene {index + 1} name"
+			onsave={(v) => onrename?.(v)}
+			oncancel={() => onrename?.(null)}
+		/>
+	</span>
+{/if}
 
 <style>
+	.renaming {
+		position: absolute;
+		left: 5px;
+		bottom: 3px;
+		z-index: 6;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding-left: 4px;
+		font-size: var(--text-sm);
+	}
+	.renaming :global(.name-editor) {
+		flex: 1;
+		height: 22px;
+	}
+	.name.hidden {
+		visibility: hidden;
+	}
 	.card {
 		position: relative;
 		cursor: grab;

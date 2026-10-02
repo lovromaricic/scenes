@@ -132,7 +132,6 @@ test.describe('Placing and moving items on tracks', () => {
 		expect(a).toBeTruthy();
 		// B later (6–7 s), so a 5 s photo from 0.5 s fits on Overlay 2 (the whole photo must fit).
 		await page.evaluate((b) => (window as unknown as { __scenes: Api }).__scenes.setOverlayTiming(b, 6, 1), b);
-		const preview = (await page.getByTestId('preview').boundingBox())!;
 		const tile = page.getByRole('button', { name: /^Add yellow\.jpg/ });
 		// At 0.5 s: Overlay 2 is free there.
 		await page.keyboard.press('Escape');

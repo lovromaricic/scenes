@@ -1,4 +1,5 @@
 <script lang="ts">
+	import NameTitle from './NameTitle.svelte';
 	import Scissors from '@lucide/svelte/icons/scissors';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { Button, ChipGroup, Field, PillStepper, Slider, SwatchPicker } from '$lib/ui';
@@ -67,7 +68,7 @@
 		{#key scene.id}
 			<div class="head">
 				<div class="title-row">
-					<h2 class="serif title">Scene {placed.index + 1}</h2>
+					<NameTitle prefix="Scene {placed.index + 1}" item={scene} />
 					<!-- Scenes animate their Custom framing (the buttons show once it's Custom). -->
 					<KeyframeButtons id={scene.id} />
 				</div>

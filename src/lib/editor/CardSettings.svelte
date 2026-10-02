@@ -3,6 +3,7 @@
 	Settings for a card scene: length, background, an optional rectangle, duplicate and remove.
 -->
 <script lang="ts">
+	import NameTitle from './NameTitle.svelte';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Copy from '@lucide/svelte/icons/copy';
 	import { Button, Field, PillStepper } from '$lib/ui';
@@ -23,7 +24,7 @@
 </script>
 
 <div class="head">
-	<h2 class="serif title">Scene {placed.index + 1}</h2>
+	<NameTitle prefix="Scene {placed.index + 1}" item={placed.scene} />
 	<p class="subtitle">Card · starts at <span class="mono">{formatClock(placed.start)}</span></p>
 </div>
 
@@ -60,10 +61,6 @@
 </div>
 
 <style>
-	.title {
-		font-size: var(--text-heading);
-		line-height: 1;
-	}
 	.subtitle {
 		margin-top: var(--space-2);
 		color: var(--color-muted);

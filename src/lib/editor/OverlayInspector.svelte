@@ -4,6 +4,7 @@
 	size, crop, style, timing, animation, sound (videos), layer order, and for cards what they show.
 -->
 <script lang="ts">
+	import NameTitle from './NameTitle.svelte';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import CropIcon from '@lucide/svelte/icons/crop';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
@@ -97,7 +98,7 @@
 
 <div class="head">
 	<div class="title-row">
-		<h2 class="serif title">Layer</h2>
+		<NameTitle prefix="Layer" item={o} />
 		<KeyframeButtons id={o.id} />
 	</div>
 	<p class="subtitle">
@@ -252,10 +253,6 @@
 		gap: var(--space-2);
 	}
 
-	.title {
-		font-size: var(--text-heading);
-		line-height: 1;
-	}
 	.subtitle {
 		margin-top: var(--space-2);
 		color: var(--color-muted);

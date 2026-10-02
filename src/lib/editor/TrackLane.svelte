@@ -13,6 +13,9 @@
 	import Music from '@lucide/svelte/icons/music';
 	import Mic from '@lucide/svelte/icons/mic';
 	import TypeIcon from '@lucide/svelte/icons/type';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import NameEditor from './NameEditor.svelte';
+	import { displayName } from '$lib/model/items';
 	import { onDestroy } from 'svelte';
 	import { MAX_FADE, effectiveFades } from '$lib/model/sound';
 	import { formatClock, formatShort } from '$lib/model/time';
@@ -118,7 +121,27 @@
 
 	/** The menu's items (they keep the item: the menu closes before an item runs). */
 	function itemMenuItems(id: string): MenuItem[] {
-		return [{ label: 'Extend to end of video', onselect: () => editor.extendToEnd(id) }];
+		return [
+			{ label: 'Rename', icon: Pencil, onselect: () => (editor.renamingId = id) },
+			{ label: 'Extend to end of video', onselect: () => editor.extendToEnd(id) }
+		];
+	}
+
+	/**
+	 * Double-click on an item's name: rename it. (Heard on the item: a press captures the
+	 * pointer for dragging, so the double-click lands there, not on the name.)
+	 */
+	function onitemdblclick(event: MouseEvent, id: string) {
+		const name = (event.currentTarget as HTMLElement).querySelector('.name, .sound-name');
+		const r = name?.getBoundingClientRect();
+		if (!r || track.locked) return;
+		const over = event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
+		if (over) editor.renamingId = id;
+	}
+
+	function onrenamed(id: string, name: string | null) {
+		editor.renamingId = null;
+		if (name !== null) editor.rename(id, name);
 	}
 
 	function onpointerdown(event: PointerEvent, e: Entry, mode: Mode) {
@@ -309,9 +332,9 @@
 	}
 
 	function label(e: Entry): string {
-		if (e.kind === 'overlay') return `Layer: ${e.item.name}`;
-		if (e.kind === 'text') return `Words: ${e.item.text}`;
-		return `${e.item.kind === 'music' ? 'Music' : 'Voiceover'}: ${e.item.name}`;
+		if (e.kind === 'overlay') return `Layer: ${displayName(e.item)}`;
+		if (e.kind === 'text') return `Words: ${displayName(e.item)}`;
+		return `${e.item.kind === 'music' ? 'Music' : 'Voiceover'}: ${displayName(e.item)}`;
 	}
 </script>
 
@@ -379,6 +402,7 @@
 					}}
 					onkeydown={(ev) => onkeydown(ev, e)}
 					oncontextmenu={(ev) => onitemmenu(ev, e.item.id)}
+					ondblclick={(ev) => onitemdblclick(ev, e.item.id)}
 				>
 					{#if e.kind === 'overlay'}
 						<span
@@ -387,13 +411,13 @@
 							style:background-color={e.item.kind === 'card' ? e.item.card?.background : undefined}
 						></span>
 						<span class="meta">
-							<span class="name">{e.item.name}</span>
+							<span class="name">{displayName(e.item)}</span>
 							<span class="dur mono">{formatShort(length)}</span>
 						</span>
 					{:else if e.kind === 'text'}
 						<span class="words">
 							<TypeIcon size={12} strokeWidth={2} aria-hidden="true" />
-							<span class="name">{e.item.text}</span>
+							<span class="name">{displayName(e.item)}</span>
 						</span>
 					{:else}
 						{@const wave = editor.waveforms[e.item.mediaId]}
@@ -439,7 +463,7 @@
 									strokeWidth={2}
 									aria-hidden="true"
 								/>{:else}<Mic size={11} strokeWidth={2} aria-hidden="true" />{/if}
-							{e.item.name}
+							{displayName(e.item)}
 						</span>
 						{#if (selected || g) && !track.locked}
 							<span
@@ -494,6 +518,17 @@
 						></span>
 					{/each}
 				{/if}
+				{#if editor.renamingId === e.item.id && !g}
+					<!-- Over the item, outside its button (a field can't be inside one). -->
+					<span class="renaming {e.kind}">
+						<NameEditor
+							value={displayName(e.item)}
+							label="{e.kind === 'overlay' ? 'Layer' : e.kind === 'text' ? 'Words' : 'Sound'} name"
+							onsave={(name) => onrenamed(e.item.id, name)}
+							oncancel={() => onrenamed(e.item.id, null)}
+						/>
+					</span>
+				{/if}
 				{#if g}
 					<span class="badge mono" data-testid="item-drag-label">
 						{#if g.mode === 'move'}
@@ -528,6 +563,25 @@
 {/if}
 
 <style>
+	/* Renaming: over the item's top-left, at least wide enough to type in. */
+	.renaming {
+		position: absolute;
+		left: 2px;
+		top: 2px;
+		z-index: 6;
+		display: flex;
+		width: max(160px, calc(100% - 4px));
+		font-size: var(--text-xs);
+	}
+	/* A layer's name is along its bottom. */
+	.renaming.overlay {
+		top: auto;
+		bottom: 0;
+	}
+	.renaming :global(.name-editor) {
+		flex: 1;
+		height: 22px;
+	}
 	.menu-anchor {
 		position: fixed;
 		width: 1px;

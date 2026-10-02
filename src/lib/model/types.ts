@@ -40,6 +40,8 @@ export interface Scene {
 	/** A video, a still photo, or a card (a colour screen with no file; mediaId is ''). */
 	kind: 'video' | 'photo' | 'card';
 	name: string;
+	/** A name given in this project (missing = the default: `name`, or a text's words). */
+	label?: string;
 	/** Part of the source used, in source seconds. For photos, sourceStart is 0. */
 	sourceStart: number;
 	sourceEnd: number;
@@ -67,6 +69,8 @@ export interface TextItem {
 	/** The overlay track it's on. */
 	trackId: string;
 	text: string;
+	/** A name given in this project (missing = the default: `name`, or a text's words). */
+	label?: string;
 	start: number;
 	duration: number;
 	/** Centre of the text, as a fraction of the frame (0–1). */
@@ -105,6 +109,8 @@ export interface SoundItem {
 	id: string;
 	mediaId: string;
 	name: string;
+	/** A name given in this project (missing = the default: `name`, or a text's words). */
+	label?: string;
 	/** Where it starts on the video timeline. */
 	start: number;
 	/** Offset into the source file. */

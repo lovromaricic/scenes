@@ -26,6 +26,25 @@ type WithItems = Pick<Project, 'tracks' | 'overlays' | 'texts' | 'sounds'>;
 
 const lists = { overlay: 'overlays', text: 'texts', sound: 'sounds' } as const;
 
+/** What something is called before it's renamed: the file's name, "Card", or a text's words. */
+export function defaultName(x: { name: string } | { text: string }): string {
+	return 'text' in x ? x.text : x.name;
+}
+
+/** What a scene or item is called: the name given in this project, else its default. */
+export function displayName(x: ({ name: string } | { text: string }) & { label?: string }): string {
+	return x.label?.trim() || defaultName(x);
+}
+
+/**
+ * The label for a new name: none when it's empty or the default (so the default shows, and
+ * follows a text's words as they change), else the name as typed (trimmed).
+ */
+export function labelFor(x: { name: string } | { text: string }, name: string): string | undefined {
+	const n = name.trim();
+	return n && n !== defaultName(x) ? n : undefined;
+}
+
 /** Every item on every track. */
 export function allItems(p: WithItems): KindedItem[] {
 	return [

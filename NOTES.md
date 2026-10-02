@@ -3168,6 +3168,48 @@ order.
   for keyboard focus, and the selection tint. It waits for fonts before measuring, because the
   names around the title change width until the fonts load.
 
+## Renaming scenes and items
+
+- **What:** scenes and every item on overlay and audio tracks (videos, photos, cards, words,
+  music, voiceovers) can be renamed, in this project only.
+- **How:**
+  - double-click the name on the storyboard;
+  - click the title in the settings ("Scene 1", "Layer", "Words", "Music"…);
+  - or right-click › Rename, on scenes (a new menu) and on items (above "Extend to end of
+    video").
+  - Enter or clicking elsewhere saves; Esc cancels. The field uses the same quiet outline as
+    renaming the video (`.inline-edit`, see `NameEditor.svelte`).
+- **Stored as `label`** (optional) on scenes, overlays, words and sounds. The default stays in
+  `name` (the file's name, "Card") or is the words. So:
+  - `displayName()` shows the label or else the default; clearing a name, or typing the
+    default, removes the label (`labelFor()`, in `model/items.ts`);
+  - words keep showing their words until renamed, and follow edits to them;
+  - the file and its name in Your media never change;
+  - a scene that becomes a layer (or back) keeps its name.
+- **Scenes** show as "1 · Intro": the number stays automatic and follows reordering. Their
+  settings title is "Scene 1 · Intro", with the file's name in the line under it.
+- **Settings titles** (`NameTitle.svelte`): the heading's text is unchanged (with " · Name" once
+  renamed). The click target is a "Rename …" button behind it, so headings and existing button
+  names don't change.
+- **Storyboard:** the field opens over the name, outside the item's button. A double-click is
+  heard on the item and checked against the name's box, because pressing an item captures the
+  pointer for dragging. `EditorStore.renamingId` says which one is open (set by double-click
+  and the menus).
+- **Undo, autosave, files:** `EditorStore.rename()` is one undo step ("Rename"). Labels are
+  part of the project, so they're autosaved and in `.scenes` files.
+- **Also:** removed unused imports left by the video-length fix, and one unused variable in
+  `tracks-moving.test.ts`, so lint is clean.
+- **Tests:**
+  - Unit (`names.test.ts`): default names, clearing restores the default, labels survive
+    opening a project.
+  - `rename-items.test.ts`:
+    - a scene renamed from the storyboard and the settings; its number follows a reorder;
+      Esc cancels; clearing restores the file's name; undo; Your media keeps "red.mp4"; saved
+      across a reload;
+    - a layer renamed by double-click (clicking elsewhere saves), from the settings and from
+      right-click; words show their words until renamed and again once cleared; a song
+      renamed from its settings keeps its file's name.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

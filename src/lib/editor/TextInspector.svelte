@@ -1,4 +1,5 @@
 <script lang="ts">
+	import NameTitle from './NameTitle.svelte';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { Button, ChipGroup, Field, PillStepper } from '$lib/ui';
 	import { TEXT_ANIMATIONS } from '$lib/model/catalog';
@@ -35,7 +36,7 @@
 
 <div class="head">
 	<div class="title-row">
-		<h2 class="serif title">{title}</h2>
+		<NameTitle prefix={title} {item} />
 		<KeyframeButtons id={item.id} />
 	</div>
 	<p class="subtitle">Double-click the words on the video to type.</p>

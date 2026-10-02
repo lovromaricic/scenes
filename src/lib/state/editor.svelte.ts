@@ -48,6 +48,7 @@ import {
 	duplicateTrack,
 	getItem,
 	itemKind,
+	labelFor,
 	moveItems,
 	removeItems,
 	moveTrack,
@@ -100,7 +101,7 @@ import {
 	type SourceBounds
 } from '$lib/model/edits';
 import { History } from '$lib/model/history';
-import { placeScenes, sceneDuration, totalDuration, videoLength } from '$lib/model/timeline';
+import { placeScenes, sceneDuration, videoLength } from '$lib/model/timeline';
 import { TEXT_ENTER } from '$lib/model/textAnimation';
 import { TRANSITION_SECONDS } from '$lib/model/composition';
 import { formatFromClip, type ProjectFormat } from '$lib/model/format';
@@ -1581,6 +1582,7 @@ export class EditorStore {
 			kind: scene.kind,
 			mediaId: scene.mediaId,
 			name: scene.name,
+			...(scene.label ? { label: scene.label } : {}),
 			start: at,
 			duration: Math.max(MIN_OVERLAY_SECONDS, length),
 			sourceStart: scene.kind === 'video' ? scene.sourceStart : 0,
@@ -1627,6 +1629,7 @@ export class EditorStore {
 			mediaId: o.mediaId,
 			kind: o.kind,
 			name: o.name,
+			...(o.label ? { label: o.label } : {}),
 			sourceStart: o.kind === 'video' ? o.sourceStart : 0,
 			sourceEnd: o.kind === 'video' ? o.sourceStart + o.duration : o.duration,
 			speed: 1,
@@ -3105,6 +3108,32 @@ export class EditorStore {
 			format.fps === current.fps;
 		if (same && this.project.formatSet) return;
 		this.edit('Video format', (p) => ({ ...p, format: { ...format }, formatSet: true }));
+	}
+
+	/** A scene or item being renamed on the storyboard, or null. Not part of the project. */
+	renamingId = $state<string | null>(null);
+
+	/**
+	 * Rename a scene or an item, in this project only (never its file or its name in Your
+	 * media). An empty name, or the default, brings the default back. One undo step.
+	 */
+	rename(id: string, name: string): void {
+		const p = this.project;
+		const target = [...p.scenes, ...p.overlays, ...p.texts, ...p.sounds].find((x) => x.id === id);
+		if (!target || labelFor(target, name) === target.label) return;
+		const named = <T extends { id: string; label?: string } & ({ name: string } | { text: string })>(x: T): T => {
+			if (x.id !== id) return x;
+			const { label: _old, ...rest } = x;
+			const label = labelFor(x, name);
+			return (label ? { ...rest, label } : rest) as T;
+		};
+		this.edit('Rename', (p) => ({
+			...p,
+			scenes: p.scenes.map(named),
+			overlays: p.overlays.map(named),
+			texts: p.texts.map(named),
+			sounds: p.sounds.map(named)
+		}));
 	}
 
 	setTitle(title: string): void {

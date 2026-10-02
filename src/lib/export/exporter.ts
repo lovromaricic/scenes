@@ -15,7 +15,7 @@ import {
 import { mixdown } from '$lib/audio/mixdown';
 import { projectAudioClips } from '$lib/audio/clips';
 import type { SourceBounds } from '$lib/model/edits';
-import { placeScenes, videoLength } from '$lib/model/timeline';
+import { videoLength } from '$lib/model/timeline';
 import type { Project, Scene } from '$lib/model/types';
 import { exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
 import { FrameRenderer } from './renderer';
