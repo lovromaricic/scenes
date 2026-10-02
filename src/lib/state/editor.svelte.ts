@@ -156,7 +156,7 @@ import { presetById, type PresetId } from '$lib/export/presets';
 import { newCardScene, newId, newProject, sceneFromMedia } from './project';
 import { nameFromFile } from '$lib/media/kinds';
 import { defaultCard } from '$lib/model/card';
-import { toasts } from './toasts.svelte';
+import { messages } from './messages.svelte';
 
 /**
  * An overlay or words with new timing. Trimmed from the left (the end stays put), its keyframes
@@ -462,10 +462,7 @@ export class EditorStore {
 			const missing = project.scenes.filter((s) => !hasFile(s));
 			if (missing.length) {
 				project.scenes = project.scenes.filter(hasFile);
-				toasts.show(
-					`${missing.length === 1 ? 'One clip was' : `${missing.length} clips were`} missing from this device and has been left out.`,
-					'error'
-				);
+				messages.show(missing.length === 1 ? 'One clip is missing from this device, so it was left out.' : `${missing.length} clips are missing from this device, so they were left out.`, { tone: 'error' });
 			}
 			project.library = project.library.filter((id) => this.media[id]);
 			this.project = project;
@@ -476,7 +473,7 @@ export class EditorStore {
 			void this.loadWaveforms(project.sounds.map((s) => s.mediaId));
 		} catch (error) {
 			console.error('Could not open the project', error);
-			toasts.show('This project couldn’t be opened.', 'error');
+			messages.show('This project couldn’t be opened.', { tone: 'error' });
 			this.notFound = true;
 		} finally {
 			this.ready = true;
@@ -558,10 +555,10 @@ export class EditorStore {
 			});
 			if (!saved) return;
 			this.fileLink = { projectId: this.projectId, name: saved.name, savedUpdatedAt: saved.savedUpdatedAt };
-			if (saved.downloaded) toasts.show(`“${saved.name}” is in your downloads.`);
+			if (saved.downloaded) messages.show(`“${saved.name}” is in your downloads.`);
 		} catch (error) {
 			console.error('Could not save the project file', error);
-			toasts.show('The project couldn’t be saved to a file. Please try again.', 'error');
+			messages.show('The project couldn’t be saved. Please try again.', { tone: 'error' });
 		} finally {
 			this.fileSaving = null;
 			this.savingFile = false;
@@ -632,10 +629,7 @@ export class EditorStore {
 		if (after.overlays === before.overlays) return true;
 		const most = mostVideosAtOnce(placeOverlays(after.overlays));
 		if (most <= MAX_VIDEO_OVERLAYS || most <= mostVideosAtOnce(placeOverlays(before.overlays))) return true;
-		toasts.show(
-			`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment, so that can’t be done here.`,
-			'error'
-		);
+		messages.show(`Only ${MAX_VIDEO_OVERLAYS} videos can play over the scenes at once, so that can’t be done here.`, { tone: 'error', item: this.selectedId });
 		return false;
 	}
 
@@ -712,7 +706,7 @@ export class EditorStore {
 		);
 		this.project = next;
 		if (this.selectedId && !this.findItem(this.selectedId)) this.selectedId = null;
-		toasts.show(message);
+		messages.show(message);
 		this.afterChange();
 	}
 
@@ -1063,11 +1057,7 @@ export class EditorStore {
 	splitAtPlayhead(): void {
 		const result = splitAt(this.snapshot().scenes, this.player.time, newId);
 		if (!result) {
-			toasts.show(
-				this.project.scenes.length
-					? 'Move the playhead into a scene to split it there.'
-					: 'Add a clip first, then split it.'
-			);
+			messages.show(this.project.scenes.length ? 'Move the playhead onto a scene to split it.' : 'Add a clip first, then split it.');
 			return;
 		}
 		this.edit('Split', (p) => ({ ...p, scenes: result.scenes }), { select: result.secondId });
@@ -1259,10 +1249,7 @@ export class EditorStore {
 			{ select: null }
 		);
 		if (skippedVideo)
-			toasts.show(
-				`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment, so a video wasn’t pasted.`,
-				'error'
-			);
+			messages.show(`Only ${MAX_VIDEO_OVERLAYS} videos can play over the scenes at once, so one video wasn’t pasted.`, { tone: 'error' });
 		this.selectItems(ids);
 		return ids.length > 0;
 	}
@@ -1402,10 +1389,7 @@ export class EditorStore {
 	/** Whether a video overlay may play from `start` for `duration` (at most 4 videos at once). */
 	private videoRoom(o: Pick<Overlay, 'kind' | 'id'>, start: number, duration: number): boolean {
 		if (o.kind !== 'video' || !tooManyVideos(this.placedOverlays, start, duration, o.id)) return true;
-		toasts.show(
-			`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment, so this one can’t go there.`,
-			'error'
-		);
+		messages.show(`Only ${MAX_VIDEO_OVERLAYS} videos can play over the scenes at once, so this one can’t go there.`, { tone: 'error', item: o.id });
 		return false;
 	}
 
@@ -1471,10 +1455,7 @@ export class EditorStore {
 	private insertOverlay(o: Omit<Overlay, 'trackId' | 'start'>, start: number, trackId?: string): string | null {
 		const at = Math.max(0, start);
 		if (o.kind === 'video' && tooManyVideos(this.placedOverlays, at, o.duration)) {
-			toasts.show(
-				`Up to ${MAX_VIDEO_OVERLAYS} videos can play on top of the scenes at the same moment. Try another time, or use a photo.`,
-				'error'
-			);
+			messages.show(`Only ${MAX_VIDEO_OVERLAYS} videos can play over the scenes at once. Try another moment, or use a photo.`, { tone: 'error' });
 			return null;
 		}
 		const target = trackId ? this.track(trackId) : undefined;
@@ -1557,7 +1538,7 @@ export class EditorStore {
 		const removed = this.placed.find((p) => p.scene.id === sceneId);
 		if (!scene || !removed) return null;
 		if (this.project.scenes.length === 1) {
-			toasts.show('A layer needs a scene underneath it, so the only scene stays a scene.');
+			messages.show('Your video needs at least one scene, so this stays a scene.', { item: sceneId });
 			return null;
 		}
 		const info = scene.kind === 'card' ? null : this.media[scene.mediaId];
@@ -1927,7 +1908,7 @@ export class EditorStore {
 			return;
 		}
 		if (this.time < track.start - 1e-6 || this.time > track.end + 1e-6) {
-			toasts.show('Move the playhead onto it to add a keyframe there.');
+			messages.show('Move the playhead onto it to add a keyframe.', { item: id });
 			return;
 		}
 		const values = track.kind === 'scene' ? this.frameValues(id) : this.itemValues(id);
@@ -2181,7 +2162,7 @@ export class EditorStore {
 		if (clip?.kind === 'volume') return this.pasteVolumePoints();
 		const track = id ? this.keyframeTrack(id) : null;
 		if (!clip || !id || !track) {
-			if (clip) toasts.show('Select a layer, words, or a scene with Custom framing to paste the keyframes on.');
+			if (clip) messages.show('Select a layer, words or a Custom-framed scene to paste the keyframes on.');
 			return false;
 		}
 		const target = track.kind === 'scene' ? 'frame' : 'item';
@@ -2220,7 +2201,7 @@ export class EditorStore {
 		if (!item) return false;
 		const local = t - item.start;
 		if (local < 0.1 || item.duration - local < 0.1) {
-			toasts.show('Move the playhead into it to split it there.');
+			messages.show('Move the playhead onto it to split it.', { item: id });
 			return false;
 		}
 		const secondId = newId();
@@ -2279,7 +2260,7 @@ export class EditorStore {
 		const id = this.selectedId;
 		const track = id ? this.volumeTrack(id) : null;
 		if (!clip || !id || !track) {
-			toasts.show('Select a sound, or a video with sound, to paste the volume points on.');
+			messages.show('Select a sound, or a video with sound, to paste the volume points on.');
 			return false;
 		}
 		const pasted = clip.keyframes.map((k) => ({
@@ -2481,12 +2462,9 @@ export class EditorStore {
 				{ select: sound.id }
 			);
 		} catch (error) {
-			toasts.show(
-				error instanceof MediaImportError
+			messages.show(error instanceof MediaImportError
 					? error.message
-					: `“${file.name}” couldn’t be used as music.`,
-				'error'
-			);
+					: `“${file.name}” couldn’t be used as music.`, { tone: 'error' });
 			if (!(error instanceof MediaImportError)) console.error(error);
 		} finally {
 			this.importing--;
@@ -2563,7 +2541,7 @@ export class EditorStore {
 		if (!sound) return;
 		const parts = splitSound($state.snapshot(sound) as SoundItem, this.player.time, newId);
 		if (!parts) {
-			toasts.show('Move the playhead into the sound to split it there.');
+			messages.show('Move the playhead onto the sound to split it.', { item: sound.id });
 			return;
 		}
 		// The volume line stays exactly as it was across the split.
@@ -2661,7 +2639,7 @@ export class EditorStore {
 			if (item) spans.push({ start: item.start, end: item.start + item.duration });
 		}
 		if (!spans.length) {
-			toasts.show('Select a scene or items first, then set the range to them.');
+			messages.show('Select a scene or items first, then set the range to them.');
 			return false;
 		}
 		this.setRange(
@@ -2782,10 +2760,10 @@ export class EditorStore {
 			a.click();
 			a.remove();
 			setTimeout(() => URL.revokeObjectURL(url), 60_000);
-			toasts.show(`Saved ${result.name}`);
+			messages.show(`Saved “${result.name}”.`);
 		} catch (error) {
 			console.error(error);
-			toasts.show(error instanceof Error ? error.message : 'Couldn’t save the frame.', 'error');
+			messages.show(error instanceof Error ? error.message : 'Couldn’t save the frame.', { tone: 'error' });
 		}
 	}
 
@@ -2799,7 +2777,7 @@ export class EditorStore {
 	async startVoiceover(): Promise<void> {
 		if (this.recording) return;
 		if (!this.project.scenes.length) {
-			toasts.show('Add a photo or video first, then record your voice over it.');
+			messages.show('Add a photo or video first, then record your voice over it.');
 			return;
 		}
 		this.player.unlockAudio();
@@ -2808,10 +2786,7 @@ export class EditorStore {
 		try {
 			await recorder.open();
 		} catch (error) {
-			toasts.show(
-				error instanceof MicrophoneError ? error.message : 'The microphone couldn’t be started.',
-				'error'
-			);
+			messages.show(error instanceof MicrophoneError ? error.message : 'The microphone couldn’t be started.', { tone: 'error' });
 			return;
 		}
 		this.recorder = recorder;
@@ -2853,7 +2828,7 @@ export class EditorStore {
 		}
 		const result = await recorder.stop();
 		if (!result || result.seconds < 0.3) {
-			toasts.show('That recording was too short to keep.');
+			messages.show('That recording was too short to keep.');
 			return;
 		}
 		const name = `Voiceover ${++this.voiceCount}`;
@@ -2883,7 +2858,7 @@ export class EditorStore {
 			this.seek(state.start);
 		} catch (error) {
 			console.error(error);
-			toasts.show('The recording couldn’t be saved. Please try again.', 'error');
+			messages.show('Couldn’t save the recording. Please try again.', { tone: 'error' });
 		}
 	}
 
@@ -2903,7 +2878,7 @@ export class EditorStore {
 	/** Add a title (big, centred) or a caption (near the bottom) at the playhead, ready to type. */
 	addText(kind: 'title' | 'caption'): void {
 		if (!this.project.scenes.length) {
-			toasts.show('Add a photo or video first, then put words on it.');
+			messages.show('Add a photo or video first, then put words on it.');
 			return;
 		}
 		// The "Text" track, unless it's hidden or locked (then a new one, so the words can be seen
@@ -3124,7 +3099,7 @@ export class EditorStore {
 			const hash = await fingerprint(file);
 			let info = await findMediaByHash(hash);
 			if (info && info.kind === 'audio') {
-				toasts.show(`“${file.name}” is a sound file. Add it from Sound instead.`, 'error');
+				messages.show(`“${file.name}” is a sound file. Add it with Sound instead.`, { tone: 'error' });
 				return null;
 			}
 			if (info) {
@@ -3132,7 +3107,7 @@ export class EditorStore {
 			} else {
 				const { info: probed, thumbnail } = await probeFile(file);
 				if (probed.kind === 'audio') {
-					toasts.show(`“${file.name}” is a sound file. Add it from Sound instead.`, 'error');
+					messages.show(`“${file.name}” is a sound file. Add it with Sound instead.`, { tone: 'error' });
 					return null;
 				}
 				info = { ...probed, id: newId(), hash, createdAt: Date.now() };
@@ -3155,7 +3130,7 @@ export class EditorStore {
 								: 'Please try another file.'
 						}`;
 			if (!(error instanceof MediaImportError)) console.error(error);
-			toasts.show(message, 'error');
+			messages.show(message, { tone: 'error' });
 			return null;
 		}
 	}
@@ -3218,13 +3193,9 @@ export class EditorStore {
 			this.afterChange();
 		}
 		if (added > 0 && before.scenes.length === 0) {
-			toasts.show(
-				'Nice! Drag the cards to change the order. Press ? to see all shortcuts.',
-				'info',
-				6000
-			);
+			messages.show('Nice! Drag the cards to change the order. Press ? to see all shortcuts.', { ms: 6000 });
 		} else if (added > 1) {
-			toasts.show(`Added ${added} scenes`);
+			messages.show(`Added ${added} scenes.`);
 		}
 	}
 }

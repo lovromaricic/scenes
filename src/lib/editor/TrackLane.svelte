@@ -184,7 +184,7 @@
 			g.start = Math.max(0, start);
 			g.dy = g.group.length ? 0 : dy;
 			g.target = g.group.length ? null : services.targetAt(event.clientY, g.kind, event.clientX);
-			services.showTarget(g.target, track.id);
+			services.showTarget(g.target, track.id, { x: event.clientX, y: event.clientY });
 		} else if (g.mode === 'start' || g.mode === 'end') {
 			const end = visibleEnd(entry, o.start, o.duration);
 			const from = g.mode === 'start' ? o.start : end;
@@ -229,6 +229,8 @@
 			editor.select(g.id);
 			return;
 		}
+		// Released where it can't go: back where it was, nothing else (the hint said why).
+		if (g.mode === 'move' && g.target?.kind === 'blocked') return;
 		const o = g.original;
 		// The playhead goes to what was dragged once, at the drop (not on every move).
 		const last = Math.max(0, editor.duration - 0.01);

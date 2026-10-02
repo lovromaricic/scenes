@@ -133,22 +133,25 @@
 	/** Briefly animate the frame's position (when it's brought back to the centre). */
 	let recentering = $state(false);
 	let recenterTimer: ReturnType<typeof setTimeout> | undefined;
-	function animateRecenter() {
+	function animateRecenter(then?: () => void) {
 		recentering = true;
 		clearTimeout(recenterTimer);
-		recenterTimer = setTimeout(() => (recentering = false), 240);
+		// One timer ends the move and whatever follows it, so nothing shows in between.
+		recenterTimer = setTimeout(() => {
+			then?.();
+			recentering = false;
+		}, 240);
 	}
 
 	/** Back to Fit: centred again (smoothly, if it had been moved), then following the stage's size. */
 	function fit() {
 		const cur = view;
 		if (cur && (cur.x || cur.y || Math.abs(cur.zoom - fitZoom()) > 1e-6)) {
-			animateRecenter();
 			const fitted = { zoom: fitZoom(), x: 0, y: 0 };
-			view = fitted;
-			setTimeout(() => {
+			animateRecenter(() => {
 				if (view === fitted) view = null;
-			}, 240);
+			});
+			view = fitted;
 		} else view = null;
 	}
 	/** Whether the view is Fit (also while it's settling back there). */

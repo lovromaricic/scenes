@@ -2995,6 +2995,90 @@ didn't, because the hold then still ran on long enough.
   failure: `phase5-sound` › "a recorded voiceover plays back…", a separate intermittent test,
   noted under Known issues.
 
+## Drops that aren't allowed, and where messages appear
+
+### Prevent instead of explain
+
+- **Before the drop.** While dragging over somewhere an item can't go, the drop target is
+  `{ kind: 'blocked', trackId, reason }` (`DropTarget` in `lanes.ts`):
+  - the track dims (with faint stripes);
+  - the cursor is "not allowed" everywhere (`html.drop-blocked`, since a drag's pointer is
+    captured);
+  - no drop marker shows;
+  - a hint next to the pointer (`drop-hint`) says why, in plain words (`BLOCKED`).
+- **On release** there, nothing changes: the item goes back where it was, with no message after
+  (the hint already said why).
+- **Covered:**
+  - the only scene up onto an overlay track or a gap: "Your video needs at least one scene, so
+    this stays a scene.";
+  - a scene down onto an audio track;
+  - a sound onto a picture track or the Scenes track;
+  - a layer or words onto an audio track;
+  - words onto the Scenes track;
+  - anything onto a locked track;
+  - from outside: "Your media", cards or files over an audio or locked track, and sound files
+    over any track (`dragIsOnlySound`). These are refused with `dropEffect: 'none'` and the same
+    hint, and a drop there does nothing.
+- **Where it's decided:** `targetAt` returns the blocked target, `showTarget` shows it, and
+  `TrackLane.onend` and `Storyboard.onCardDragEnd` cancel the move on release. `sceneToOverlay`
+  still refuses the only scene (now with a bubble) for any other path that might call it.
+
+### One message helper (`state/messages.svelte.ts`, replacing `toasts.svelte.ts`)
+
+`messages.show(text, { tone, item, ms })` picks the place:
+- **About an item** (`item`): a bubble next to it in the storyboard (`ItemBubble.svelte`), with a
+  small pointer toward it.
+  - Above the item if there's room under the ruler, so never over the playhead's handle;
+    otherwise below. Always inside the storyboard.
+  - Placed every frame while shown. It goes when the item scrolls out of view, after 4 s, on any
+    click (so also when a drag starts), on Esc, or with its × button.
+  - One at a time: a new one replaces it, and an old one's timer can't close a newer one.
+  - Used for: the 4-video limit when moving or resizing a layer (or an edit that would go over
+    it); adding a keyframe or splitting with the playhead outside the item; splitting a sound
+    there; the only scene.
+- **Anything else:** a toast at the bottom centre of the window, just above the storyboard's
+  lower edge, never over the video. Information goes after 5 s; errors stay until closed.
+
+### Wording
+
+Every message was reviewed and kept to one short, plain sentence, saying what to do instead
+where that helps. For example:
+- "Only 4 videos can play over the scenes at once, so this one can’t go there."
+- "Move the playhead onto it to split it."
+- "One clip is missing from this device, so it was left out."
+- "Saved “frame.png”."
+- "Added 3 scenes."
+- "Drop a .scenes project file here to open it, or start a New video to add photos and videos."
+
+The import, microphone, project-file and export errors were already plain and are kept.
+
+### Tests
+
+- **Unit (`messages.test.ts`):** bubbles (one at a time, 4 s, a newer one not closed by an
+  older timer); toasts (info 5 s, errors staying until dismissed).
+- **E2E (`drop-feedback.test.ts`):**
+  - **The only scene over Overlay 1:** the hint, the dimmed track, the not-allowed cursor, no
+    marker; on release, still one scene and no layer, and no message.
+  - **The other cases:** a song onto Overlay 1, a card onto Audio 1 and onto a locked track,
+    and words onto Scenes. Each shows its hint, and on release everything is exactly where it
+    was.
+  - **From outside:** "Your media" over an audio track and a sound file over Overlay 1 are
+    refused, and nothing is added.
+  - **The bubble:**
+    - next to the layer and pointing at it, inside the storyboard, under the ruler, not on the
+      video;
+    - replaced by a new one, gone after 4 s, on a click, on Esc and with ×;
+    - below an item on the top track;
+    - gone when it's scrolled out of view.
+  - **Toasts:** a general message is centred at the bottom, below the video, and goes by
+    itself; an unusable file's error stays until dismissed.
+- `layers-render` and `tracks-render` have the new 4-video wording.
+
+**Also fixed on the way:** going back to Fit used two 240 ms timers, one ending the re-centring
+move and one switching the view to Fit. When the first fired first, the zoom label showed "47%"
+for a moment (seen once in a full run of `stage-zoom.test.ts`). One timer now does both, in
+order.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

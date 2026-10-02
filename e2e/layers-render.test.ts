@@ -230,7 +230,7 @@ test.describe('Layers in the picture', () => {
 		});
 		expect(added.ids.every(Boolean)).toBe(true);
 		expect(added.fifth).toBeNull();
-		await expect(page.getByText('Up to 4 videos can play on top of the scenes at the same moment')).toBeVisible();
+		await expect(page.getByText('Only 4 videos can play over the scenes at once')).toBeVisible();
 
 		// All four show (their colours in the corners), and the scene in the middle.
 		await seekTo(page, 2);

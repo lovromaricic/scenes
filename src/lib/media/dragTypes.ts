@@ -22,6 +22,12 @@ export function dragHasVisual(event: DragEvent): boolean {
 	return dragHasMedia(event) || dragHasCard(event) || dragHasFiles(event);
 }
 
+/** Only sound files dragged in from the computer (they're added with Sound, not on the tracks). */
+export function dragIsOnlySound(event: DragEvent): boolean {
+	const items = Array.from(event.dataTransfer?.items ?? []);
+	return items.length > 0 && items.every((i) => i.kind === 'file' && i.type.startsWith('audio/'));
+}
+
 /** Photos and videos among dropped files (project files and other things are left out). */
 export function droppedVisualFiles(event: DragEvent): File[] {
 	return Array.from(event.dataTransfer?.files ?? []).filter(

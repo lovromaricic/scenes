@@ -22,7 +22,7 @@
 	import type { TextItem } from '$lib/model/types';
 	import { cssFamily, ensureFont } from '$lib/render/fonts';
 	import { useEditor } from '$lib/state/context';
-	import { toasts } from '$lib/state/toasts.svelte';
+	import { messages } from '$lib/state/messages.svelte';
 
 	let { item }: { item: TextItem } = $props();
 
@@ -109,10 +109,7 @@
 		if (!files.length) return;
 		const { font: first, rejected } = await fonts.upload(files);
 		for (const name of rejected)
-			toasts.show(
-				`“${name}” isn’t a font file Scenes can use. Try a .ttf, .otf or .woff2 file.`,
-				'error'
-			);
+			messages.show(`“${name}” isn’t a font Scenes can use. Try a .ttf, .otf or .woff2 file.`, { tone: 'error' });
 		if (first) {
 			editor.setTextFont(item.id, first);
 			open = null;

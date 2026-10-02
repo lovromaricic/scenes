@@ -14,14 +14,15 @@
 	import TrackLane from './TrackLane.svelte';
 	import TrackHeader from './TrackHeader.svelte';
 	import KeyframeMarkers from './KeyframeMarkers.svelte';
+	import ItemBubble from './ItemBubble.svelte';
 	import { Snapper, toFrame } from './snap';
 	import { frameBatch } from '$lib/ui/frameBatch';
 	import VolumeLine from './VolumeLine.svelte';
-	import type { DropTarget, LaneServices } from './lanes';
+	import { BLOCKED, type DropTarget, type LaneServices } from './lanes';
 	import { accepts, type ItemKind } from '$lib/model/tracks';
 	import { allItems, itemKind } from '$lib/model/items';
 	import { formatRatio } from '$lib/model/format';
-	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
+	import { dragHasVisual, dragIsOnlySound, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
 	import MoveHorizontal from '@lucide/svelte/icons/move-horizontal';
 	import Pencil from '@lucide/svelte/icons/pencil';
@@ -83,6 +84,8 @@
 		startScroll: number;
 		/** Dragged up onto an overlay track (or a gap): where it would become an overlay (else null). */
 		toLayers: { start: number; duration: number; target: DropTarget } | null;
+		/** Over somewhere it can't go (the only scene onto a layer track, a scene onto audio…). */
+		blocked: boolean;
 		dy: number;
 	}
 	interface Trim {
@@ -236,7 +239,21 @@
 	let scenesRow = $state<HTMLDivElement>();
 	/** Where a drag has snapped to (content x), and where a dragged item would land. */
 	let snapX = $state<number | null>(null);
+	let storyboardEl = $state<HTMLElement>();
 	let dropTarget = $state<{ target: DropTarget; from: string } | null>(null);
+	/**
+	 * A drop that isn't allowed where the pointer is: that track (dimmed; 'main' for Scenes, '' for
+	 * a gap), why (the hint next to the pointer), and the pointer. Releasing there changes nothing.
+	 */
+	let blocked = $state<{ trackId: string; reason: string; x: number; y: number } | null>(null);
+	function showBlocked(target: DropTarget | null, at?: { x: number; y: number }) {
+		blocked = target?.kind === 'blocked' && at ? { trackId: target.trackId, reason: target.reason, x: at.x, y: at.y } : null;
+	}
+	// The "not allowed" cursor everywhere while it's blocked (a drag's pointer is captured).
+	$effect(() => {
+		document.documentElement.classList.toggle('drop-blocked', !!blocked);
+		return () => document.documentElement.classList.remove('drop-blocked');
+	});
 
 	const trackList = $derived(editor.project.tracks);
 	const mainIndex = $derived(trackList.findIndex((t) => t.kind === 'main'));
@@ -265,11 +282,15 @@
 		const track = trackList[i];
 		if (!track) return null;
 		if (track.kind === 'main') {
-			return kind === 'overlay' && clientX !== undefined
-				? { kind: 'main', index: insertIndexAt(contentX(clientX)) }
-				: null;
+			if (kind === 'overlay' && clientX !== undefined) return { kind: 'main', index: insertIndexAt(contentX(clientX)) };
+			if (kind === 'sound') return { kind: 'blocked', trackId: 'main', reason: BLOCKED.soundOnVisual };
+			if (kind === 'text') return { kind: 'blocked', trackId: 'main', reason: BLOCKED.wordsAsScene };
+			return null;
 		}
-		return accepts(track, kind) && !track.locked ? { kind: 'track', id: track.id } : null;
+		const blocked = (reason: string): DropTarget => ({ kind: 'blocked', trackId: track.id, reason });
+		if (!accepts(track, kind)) return blocked(kind === 'sound' ? BLOCKED.soundOnVisual : BLOCKED.visualOnAudio);
+		if (track.locked) return blocked(BLOCKED.locked);
+		return { kind: 'track', id: track.id };
 	}
 
 	// ─── Height, scrolling ──────────────────────────────────────────────────────────────────
@@ -335,9 +356,11 @@
 
 	const services: LaneServices = {
 		targetAt: (clientY, kind, clientX) => targetAt(clientY, kind, clientX),
-		showTarget: (target, from) => {
-			dropTarget = target ? { target, from } : null;
-			dropIndex = target?.kind === 'main' ? target.index : null;
+		showTarget: (target, from, at) => {
+			showBlocked(target, at);
+			const ok = target && target.kind !== 'blocked' ? target : null;
+			dropTarget = ok ? { target: ok, from } : null;
+			dropIndex = ok?.kind === 'main' ? ok.index : null;
 		},
 		snapTargets: (except) => {
 			const list = [0, duration, editor.time];
@@ -593,6 +616,7 @@
 			startY: event.clientY,
 			startScroll: tracks.scrollTop,
 			toLayers: null,
+			blocked: false,
 			dy: 0
 		};
 		// Nothing is captured yet, so a plain click still selects the card.
@@ -631,8 +655,25 @@
 		d.dy = event.clientY - d.startY + tracks.scrollTop - d.startScroll;
 		// Up onto an overlay track (or into a gap above the Scenes track): it would become an
 		// overlay there (the scenes don't reorder meanwhile).
-		const up = event.clientY < scenesRow!.getBoundingClientRect().top - 2;
-		const target = up ? targetAt(event.clientY, 'overlay') : null;
+		const row = scenesRow!.getBoundingClientRect();
+		const up = event.clientY < row.top - 2;
+		const down = event.clientY > row.bottom + 2;
+		let target = up || down ? targetAt(event.clientY, 'overlay') : null;
+		// Down onto an audio track is only ever "not here"; up, the only scene can't leave.
+		if (down && target?.kind !== 'blocked') target = null;
+		if (up && target && target.kind !== 'main' && target.kind !== 'blocked' && scenes.length === 1)
+			target = { kind: 'blocked', trackId: target.kind === 'track' ? target.id : '', reason: BLOCKED.onlyScene };
+		if (target?.kind === 'blocked') {
+			// Shown before the drop, so releasing here just puts the scene back.
+			showBlocked(target, { x: event.clientX, y: event.clientY });
+			d.blocked = true;
+			d.toLayers = null;
+			dropTarget = null;
+			d.to = d.from;
+			return;
+		}
+		d.blocked = false;
+		showBlocked(null);
 		if (target && target.kind !== 'main') {
 			const scene = scenes.find((s) => s.id === d.id)!;
 			d.toLayers = {
@@ -663,10 +704,16 @@
 		cardDrag = null;
 		autoScroll(null);
 		const d = drag;
+		showBlocked(null);
 		if (!d) return;
 		drag = null;
 		frozenPps = null;
-		if (d.active) {
+		if (d.active && d.blocked) {
+			// Released where it can't go: back where it was, nothing else (the hint said why).
+			suppressClick = true;
+			setTimeout(() => (suppressClick = false));
+			dropTarget = null;
+		} else if (d.active) {
 			// The click that ends a drag must not also select; later clicks must still work.
 			suppressClick = true;
 			setTimeout(() => (suppressClick = false));
@@ -698,14 +745,32 @@
 		return scenes.slice(0, index).reduce((x, s) => x + segW(s), 0);
 	}
 
+	/** A drag from outside (files, "Your media") over somewhere it can't go: show why, refuse it. */
+	function refuseDrag(event: DragEvent, trackId: string, reason: string) {
+		event.preventDefault();
+		event.stopPropagation();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+		blocked = { trackId, reason, x: event.clientX, y: event.clientY };
+		laneDrop = null;
+		dropIndex = null;
+	}
+
 	function onMediaDragOver(event: DragEvent) {
+		if (dragIsOnlySound(event)) return refuseDrag(event, 'main', BLOCKED.soundFile);
 		if (!dragHasVisual(event)) return;
+		blocked = null;
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
 		dropIndex = insertIndexAt(contentX(event.clientX));
 	}
 
 	function onMediaDrop(event: DragEvent) {
+		if (blocked) {
+			event.preventDefault();
+			event.stopPropagation();
+			blocked = null;
+			return;
+		}
 		if (!dragHasVisual(event)) return;
 		const index = insertIndexAt(contentX(event.clientX));
 		dropIndex = null;
@@ -725,13 +790,24 @@
 
 	function onLaneDragOver(event: DragEvent, trackId: string) {
 		const track = editor.track(trackId);
-		if (!dragHasVisual(event) || track?.kind !== 'overlay' || track.locked) return;
+		if (!track) return;
+		if (dragIsOnlySound(event)) return refuseDrag(event, trackId, BLOCKED.soundFile);
+		if (!dragHasVisual(event)) return;
+		if (track.kind !== 'overlay') return refuseDrag(event, trackId, BLOCKED.visualOnAudio);
+		if (track.locked) return refuseDrag(event, trackId, BLOCKED.locked);
+		blocked = null;
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
 		laneDrop = { trackId, start: dropTime(event.clientX) };
 	}
 
 	function onLaneDrop(event: DragEvent, trackId: string) {
+		if (blocked) {
+			event.preventDefault();
+			event.stopPropagation();
+			blocked = null;
+			return;
+		}
 		const track = editor.track(trackId);
 		if (!dragHasVisual(event) || track?.kind !== 'overlay' || track.locked) return;
 		const start = dropTime(event.clientX);
@@ -983,7 +1059,19 @@
 	/>
 {/if}
 
+{#if blocked}
+	<!-- Why it can't go here, next to the pointer (before the drop, so no message after it). -->
+	<span
+		class="drop-hint"
+		role="status"
+		data-testid="drop-hint"
+		style:left="{Math.min(blocked.x + 16, innerWidth - 300)}px"
+		style:top="{Math.min(blocked.y + 18, innerHeight - 40)}px">{blocked.reason}</span
+	>
+{/if}
+
 <section
+	bind:this={storyboardEl}
 	class="storyboard"
 	class:zooming
 	aria-label="Storyboard"
@@ -1115,10 +1203,14 @@
 							bind:this={scenesRow}
 							class="lane scenes-row"
 							class:dragging={drag?.active}
+							class:blocked={blocked?.trackId === 'main'}
 							role="group"
 							aria-label="Scenes"
 							ondragover={onMediaDragOver}
-							ondragleave={() => (dropIndex = null)}
+							ondragleave={() => {
+								dropIndex = null;
+								blocked = null;
+							}}
 							ondrop={onMediaDrop}
 						>
 							{#if dropIndex !== null}
@@ -1252,6 +1344,7 @@
 						class="row track-row {track.kind}"
 						class:moving={reorder?.id === track.id}
 						class:target={dropTarget?.target.kind === 'track' && dropTarget.target.id === track.id}
+						class:blocked={blocked?.trackId === track.id}
 						data-track-row
 						data-track-id={track.id}
 					>
@@ -1272,7 +1365,10 @@
 							data-track-lane={track.id}
 							ondragover={(e) => onLaneDragOver(e, track.id)}
 							ondragleave={(e) => {
-								if (!(e.currentTarget as Node).contains(e.relatedTarget as Node)) laneDrop = null;
+								if (!(e.currentTarget as Node).contains(e.relatedTarget as Node)) {
+									laneDrop = null;
+									blocked = null;
+								}
 							}}
 							ondrop={(e) => onLaneDrop(e, track.id)}
 						>
@@ -1333,6 +1429,7 @@
 			></div>
 		</div>
 	</div>
+	<ItemBubble container={storyboardEl} />
 </section>
 
 <style>
@@ -1612,6 +1709,37 @@
 		color: var(--color-on-ink);
 		font-size: var(--text-xs);
 		white-space: nowrap;
+		pointer-events: none;
+	}
+	/* A drop that isn't allowed: the track dims, the cursor says no, a hint says why. */
+	.row.blocked :global(.lane),
+	.row.blocked .header,
+	.scenes-row.blocked {
+		opacity: 0.4;
+	}
+	.row.blocked .lane,
+	.scenes-row.blocked {
+		background-image: repeating-linear-gradient(
+			-45deg,
+			transparent 0 6px,
+			color-mix(in srgb, var(--color-ink) 8%, transparent) 6px 12px
+		);
+	}
+	:global(html.drop-blocked),
+	:global(html.drop-blocked *) {
+		cursor: not-allowed !important;
+	}
+	.drop-hint {
+		position: fixed;
+		z-index: 90;
+		max-width: 280px;
+		padding: 5px 10px;
+		border-radius: var(--radius-sm);
+		background: var(--color-ink);
+		color: var(--color-on-ink);
+		box-shadow: var(--shadow-float);
+		font-size: var(--text-sm);
+		line-height: 1.35;
 		pointer-events: none;
 	}
 	.menu-anchor {

@@ -218,7 +218,7 @@ test.describe('Rendering tracks', () => {
 		expect(await count()).toBe(4);
 		// A fifth isn't added…
 		expect(await page.evaluate((green) => (window as unknown as { __scenes: Api }).__scenes.addOverlayFromMedia(green, 0), green)).toBeNull();
-		await expect(page.getByText(/Up to 4 videos can play on top/)).toBeVisible();
+		await expect(page.getByText(/Only 4 videos can play over the scenes at once/)).toBeVisible();
 		// …nor made by duplicating a track with a video on it.
 		await page.evaluate(() => {
 			const s = (window as unknown as { __scenes: Api; }).__scenes;

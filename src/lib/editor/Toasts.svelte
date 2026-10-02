@@ -1,11 +1,17 @@
 <script lang="ts">
 	import X from '@lucide/svelte/icons/x';
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
-	import { toasts } from '$lib/state/toasts.svelte';
+	import { messages } from '$lib/state/messages.svelte';
 </script>
 
+<!--
+	@component
+	General messages (not about one item): toasts at the bottom centre of the window, above the
+	storyboard's lower edge, never over the video. See messages.svelte.ts.
+-->
+
 <div class="toasts" role="status" aria-live="polite">
-	{#each toasts.items as toast (toast.id)}
+	{#each messages.toasts as toast (toast.id)}
 		<div class="toast" class:error={toast.tone === 'error'}>
 			{#if toast.tone === 'error'}<CircleAlert
 					size={16}
@@ -13,7 +19,7 @@
 					aria-hidden="true"
 				/>{/if}
 			<p>{toast.message}</p>
-			<button type="button" aria-label="Dismiss" onclick={() => toasts.dismiss(toast.id)}>
+			<button type="button" aria-label="Dismiss" onclick={() => messages.dismiss(toast.id)}>
 				<X size={14} strokeWidth={2} aria-hidden="true" />
 			</button>
 		</div>
@@ -21,15 +27,15 @@
 </div>
 
 <style>
-	/* Near the top, under the top bar, so messages never cover the storyboard you're working in. */
+	/* At the bottom centre, just above the storyboard's lower edge: never over the video. */
 	.toasts {
 		position: fixed;
 		left: 50%;
-		top: calc(var(--topbar-h) + var(--space-3));
+		bottom: var(--space-5);
 		translate: -50% 0;
 		z-index: 100;
 		display: flex;
-		flex-direction: column;
+		flex-direction: column-reverse;
 		align-items: center;
 		gap: var(--space-2);
 		pointer-events: none;
@@ -74,7 +80,7 @@
 	@keyframes toast-in {
 		from {
 			opacity: 0;
-			transform: translateY(-8px);
+			transform: translateY(8px);
 		}
 	}
 </style>

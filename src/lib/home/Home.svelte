@@ -24,7 +24,7 @@
 	import { newId } from '$lib/state/project';
 	import { currentProjectThumbnail } from '$lib/state/projectThumbnail';
 	import Toasts from '$lib/editor/Toasts.svelte';
-	import { toasts } from '$lib/state/toasts.svelte';
+	import { messages } from '$lib/state/messages.svelte';
 	import ProjectCard from './ProjectCard.svelte';
 	import type { ProjectSummary } from './types';
 
@@ -84,13 +84,11 @@
 				onProgress: (fraction) => fileSave && (fileSave.fraction = fraction)
 			});
 			if (saved) {
-				toasts.show(
-					saved.downloaded ? `“${saved.name}” is in your downloads.` : `Saved to ${saved.name}.`
-				);
+				messages.show(saved.downloaded ? `“${saved.name}” is in your downloads.` : `Saved to ${saved.name}.`);
 			}
 		} catch (error) {
 			console.error('Could not save the project file', error);
-			toasts.show('The project couldn’t be saved to a file. Please try again.', 'error');
+			messages.show('The project couldn’t be saved. Please try again.', { tone: 'error' });
 		} finally {
 			fileSave = null;
 		}
@@ -120,10 +118,7 @@
 		const files = Array.from(event.dataTransfer?.files ?? []);
 		const index = files.findIndex(isProjectFile);
 		if (index < 0) {
-			toasts.show(
-				'Drop a Scenes project file (.scenes) here to open it. To add photos and videos, start a New video.',
-				'error'
-			);
+			messages.show('Drop a .scenes project file here to open it, or start a New video to add photos and videos.', { tone: 'error' });
 			return;
 		}
 		const handles = droppedHandles(event);
@@ -132,7 +127,7 @@
 
 	onMount(() => {
 		// Tips and messages from the editor don't belong here.
-		toasts.clear();
+		messages.clear();
 		const timer = setInterval(() => (now = Date.now()), 30_000);
 		return () => {
 			clearInterval(timer);
