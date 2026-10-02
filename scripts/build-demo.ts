@@ -1,5 +1,5 @@
 /**
- * Builds the demo project that ships with the app: "Casa Rossa", a 23-second TV-style ad for a
+ * Builds the demo project that ships with the app: "Casa Rossa", a 24-second TV-style ad for a
  * (fictional) tomato sauce, with a voiceover. Run it with:
  *
  *     node scripts/build-demo.ts            (add --no-export to skip the MP4 and stills)
@@ -28,8 +28,8 @@ const ASSETS = path.join(ROOT, 'demo-assets');
 const OUT = path.join(ROOT, 'static', 'demo');
 const REVIEW = path.join(ROOT, 'demo-review');
 const PORT = 4319;
-const LENGTH = 23;
-const STILLS = [0.8, 2.0, 3.2, 5.0, 7.0, 9.5, 10.0, 11.5, 12.0, 13.0, 15.0, 17.0, 17.5, 18.5, 19.5, 21.0, 22.5];
+const LENGTH = 24;
+const STILLS = [0.8, 2.0, 3.2, 5.0, 7.0, 9.5, 10.0, 11.5, 12.0, 13.0, 15.0, 17.0, 17.5, 18.5, 19.5, 21.0, 22.5, 23.9];
 const CARD_PICTURE_AT = 14.45;
 const MUSIC = 'the_mountain-italian-485568.mp3';
 /** The voiceover, one file per line, and where each starts. */
@@ -72,7 +72,7 @@ async function buildPicture(): Promise<void> {
 	const s = (window as unknown as { __scenes: Editor }).__scenes;
 	const W = 1920;
 	const H = 1080;
-	const LENGTH = 23;
+	const LENGTH = 24;
 	const newId = () => crypto.randomUUID();
 	const E = {
 		linear: { kind: 'bezier', x1: 0, y1: 0, x2: 1, y2: 1 },
@@ -390,7 +390,9 @@ async function buildPicture(): Promise<void> {
 	// Its bottom on the same line as "10"'s.
 	pop(await words({ track: 'Captions', words: 'MINUTES', start: 18.15, end: changes[4], x: minX, y: 625, font: F.anton, px: 120, color: WHITE, shadow: SOFT }), 18.15, minX, 625);
 
-	// Outro, over the terrace: a black shade at 35% between the picture and the words, fading in
+	// Outro, over the terrace: a black shade at 45% between the picture and the words (darker than
+	// the 35% first used, so the small lines read over the busy table; a card can't be a
+	// gradient), fading in
 	// across the whole crossfade into it (19.55–20.05), and the words in white.
 	const shadeFrom = changes[4] - 0.25;
 	const shade = s.addCardOverlay(shadeFrom, tracks['Shade']);
@@ -399,7 +401,7 @@ async function buildPicture(): Promise<void> {
 	s.setOverlayTiming(shade, shadeFrom, LENGTH - shadeFrom);
 	animate(shade, shadeFrom, [
 		[shadeFrom, { x: 960, y: 540, opacity: 0 }, E.linear],
-		[changes[4] + 0.25, { x: 960, y: 540, opacity: 0.35 }]
+		[changes[4] + 0.25, { x: 960, y: 540, opacity: 0.45 }]
 	]);
 	s.rename(shade, 'Shade');
 	const name = await words({ track: 'Headlines', words: 'Casa Rossa', start: 19.93, end: LENGTH, x: 960, y: 470, font: F.serif, px: 200, color: WHITE, shadow: SOFT });
@@ -407,9 +409,15 @@ async function buildPicture(): Promise<void> {
 		[19.93, { x: 960, y: 470, scale: 0.8, opacity: 0 }, E.overshoot],
 		[20.35, { x: 960, y: 470 }]
 	]);
-	await words({ track: 'Captions', words: 'Taste the sun.', start: 21.45, end: LENGTH, x: 960, y: 640, font: F.geist(600), px: 56, color: WHITE, animation: 'fade' });
-	const tagline = await words({ track: 'Labels', words: spaced('Tomato sauce · Available now'), start: 21.9, end: LENGTH, x: 960, y: 980, font: F.geist(400), px: 28, animation: 'fade' });
+	const taste = await words({ track: 'Captions', words: 'Taste the sun.', start: 21.45, end: LENGTH, x: 960, y: 640, font: F.geist(600), px: 56, color: WHITE, shadow: SOFT, animation: 'fade' });
+	const tagline = await words({ track: 'Labels', words: spaced('Tomato sauce · Available now'), start: 21.9, end: LENGTH, x: 960, y: 980, font: F.geist(400), px: 28, shadow: SOFT, animation: 'fade' });
 	s.setTextColors(tagline, { fill: { color: WHITE, opacity: 0.8 } });
+	// They fade in, then stay to the very end, like "Casa Rossa": without the built-in 0.25 s
+	// fade-out that words with an entrance have (exitFade: false, set with edit(): no setter).
+	s.edit('No exit fade', (p: { texts: { id: string; exitFade?: boolean }[] }) => ({
+		...p,
+		texts: p.texts.map((t) => ([taste, tagline].includes(t.id) ? { ...t, exitFade: false } : t))
+	}));
 
 	// ── Layers and words leave with their scene, through its transition ──
 	// A transition runs half before and half after the scene change (cut − d/2 to cut + d/2), but
@@ -448,7 +456,7 @@ async function buildPicture(): Promise<void> {
 		}));
 	}
 
-	// The music: from the start of the file, 23 s.
+	// The music: from the start of the file, 24 s.
 	const music = s.project.sounds[0];
 	s.setSoundTiming(music.id, { start: 0, sourceStart: music.sourceStart, duration: LENGTH });
 }
@@ -458,15 +466,15 @@ function buildAudio(voice: [string, number][]): void {
 	const s = (window as unknown as { __scenes: Editor }).__scenes;
 	const [music, ...lines] = s.project.sounds;
 	// The music: full volume, no fades; volume points take it from 100% down to 35% by 0.2 s
-	// (under the voice) until 22.0 s, then to nothing at 23.0 s.
+	// (under the voice) until 23.0 s, then to nothing at 24.0 s.
 	s.setSoundVolume(music.id, 1);
 	s.setSoundFades(music.id, 0, 0);
 	s.setDefaultEasing('linear');
 	for (const [t, gain] of [
 		[0, 1],
 		[0.2, 0.35],
-		[22.0, 0.35],
-		[23.0, 0]
+		[23.0, 0.35],
+		[24.0, 0]
 	])
 		s.addVolumePoint(music.id, t, gain);
 	s.setDefaultEasing('ease-in-out');
