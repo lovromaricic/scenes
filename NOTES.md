@@ -3527,6 +3527,26 @@ PNG layers.
   - at 1440 × 900 everything moves up 57 px, but the first row of tiles is still just below
     the fold. The column has more to show than fits in a short window, and it scrolls.
 
+## One heading style for the left column
+
+- **"Add" and "Your media"** share one global class, `.column-heading` (`global.css`): the serif
+  italic, regular weight, 22 px (`--text-column-heading`, Your media's size; "Add" was 28 px),
+  line height 1, on one line.
+- **The space under each** is `--space-under-column-heading` (8 px). Each column sets it against
+  its own gap: the Add column's is 16 px, Your media's is 6 px.
+- **"Remove unused"** sits beside the "Your media" heading, centred on it, so it never makes the
+  row taller. In a narrow column (about 1100 px windows) it goes on its own line under the
+  heading. Before, both wrapped onto two lines there.
+- **The Settings column's section headings** ("Position and size", "Timing", "Keyframes",
+  card fields…) already looked the same. Their style was defined three times, and it's now one
+  global class, `.section-title`.
+- The panel titles ("Scene 1", "Clips", "Crop"…) are a level above, at 28 px, and stay as they
+  are.
+- **Tests** (`column-headings.test.ts`):
+  - at 1440 and 1100 px, both headings have the same computed font, style, weight, size and
+    line height, at 22 px, on one line, with 8 px under each (with "Remove unused" showing);
+  - every section heading in Settings (a card layer selected) has the same style.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

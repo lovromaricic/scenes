@@ -132,10 +132,6 @@
 		padding-top: var(--space-4);
 		border-top: 1px solid var(--color-border);
 	}
-	.section-title {
-		font-size: var(--text-md);
-		font-weight: var(--weight-semibold);
-	}
 	.grid {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

@@ -79,6 +79,27 @@ p {
 	letter-spacing: -0.01em;
 }
 
+/*
+ * A section's heading in the left column ("Add", "Your media"): one style for all of them, so
+ * they always match. The space under it is --space-under-column-heading (each column sets it
+ * against its own gaps).
+ */
+.column-heading {
+	font-family: var(--font-serif);
+	font-style: italic;
+	font-weight: var(--weight-regular);
+	letter-spacing: -0.01em;
+	font-size: var(--text-column-heading);
+	line-height: 1;
+	white-space: nowrap;
+}
+
+/* A section's heading inside a settings panel ("Position and size", "Timing"…). */
+.section-title {
+	font-size: var(--text-md);
+	font-weight: var(--weight-semibold);
+}
+
 .mono {
 	font-family: var(--font-mono);
 	font-variant-numeric: tabular-nums;

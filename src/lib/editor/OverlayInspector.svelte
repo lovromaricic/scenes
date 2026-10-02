@@ -276,10 +276,6 @@
 		padding-top: 0;
 		border-top: none;
 	}
-	.section-title {
-		font-size: var(--text-md);
-		font-weight: var(--weight-semibold);
-	}
 	.stack {
 		display: flex;
 		flex-direction: column;

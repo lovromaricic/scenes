@@ -49,6 +49,9 @@
 	--text-lg: 16px;
 	--text-title: 26px;
 	--text-heading: 28px;
+	/* A section's heading in the left column ("Add", "Your media"), and the space under it. */
+	--text-column-heading: 22px;
+	--space-under-column-heading: 8px;
 	--text-display: 44px;
 
 	--weight-regular: 400;

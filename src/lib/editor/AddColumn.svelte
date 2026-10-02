@@ -45,7 +45,7 @@
 <aside class="add-column" aria-label="Add">
 	<!-- Short windows (or many tracks below): this part scrolls; the panel beside it doesn't. -->
 	<div class="scroll">
-		<h2 class="serif heading">Add</h2>
+		<h2 class="column-heading">Add</h2>
 		<div class="buttons">
 			{#each items as item (item.id)}
 				{#if item.id === 'cards'}
@@ -111,13 +111,9 @@
 		overflow-y: auto;
 		scrollbar-width: thin;
 	}
-	.heading {
-		font-size: var(--text-heading);
-		line-height: 1;
-	}
-	/* A little closer to its heading than the column's other parts are to each other. */
-	.heading + .buttons {
-		margin-top: calc(10px - var(--space-4));
+	/* Closer to its heading than the column's parts are to each other (its gap). */
+	.column-heading + .buttons {
+		margin-top: calc(var(--space-under-column-heading) - var(--space-4));
 	}
 	.buttons {
 		display: flex;

@@ -93,10 +93,6 @@
 		flex-direction: column;
 		gap: var(--space-2);
 	}
-	.section-title {
-		font-size: var(--text-md);
-		font-weight: var(--weight-semibold);
-	}
 	.count,
 	.hint {
 		font-size: var(--text-xs);

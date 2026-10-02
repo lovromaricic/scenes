@@ -167,7 +167,7 @@
 {#if items.length}
 	<section class="library" aria-labelledby="library-title">
 		<div class="head">
-			<h2 id="library-title" class="serif heading">Your media</h2>
+			<h2 id="library-title" class="column-heading">Your media</h2>
 			{#if unused.length}
 				<button type="button" class="clean" onclick={removeUnused}>Remove unused</button>
 			{/if}
@@ -273,15 +273,19 @@
 	}
 	.head {
 		display: flex;
-		align-items: baseline;
+		/* Centred: "Remove unused" never makes the row taller than the heading. In a narrow
+		   column it goes on its own line, under the heading. */
+		flex-wrap: wrap;
+		align-items: center;
 		justify-content: space-between;
-		gap: var(--space-2);
+		gap: var(--space-1) var(--space-2);
 	}
-	.heading {
-		font-size: 22px;
-		line-height: 1;
+	/* The space under the heading, as under "Add" (the section's gap is 6 px). */
+	.head + .hint {
+		margin-top: calc(var(--space-under-column-heading) - 6px);
 	}
 	.clean {
+		white-space: nowrap;
 		padding: 2px 6px;
 		border: none;
 		border-radius: var(--radius-sm);
