@@ -255,8 +255,12 @@ void main() {
 	float picture = uBorder > 0.0 ? clamp(0.5 - di, 0.0, 1.0) : 1.0;
 	// 0–1 across the picture area, y down; textures are stored bottom-up.
 	vec2 t = clamp(vLocal / innerHalf * 0.5 + 0.5, 0.0, 1.0);
-	vec3 c = graded(texture(uImage, uUv.xy + vec2(t.x, 1.0 - t.y) * uUv.zw).rgb);
-	vec4 front = vec4(mix(uBorderColor, c, picture), 1.0) * box;
+	vec4 image = texture(uImage, uUv.xy + vec2(t.x, 1.0 - t.y) * uUv.zw);
+	vec3 c = graded(image.rgb);
+	// The picture keeps its own transparency (a PNG with a transparent background); the border
+	// is solid. Premultiplied.
+	float a = mix(1.0, image.a, picture);
+	vec4 front = vec4(mix(uBorderColor, c, picture) * a, a) * box;
 	float shadow = 0.0;
 	if (uShadowAlpha > 0.0) {
 		float ds = roundedBox(vLocal - uShadowOffset, uHalf, uRadius);

@@ -184,7 +184,7 @@ test.describe('Rendering tracks', () => {
 
 		// The home picture (the start of the video) shows the tracks in order too.
 		await page.getByRole('link', { name: 'Projects' }).click();
-		const img = page.locator('img[src]').first();
+		const img = page.getByRole('article').locator('img[src]').first();
 		await expect(img).toBeVisible();
 		const thumb = (fx: number, fy: number) =>
 			img.evaluate(

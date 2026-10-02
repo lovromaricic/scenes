@@ -68,6 +68,10 @@ export async function storeOpenedFile(
 		fileName: string;
 		handle?: FileSystemFileHandle;
 		onProgress?: (fraction: number) => void;
+		/** A copy's title (default: the file's, marked as a copy). */
+		title?: string;
+		/** The project's picture on the home screen (default: the file's). */
+		thumbnail?: Blob;
 	}
 ): Promise<string> {
 	const { data } = opened;
@@ -113,15 +117,15 @@ export async function storeOpenedFile(
 	project.library = project.library.map(mapId).filter((id, i, all) => all.indexOf(id) === i);
 	if (options.mode === 'copy') {
 		project.id = newId();
-		project.title = copyName(project.title);
+		project.title = options.title ?? copyName(project.title);
 		project.updatedAt = Date.now();
 	}
 
 	const previous = options.mode === 'replace' ? await getProject(project.id) : undefined;
 	emergencyCopy.remove(project.id);
 	await saveProject({ ...project, view: data.view, savedAt: Date.now() });
-	if (opened.has('thumbnail.jpg')) {
-		const picture = await opened.read('thumbnail.jpg', 'image/jpeg');
+	if (options.thumbnail || opened.has('thumbnail.jpg')) {
+		const picture = options.thumbnail ?? (await opened.read('thumbnail.jpg', 'image/jpeg'));
 		await putProjectThumbnail(project.id, picture, thumbnailKey(project));
 	}
 	if (previous) await deleteUnusedBy(previous);

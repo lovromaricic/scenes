@@ -39,6 +39,41 @@ class ProjectOpener {
 		if (picked) await this.open(picked.file, picked.handle);
 	}
 
+	/**
+	 * Open a project file as a new project of the user's, always (the file itself is never
+	 * linked or changed): the demo on the home screen.
+	 */
+	async openCopy(file: File, options: { title?: string; thumbnail?: Blob } = {}): Promise<void> {
+		if (this.busy) return;
+		this.error = null;
+		this.progress = { name: file.name, fraction: 0 };
+		let opened: Awaited<ReturnType<typeof readProjectFile>> | null = null;
+		try {
+			opened = await readProjectFile(file);
+			const stored = await storeOpenedFile(opened, {
+				mode: 'copy',
+				fileName: file.name,
+				...options,
+				onProgress: (fraction) => {
+					if (this.progress) this.progress.fraction = fraction;
+				}
+			});
+			await goto(resolve('/edit/[id]', { id: stored }));
+		} catch (error) {
+			console.error('Could not open the project file', error);
+			this.error = {
+				name: file.name,
+				message:
+					error instanceof ProjectFileError
+						? error.message
+						: 'Something went wrong while opening this file. Please try again.'
+			};
+		} finally {
+			this.progress = null;
+			await opened?.close().catch(() => {});
+		}
+	}
+
 	async open(file: File, handle?: FileSystemFileHandle): Promise<void> {
 		if (this.busy) return;
 		this.error = null;

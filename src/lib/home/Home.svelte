@@ -6,7 +6,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
+	import { base, resolve } from '$app/paths';
 	import Plus from '@lucide/svelte/icons/plus';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -146,6 +146,32 @@
 		void goto(resolve('/edit/[id]', { id }));
 	}
 
+	/** The demo that ships with the app: always opened as a new copy, so it never changes. */
+	const DEMO = `${base}/demo/casa-rossa.scenes`;
+	const DEMO_PICTURE = `${base}/demo/casa-rossa.jpg`;
+	let openingDemo = $state(false);
+	async function openDemo() {
+		if (openingDemo || projectOpener.busy) return;
+		openingDemo = true;
+		try {
+			const [file, picture] = await Promise.all([
+				fetch(DEMO).then((r) => {
+					if (!r.ok) throw new Error(`${r.status}`);
+					return r.blob();
+				}),
+				fetch(DEMO_PICTURE)
+					.then((r) => (r.ok ? r.blob() : undefined))
+					.catch(() => undefined)
+			]);
+			await projectOpener.openCopy(new File([file], 'casa-rossa.scenes'), { title: 'Casa Rossa ad', thumbnail: picture });
+		} catch (error) {
+			console.error('Could not open the demo', error);
+			messages.show('The demo couldn’t be opened. Please try again.', { tone: 'error' });
+		} finally {
+			openingDemo = false;
+		}
+	}
+
 	function newVideo() {
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- the path is resolve()d; only a query is added
 		void goto(`${resolve('/edit/[id]', { id: newId() })}?new=1`);
@@ -181,6 +207,22 @@
 					<span class="plus"><Plus size={26} strokeWidth={1.6} aria-hidden="true" /></span>
 					<span class="serif new-label">New video</span>
 					<span class="new-hint">Start from your photos & videos</span>
+				</button>
+			</li>
+			<li>
+				<button
+					type="button"
+					class="demo"
+					aria-label="Demo: Casa Rossa, a 15 second ad. Opens a copy you can edit."
+					aria-busy={openingDemo}
+					onclick={openDemo}
+				>
+					<img src={DEMO_PICTURE} alt="" draggable="false" />
+					<span class="demo-chip">{openingDemo ? 'Opening…' : 'Demo'}</span>
+					<span class="demo-text">
+						<span class="serif demo-title">Casa Rossa · 15 sec ad</span>
+						<span class="demo-hint">Opens a copy you can edit</span>
+					</span>
 				</button>
 			</li>
 			{#each projects ?? [] as project (project.id)}
@@ -343,6 +385,70 @@
 		margin-bottom: auto;
 		border-radius: var(--radius-pill);
 		background: var(--color-ink-line);
+	}
+	/* The demo: its picture, with the name over a dark fade at the bottom. */
+	.demo {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
+		width: 100%;
+		aspect-ratio: 16 / 10;
+		padding: var(--space-5);
+		border: none;
+		border-radius: var(--radius-card);
+		overflow: hidden;
+		background: var(--color-ink);
+		color: var(--color-on-ink);
+		text-align: left;
+		transition: transform var(--dur-fast) var(--ease-out);
+	}
+	.demo:active {
+		transform: scale(0.99);
+	}
+	.demo img {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		transition: transform var(--dur) var(--ease-out);
+	}
+	.demo:hover img {
+		transform: scale(1.03);
+	}
+	.demo::after {
+		content: '';
+		position: absolute;
+		inset: 40% 0 0;
+		background: linear-gradient(transparent, color-mix(in srgb, var(--color-ink) 85%, transparent));
+	}
+	.demo-chip {
+		position: absolute;
+		top: var(--space-4);
+		left: var(--space-4);
+		z-index: 1;
+		padding: 2px 8px;
+		border-radius: var(--radius-pill);
+		background: var(--color-bg);
+		color: var(--color-ink);
+		font-size: var(--text-xs);
+		font-weight: var(--weight-medium);
+	}
+	.demo-text {
+		position: relative;
+		z-index: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.demo-title {
+		font-size: 26px;
+		line-height: 1.05;
+	}
+	.demo-hint {
+		color: var(--color-on-ink-muted);
+		font-size: var(--text-sm);
 	}
 	.new-label {
 		font-size: 30px;

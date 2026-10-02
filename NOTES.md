@@ -3342,6 +3342,114 @@ order.
   - Updated for the new tile behaviour (double-click to add; tiles named after the file):
     `stage-media`, `crop`, `layers-add`, `tracks-moving`, `rename-items`.
 
+## The Casa Rossa demo
+
+A 15-second TV-style ad for a fictional tomato sauce, shipped with the app as a demo.
+
+### How it's made
+- **`node scripts/build-demo.ts`** (Node 23 runs TypeScript directly). Add `--no-export` to skip
+  the MP4 and stills. Running it again regenerates everything.
+- **It drives the real app** in Chrome (a Vite dev server on port 4319, with Playwright):
+  - imports `demo-assets/` through the file picker and the Sound panel;
+  - builds every scene, layer, word, keyframe and transition with the editor's own functions
+    (`window.__scenes`);
+  - saves with the app's own "Save to file", as a download.
+- **Outputs:**
+  - `static/demo/casa-rossa.scenes` (about 17 MB; it holds all five files);
+  - `static/demo/casa-rossa.jpg`, the Demo card's picture (the frame at 8.88 s);
+  - `demo-review/` (git-ignored): the exported MP4, the stills to review, and
+    `beat-sync.json`.
+- **Beat sync** (`scripts/beats.ts`, offline): the first 15 s of the music are decoded with ffmpeg.
+  Spectral flux gives the onsets, autocorrelation gives the tempo, then the best beat phase,
+  with each beat nudged onto its onset peak. Onsets register about three quarters into a
+  1024-sample frame, so they're timed there; without that, beats came out ~36 ms early.
+  A unit test checks a 120 BPM click track within ±7 ms.
+- **Home screen:** a "Demo" card ("Casa Rossa · 15 sec ad", with its picture) after New video.
+  Opening it fetches the file and stores it as a new project every time (`projectOpener.openCopy`
+  → `storeOpenedFile` in `copy` mode, titled "Casa Rossa ad", with the demo picture as its
+  thumbnail). The file in `static/` is never changed or linked.
+
+### Beat sync (110 BPM; beats at 0.546, 1.115, 1.660, 2.183 … every ~0.545 s)
+| Moment | Planned | Now |
+|---|---|---|
+| "Fresh." | 0.15 | 0.15 (no beat within 0.15 s) |
+| "Simple." | 0.75 | 0.75 (no beat) |
+| "Italian." | 1.35 | 1.35 (no beat) |
+| Scene 1 → 2 | 2.00 | 2.00 (no beat) |
+| Scene 2 → 3 | 5.00 | **4.911** |
+| Scene 3 → 4 | 8.00 | 8.00 (no beat) |
+| Scene 4 → 5 | 10.50 | **10.379** |
+| Scene 5 → 6 | 13.00 | **13.073** |
+| Large tomato | 8.10 | **8.185** |
+| Medium tomato | 8.35 | 8.35 (no beat) |
+| Small tomato | 8.60 | **8.731** |
+| Badge | 8.70 | **8.731** |
+| "10" | 11.20 | 11.20 (no beat) |
+| "MINUTES" | 11.50 | **11.482** |
+
+Items that end at a scene change ("visible until 5.0" and so on) end at the moved change.
+
+### Where the editor does it differently (the closest alternative used)
+- **Text alignment:** there's none, so left-aligned lines are centred half their measured width
+  in from x = 120. Widths are measured in the page with the same font files the editor draws
+  with (Anton isn't a UI font, so it's loaded for measuring).
+- **Letter spacing:** there's no setting, so "SINCE 1962" and "Tomato sauce · Available now"
+  have thin spaces (U+2009) between their letters.
+- **Geist medium:** only 400, 600 and 700 are built in, so "Taste the sun." is 600.
+- **Transition lengths** were fixed per kind. `setTransition(id, kind, duration?)` now takes a
+  length (default unchanged), giving 0.4 s slide and zoom and 0.5 s crossfades.
+- **Hollow outlined text:** a fill's opacity also fades the outline, so the letters can't be
+  see-through. "100%" is filled with the card's ink and outlined in white, which reads as
+  hollow, then fades to 25%.
+- **Style fonts:** the Outlined style is Geist and Big title is Instrument Serif. Both are
+  switched to Anton ("100%" is uppercase anyway).
+- **Entrances with Overshoot:** the built-in Pop has its own easing. "10" and "MINUTES" are
+  animated with keyframes instead: 30% → 100% and fading in over 0.35 s, Overshoot. The same
+  goes for the opening words, "Casa Rossa", the badge and "NEW". "Ready in" and "Sun-ripened
+  tomatoes" use the built-in Pop.
+- **Fade and slide-up last 0.5 s** (built in), so "SINCE 1962" fades in over 2.2–2.7, not 2.5.
+  Words with an entrance also fade out over their last 0.25 s (built in).
+- **Scale 0%:** scale goes down to 1% (`MIN_SCALE`), so the bar, badge and tomatoes start at 1%.
+- **Picture-in-picture:** it slides in already at 95% (the 5.2 s keyframe is 95% too), then
+  grows to 100% by 7.3 s.
+- **Split screen, "filled and cropped":** layers always fill their box (cover), so the 880 ×
+  1000 box crops it with no crop setting needed.
+- **Muted clips:** scene clips have volume 0. Video layers have their sound off, which is the
+  default.
+
+### Fixed in the app along the way
+- **Transparent PNG layers** were drawn on a solid (black) rectangle. The overlay shader used
+  the picture's colour but not its alpha. Now the picture keeps its transparency
+  (premultiplied) and the border stays solid. The demo test checks a transparent corner of the
+  big tomato. (A layer's drop shadow is still the box's shape, not the picture's.)
+- **Your media's hint** is shorter ("Double-click or drag to add. Right-click for more."), so it
+  fits on two lines.
+
+### Review (stills at 0.5, 1.0, 1.7, 3.5, 6.5, 9.5, 12.0, 14.5 s, from the exported MP4)
+- **"SINCE 1962"** was hard to read on the kitchen's bright window, at the top left. It's now at
+  the top right, over the dark cabinets (right edge at x = 1800, y = 110), with a soft shadow.
+- **"10" and "MINUTES"** at (1300, 590) and (1560, 610) overlapped. They're now one group
+  centred at x = 1420 with a 36 px gap, and "MINUTES" is at y = 625 so its bottom lines up with
+  "10"'s.
+- **Tomatoes** showed on black squares. Fixed in the app (see above).
+- **"100%"** didn't show (see hollow text above).
+- Everything else reads cleanly: nothing overlaps awkwardly or sits too close to the edges.
+- **Playback in the editor:** 15.43 s of wall time for the 15 s, about 60 frames a second, and
+  the picture never paused for more than 24 ms (from the demo test).
+- **Export:** 1920 × 1080, 24 fps, H.264 + AAC. The video stream is 15.000 s (360 frames); the
+  audio is 15.08 s, from AAC's end padding. The music holds at about −13 dB, fades from 13.5 s,
+  and is at about −33 dB in the last moment. The frames match the preview.
+
+### Tests
+- **Unit:** `scripts/beats.test.ts` (a click track's tempo and beats; snapping), and
+  `scripts/demo.test.ts` (the built file against the spec: format, length, scenes, transitions,
+  clips, tracks, fonts, music). `vite.config.ts` now includes `scripts/**` tests.
+- **`e2e/demo.test.ts`:**
+  - the Demo card and its picture; opening it gives an editable copy with everything in it,
+    and the tomatoes are drawn transparent;
+  - each open is a new copy, and the demo is unchanged;
+  - it plays through in real time without stalls and stops at 15 s.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
