@@ -6,6 +6,8 @@
 	/* Colour */
 	--color-bg: #ffffff;
 	--color-surface: #f2f2f4;
+	/* Around the video frame on the stage: a light gray, so a white frame still stands out. */
+	--pasteboard: #f4f4f5;
 	--color-border: #e4e4e7;
 	--color-ink: #141417;
 	--color-muted: #6b6b72;

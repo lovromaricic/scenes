@@ -26,7 +26,7 @@ test.describe('Labels match the media', () => {
 		await expect(settings(page).getByRole('slider', { name: 'Video sound volume' })).toBeVisible();
 		// Custom: the tip and the reframe handle on the preview.
 		await settings(page).getByRole('radio', { name: 'Custom' }).click();
-		await expect(settings(page).getByText('Drag the video on the preview to move it.')).toBeVisible();
+		await expect(settings(page).getByText('Drag the video to move it. Scroll over it to zoom.')).toBeVisible();
 		await expect(page.getByRole('button', { name: /^Reframe: drag to move the video/ })).toBeAttached();
 		// Crop mode.
 		await page.keyboard.press('c');
@@ -47,7 +47,7 @@ test.describe('Labels match the media', () => {
 		await expect(settings(page).getByRole('radio', { name: 'Fit' })).toHaveAccessibleDescription(/whole picture/);
 		await expect(settings(page).getByRole('slider', { name: 'Video sound volume' })).toHaveCount(0);
 		await settings(page).getByRole('radio', { name: 'Custom' }).click();
-		await expect(settings(page).getByText('Drag the picture on the preview to move it.')).toBeVisible();
+		await expect(settings(page).getByText('Drag the picture to move it. Scroll over it to zoom.')).toBeVisible();
 		await expect(page.getByRole('button', { name: /^Reframe: drag to move the picture/ })).toBeAttached();
 		await page.keyboard.press('c');
 		await expect(page.getByText('Drag the box on the picture,')).toBeVisible();

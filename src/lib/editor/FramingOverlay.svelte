@@ -153,8 +153,9 @@
 		editor.endGesture('Reframe');
 	}
 
+	/** Plain scroll over the picture zooms it in its frame (Cmd/Ctrl + scroll and pinch zoom the stage). */
 	function onwheel(event: WheelEvent) {
-		if (!scene) return;
+		if (!scene || event.ctrlKey || event.metaKey) return;
 		event.preventDefault();
 		const factor = Math.exp(-event.deltaY * 0.0015);
 		editor.setFrameValues(scene.id, { zoom: clamped({ ...frame, zoom: frame.zoom * factor }).zoom }, `zoom:${scene.id}`);

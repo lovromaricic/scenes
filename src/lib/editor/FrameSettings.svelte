@@ -130,7 +130,7 @@
 			oninput={(zoom) => editor.setFrameValues(scene.id, { zoom }, `zoom:${scene.id}`)}
 		/>
 	</Field>
-	<p class="tip">Drag the {noun} on the preview to move it. Scroll or pinch to zoom.</p>
+	<p class="tip">Drag the {noun} to move it. Scroll over it to zoom.</p>
 	<KeyframeSection id={scene.id} />
 	<div class="row">
 		<Button

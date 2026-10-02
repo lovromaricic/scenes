@@ -2902,6 +2902,59 @@ the kind, for tests.
   - the ✓ in the menu;
   - two overlapping keyframes: clicking at the one underneath selects it.
 
+## Stage zoom centred, and a gray pasteboard
+
+**Zoom:**
+- **Centred.** Cmd/Ctrl + scroll and pinch zoom around the stage's centre, not the pointer: the
+  point at the centre stays put, so a centred frame stays centred.
+- **Steps:** 10% per scroll step (`ZOOM_STEP` 1.1 per 100 px of wheel; a pinch's small deltas
+  zoom smoothly), from 1/8 of Fit to 800%.
+- **Snapping to Fit:** within 2% of Fit, it is Fit.
+
+**Panning only beyond Fit** (`beyondFit`, `clampView`):
+- At Fit and below, the frame is always centred: scroll, Shift + scroll and Space + drag don't
+  move it, and Space plays and pauses straight away.
+- Zoomed in beyond Fit, scroll, Shift + scroll (sideways) and Space + drag (or the middle button)
+  move it. It's clamped to whatever overflows the stage plus a quarter of the stage, so it's
+  never out of view.
+- **Back at Fit or below:** zooming back there re-centres the frame with a short (0.22 s)
+  animation (`recentering`).
+- **Fit itself:** Fit (from the menu, or double-clicking the percentage) settles there the same
+  way, the label reading "Fit" throughout.
+- **The menu** keeps Fit, 50% and 100%.
+
+**Scroll over Custom framing:**
+- Cmd/Ctrl + scroll always zooms the stage. The reframe view now ignores it, so it reaches the
+  stage.
+- Plain scroll over the picture zooms the picture in its frame only when the scene is in Custom
+  framing and selected (the reframe view is only there then). Otherwise it does nothing at Fit,
+  or pans beyond Fit.
+- **The settings' hint:** "Drag the picture to move it. Scroll over it to zoom." It keeps the
+  media's word, so a video scene says "Drag the video…", as the media labels change asked.
+
+**Pasteboard:**
+- A light gray background (`--pasteboard: #f4f4f5`) on the stage around the frame.
+- The frame keeps a 1 px border in the border colour (`--color-border`) and its soft shadow, so a
+  white card or white video stands clear of it.
+- Faded objects outside the frame are drawn on it as before.
+
+**Tests (`stage-zoom.test.ts`; the old pan/zoom test in `pasteboard.test.ts` is replaced by it):**
+- **Centred zoom:** 1.1× and 1.1³× with the pointer in opposite corners, centred each time;
+  centred below Fit.
+- **No panning at or below Fit:** scroll, Shift + scroll and Space + drag move nothing, and Space
+  plays.
+- **Beyond Fit:**
+  - scroll, Shift + scroll and Space + drag pan by exactly the drag;
+  - a huge scroll still leaves over 20% of the stage covered;
+  - zooming out re-centres with the animation class.
+- **The menu:** 50% and 100% are true sizes; at 100% the frame is cut off at the stage;
+  double-click gives Fit and the original box.
+- **Custom framing:** plain scroll zooms the picture only with the scene selected; Cmd/Ctrl +
+  scroll zooms the stage instead; the hint.
+- **Pasteboard:** the token and background, the border colour and shadow, and pixels of a white
+  card against it (white inside, a darker border, the gray outside).
+- `media-labels.test.ts` has the new hint text.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

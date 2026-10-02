@@ -318,72 +318,7 @@ test.describe('Objects outside the frame', () => {
 		expect(Math.abs(after.x - (f.x + f.w))).toBeLessThan(1);
 	});
 
-	test('the stage pans and zooms; Fit resets it; Space on its own still plays', async ({ page }, info) => {
-		await setup(page);
-		const fit = await stage(page);
-		expect(fit.zoom).toBe('Fit');
-
-		// Ctrl + scroll zooms in around the pointer: the point under it stays put.
-		const px = fit.frame.x + fit.frame.w * 0.25;
-		const py = fit.frame.y + fit.frame.h * 0.25;
-		await page.mouse.move(px, py);
-		await page.keyboard.down('Control');
-		await page.mouse.wheel(0, -200);
-		await page.keyboard.up('Control');
-		const zoomed = await stage(page);
-		expect(zoomed.frame.w).toBeGreaterThan(fit.frame.w * 1.2);
-		expect((px - zoomed.frame.x) / zoomed.frame.w).toBeCloseTo(0.25, 2);
-		expect((py - zoomed.frame.y) / zoomed.frame.h).toBeCloseTo(0.25, 2);
-		expect(zoomed.zoom).toMatch(/^\d+%$/);
-
-		// Scrolling pans.
-		await page.mouse.wheel(80, 40);
-		await expect.poll(async () => (await stage(page)).frame.x).toBeCloseTo(zoomed.frame.x - 80, 0);
-		expect((await stage(page)).frame.y).toBeCloseTo(zoomed.frame.y - 40, 0);
-
-		// Space + drag pans (and doesn't play).
-		const before = await stage(page);
-		await page.mouse.move(before.stage.x + before.stage.w / 2, before.stage.y + before.stage.h / 2);
-		await page.keyboard.down(' ');
-		await page.mouse.down();
-		await page.mouse.move(before.stage.x + before.stage.w / 2 + 60, before.stage.y + before.stage.h / 2 + 25, { steps: 5 });
-		await page.mouse.up();
-		await page.keyboard.up(' ');
-		const panned = await stage(page);
-		expect(panned.frame.x - before.frame.x).toBeCloseTo(60, 0);
-		expect(panned.frame.y - before.frame.y).toBeCloseTo(25, 0);
-		expect(await api<boolean>(page, 's => s.playing')).toBe(false);
-
-		// Space on its own (over the stage) plays and pauses as before.
-		await page.keyboard.press(' ');
-		await expect.poll(() => api<boolean>(page, 's => s.playing')).toBe(true);
-		await page.keyboard.press(' ');
-		await expect.poll(() => api<boolean>(page, 's => s.playing')).toBe(false);
-
-		// The zoom menu: 50% and 100% are sizes in project pixels; Fit resets it all.
-		const W = await api<number>(page, 's => s.project.format.width');
-		await page.getByTestId('zoom').click();
-		await page.getByRole('menuitem', { name: '50%' }).click();
-		await expect.poll(async () => (await stage(page)).frame.w).toBeCloseTo(W / 2, 0);
-		expect((await stage(page)).zoom).toBe('50%');
-		await page.getByTestId('zoom').click();
-		await page.getByRole('menuitem', { name: '100%' }).click();
-		await expect.poll(async () => (await stage(page)).frame.w).toBeCloseTo(W, 0);
-		await page.screenshot({ path: info.outputPath('zoom-100.png') });
-		// Zoomed in past the stage, the frame is cut off at the stage's edges (it never covers
-		// the panels around it).
-		const big = await stage(page);
-		const covering = await page.evaluate(
-			({ x, y }) => document.elementFromPoint(x, y)?.closest('.clip') !== null,
-			{ x: big.stage.x + big.stage.w + 4, y: big.stage.y + big.stage.h / 2 }
-		);
-		expect(covering).toBe(false);
-		await page.getByTestId('zoom').click();
-		await page.getByRole('menuitem', { name: /Fit/ }).click();
-		const back = await stage(page);
-		expect(back.zoom).toBe('Fit');
-		for (const k of ['x', 'y', 'w', 'h'] as const) expect(back.frame[k]).toBeCloseTo(fit.frame[k], 0);
-	});
+	// Zooming and panning the stage: see stage-zoom.test.ts.
 
 	test('boxes outside the stage are cut off: they never catch clicks on the panels around it', async ({ page }) => {
 		await setup(page);

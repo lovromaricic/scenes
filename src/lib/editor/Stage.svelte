@@ -103,61 +103,105 @@
 		return Math.max(1e-3, Math.min(w / format.width, h / format.height));
 	}
 
-	/** Keep the frame within reach: at most about a frame's width beyond the stage's edges. */
-	function reach(v: { zoom: number; x: number; y: number }) {
-		const zoom = Math.min(MAX_ZOOM, Math.max(fitZoom() / 8, v.zoom));
+	/** The smallest zoom: an eighth of Fit. */
+	const minZoom = () => fitZoom() / 8;
+	/** One scroll step (100 pixels of wheel) zooms by 10%. */
+	const ZOOM_STEP = 1.1;
+
+	/** Whether the frame is zoomed in past Fit (only then can it be moved around). */
+	function beyondFit(v = view): boolean {
+		return !!v && v.zoom > fitZoom() * 1.001;
+	}
+
+	/**
+	 * Keep a view sensible: zoom within its limits; at Fit and below the frame is centred; beyond
+	 * Fit it can be moved only so far that it's never completely out of view (whatever overflows
+	 * the stage, plus a quarter of the stage).
+	 */
+	function clampView(v: { zoom: number; x: number; y: number }) {
+		const zoom = Math.min(MAX_ZOOM, Math.max(minZoom(), v.zoom));
+		if (zoom <= fitZoom() * 1.001) return { zoom, x: 0, y: 0 };
 		const vw = viewportEl?.clientWidth ?? 0;
 		const vh = viewportEl?.clientHeight ?? 0;
-		const lx = format.width * zoom + vw / 2;
-		const ly = format.height * zoom + vh / 2;
+		const lx = Math.max(0, (format.width * zoom - vw) / 2) + vw / 4;
+		const ly = Math.max(0, (format.height * zoom - vh) / 2) + vh / 4;
 		return { zoom, x: Math.min(lx, Math.max(-lx, v.x)), y: Math.min(ly, Math.max(-ly, v.y)) };
 	}
 
 	const current = () => view ?? { zoom: fitZoom(), x: 0, y: 0 };
 
-	function fit() {
-		view = null;
+	/** Briefly animate the frame's position (when it's brought back to the centre). */
+	let recentering = $state(false);
+	let recenterTimer: ReturnType<typeof setTimeout> | undefined;
+	function animateRecenter() {
+		recentering = true;
+		clearTimeout(recenterTimer);
+		recenterTimer = setTimeout(() => (recentering = false), 240);
 	}
 
-	/** Zoom to `zoom`, keeping the point under (clientX, clientY) in place (default: the middle). */
-	function zoomTo(zoom: number, at?: { x: number; y: number }) {
+	/** Back to Fit: centred again (smoothly, if it had been moved), then following the stage's size. */
+	function fit() {
+		const cur = view;
+		if (cur && (cur.x || cur.y || Math.abs(cur.zoom - fitZoom()) > 1e-6)) {
+			animateRecenter();
+			const fitted = { zoom: fitZoom(), x: 0, y: 0 };
+			view = fitted;
+			setTimeout(() => {
+				if (view === fitted) view = null;
+			}, 240);
+		} else view = null;
+	}
+	/** Whether the view is Fit (also while it's settling back there). */
+	const atFit = $derived(!view || (recentering && !view.x && !view.y && Math.abs(view.zoom - fitZoom()) < 1e-6));
+
+	/**
+	 * Zoom to `zoom` around the stage's centre (the point there stays put). Back at Fit or below,
+	 * the frame is centred again; very near Fit, it's Fit.
+	 */
+	function zoomTo(zoom: number) {
 		if (!viewportEl) return;
 		const cur = current();
-		const next = reach({ ...cur, zoom });
-		const k = next.zoom / cur.zoom;
-		const r = viewportEl.getBoundingClientRect();
-		const ax = at ? at.x - (r.left + r.width / 2) : 0;
-		const ay = at ? at.y - (r.top + r.height / 2) : 0;
-		view = reach({ zoom: next.zoom, x: ax - (ax - cur.x) * k, y: ay - (ay - cur.y) * k });
+		const z = Math.min(MAX_ZOOM, Math.max(minZoom(), zoom));
+		if (Math.abs(z / fitZoom() - 1) < 0.02) {
+			fit();
+			return;
+		}
+		const k = z / cur.zoom;
+		const next = clampView({ zoom: z, x: cur.x * k, y: cur.y * k });
+		if ((cur.x || cur.y) && !next.x && !next.y) animateRecenter();
+		view = next;
 	}
 
+	/** Move the frame around (only when zoomed in past Fit). */
 	function panBy(dx: number, dy: number) {
+		if (!beyondFit()) return;
 		const cur = current();
-		view = reach({ ...cur, x: cur.x + dx, y: cur.y + dy });
+		view = clampView({ ...cur, x: cur.x + dx, y: cur.y + dy });
 	}
 
-	const zoomLabel = $derived(view ? `${Math.round(view.zoom * 100)}%` : 'Fit');
+	const zoomLabel = $derived(view && !atFit ? `${Math.round(view.zoom * 100)}%` : 'Fit');
 
-	// Scroll pans, Ctrl/Cmd + scroll (or a pinch) zooms. Not passive, so the page doesn't scroll
+	// Cmd/Ctrl + scroll (or a pinch) zooms the stage, everywhere on it, around its centre. Plain
+	// scroll zooms a Custom-framed picture (the reframe view handles that itself), pans when
+	// zoomed in past Fit, and otherwise does nothing here. Not passive, so the page doesn't scroll
 	// or zoom instead.
 	$effect(() => {
 		const el = viewportEl;
 		if (!el) return;
 		const onwheel = (event: WheelEvent) => {
-			if (event.defaultPrevented || empty || !editor.ready || editor.cropping) return;
-			// The reframe view zooms the picture itself.
-			if (framing && (event.target as Element).closest('.preview')) return;
-			event.preventDefault();
+			if (empty || !editor.ready || editor.cropping) return;
 			const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientHeight : 1;
 			const dx = event.deltaX * unit;
 			const dy = event.deltaY * unit;
 			if (event.ctrlKey || event.metaKey) {
-				zoomTo(current().zoom * Math.exp(-dy * 0.002), { x: event.clientX, y: event.clientY });
-			} else if (event.shiftKey && !dx) {
-				panBy(-dy, 0);
-			} else {
-				panBy(-dx, -dy);
+				event.preventDefault();
+				zoomTo(current().zoom * Math.pow(ZOOM_STEP, -dy / 100));
+				return;
 			}
+			if (event.defaultPrevented || !beyondFit()) return;
+			event.preventDefault();
+			if (event.shiftKey && !dx) panBy(-dy, 0);
+			else panBy(-dx, -dy);
 		};
 		el.addEventListener('wheel', onwheel, { passive: false });
 		return () => el.removeEventListener('wheel', onwheel);
@@ -180,7 +224,8 @@
 		if (empty || editor.cropping || editor.recording) return;
 		const target = event.target as HTMLElement | null;
 		if (typing(target) || target?.closest?.('[role="dialog"], [role="menu"]')) return;
-		if (!spaceDown && !viewportEl?.matches(':hover')) return;
+		// Only zoomed in past Fit is there anything to pan: otherwise Space just plays.
+		if (!spaceDown && (!beyondFit() || !viewportEl?.matches(':hover'))) return;
 		// Held over the stage: wait to see whether it's for panning (handled on release).
 		event.preventDefault();
 		event.stopPropagation();
@@ -199,7 +244,7 @@
 	}
 
 	function onviewportpointerdown(event: PointerEvent) {
-		if (!((spaceDown && event.button === 0) || event.button === 1) || empty) return;
+		if (!((spaceDown && event.button === 0) || event.button === 1) || empty || !beyondFit()) return;
 		event.preventDefault();
 		event.stopPropagation();
 		spaceUsed = true;
@@ -209,7 +254,7 @@
 			event,
 			{
 				move: (e) => {
-					view = reach({ ...start.view, x: start.view.x + e.clientX - start.x, y: start.view.y + e.clientY - start.y });
+					view = clampView({ ...start.view, x: start.view.x + e.clientX - start.x, y: start.view.y + e.clientY - start.y });
 				},
 				end: () => (panning = false)
 			},
@@ -388,6 +433,7 @@
 			}}
 			style:--ar={ratio}
 			class:zoomed={!!view}
+			class:recentering
 			style:width={view ? `${format.width * view.zoom}px` : undefined}
 			style:height={view ? `${format.height * view.zoom}px` : undefined}
 			style:left={view ? `calc(50% + ${view.x - (format.width * view.zoom) / 2}px)` : undefined}
@@ -494,8 +540,12 @@
 				aria-label="Stage zoom: {view ? zoomLabel : 'whole frame'}"
 				aria-haspopup="menu"
 				aria-expanded={zoomMenu}
-				title="Zoom the stage (Ctrl/⌘ + scroll). Scroll or Space + drag to move around."
+				title="Zoom the stage (Ctrl/⌘ + scroll; double-click for Fit). Zoomed in, scroll or Space + drag to move around."
 				onclick={() => (zoomMenu = !zoomMenu)}
+				ondblclick={() => {
+					zoomMenu = false;
+					fit();
+				}}
 				data-testid="zoom">{zoomLabel}</button
 			>
 			{#if zoomMenu && zoomButton}
@@ -559,8 +609,11 @@
 	.viewport.framing {
 		overflow: clip;
 	}
+	/* The pasteboard: light gray around the frame. */
 	.viewport {
 		position: relative;
+		border-radius: var(--radius-card);
+		background: var(--pasteboard);
 		flex: 1;
 		min-height: 0;
 		display: grid;
@@ -601,13 +654,22 @@
 	.preview.zoomed {
 		position: absolute;
 	}
+	/* Back to the centre (zoomed out to Fit or below): a short, smooth move. */
+	.preview.recentering {
+		transition:
+			left 0.22s var(--ease-out),
+			top 0.22s var(--ease-out),
+			width 0.22s var(--ease-out),
+			height 0.22s var(--ease-out);
+	}
 	/* The frame's edge, clear against the pasteboard. */
 	.frame-edge {
 		position: absolute;
 		inset: 0;
 		z-index: 2;
 		border-radius: inherit;
-		box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink) 28%, transparent);
+		/* A thin border, so a white frame stands out from the pasteboard (with the shadow). */
+		box-shadow: 0 0 0 1px var(--color-border);
 		pointer-events: none;
 		clip-path: var(--pasteboard-clip, none);
 	}
