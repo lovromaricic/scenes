@@ -3147,6 +3147,27 @@ order.
     - the saved file is 5 s, with the card over black after 3 s and the song fading out at the
       end.
 
+## Renaming in place: one quiet outline
+
+- **Before:** renaming the video's title showed two outlines. The field's dark border had the
+  app's focus ring on top, because text fields always count as keyboard-focused. The text also
+  moved by a pixel, since the field had a border and the shown title didn't.
+- **Now:** one shared style, `.inline-edit` in `styles/global.css`:
+  - a 1px `--color-border` border on `--color-surface`, with the inputs' 8px corners;
+  - no outline and no focus ring.
+  - Used by the video's title (top bar), track names (double-click), and video names on the
+    home page. Scene names can't be renamed in place, so there's nothing to change there.
+- **Nothing moves:** the shown title has a transparent 1px border, so it has the same box as the
+  field. Track and video names line up with their padding and border. The title's font, size and
+  position are the same in both states.
+- **Keyboard focus** on the shown title (not editing) is still the app's single `--focus-ring`.
+- **Selected text** everywhere uses a light accent tint (`--color-text-selection`, via
+  `::selection`) instead of the browser's blue.
+- **Tests:** `inline-edit.test.ts` covers the title, a track name and a video name on the home
+  page. It checks the one outline, no ring while editing, the text not moving, the single ring
+  for keyboard focus, and the selection tint. It waits for fonts before measuring, because the
+  names around the title change width until the fonts load.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

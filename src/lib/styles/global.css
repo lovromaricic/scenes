@@ -43,6 +43,27 @@ button:disabled {
 	box-shadow: var(--focus-ring);
 }
 
+::selection {
+	background: var(--color-text-selection);
+	color: var(--color-ink);
+}
+
+/*
+ * A name being renamed in place (the video's title, a track's name, a video on the home page):
+ * one quiet outline on a soft background, and no focus ring on top of it. The shown name it
+ * replaces keeps the same font, size and spot, so nothing moves.
+ */
+.inline-edit {
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface);
+	color: var(--color-ink);
+	outline: none;
+}
+.inline-edit:focus-visible {
+	box-shadow: none;
+}
+
 h1,
 h2,
 h3,

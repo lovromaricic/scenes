@@ -71,7 +71,7 @@
 			{#if renaming}
 				<input
 					bind:this={input}
-					class="rename"
+					class="rename inline-edit"
 					aria-label="Video name"
 					maxlength="80"
 					bind:value={draft}
@@ -177,13 +177,10 @@
 		width: 100%;
 		height: 28px;
 		margin: -3px 0 -2px -6px;
-		padding: 0 6px;
-		border: 1px solid var(--color-ink);
-		border-radius: 6px;
+		padding: 0 5px;
 		font: inherit;
 		font-size: var(--text-lg);
 		font-weight: var(--weight-medium);
-		outline: none;
 	}
 	.meta,
 	.edited {

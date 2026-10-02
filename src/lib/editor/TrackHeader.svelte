@@ -110,7 +110,7 @@
 	{#if editing}
 		<input
 			bind:this={input}
-			class="name-input"
+			class="name-input inline-edit"
 			aria-label="Track name"
 			maxlength="40"
 			bind:value={draft}
@@ -234,11 +234,9 @@
 		flex: 1;
 		min-width: 0;
 		height: 24px;
+		/* The text stays where the name was (padding and border to the left of it). */
+		margin: 0 -5px;
 		padding: 0 4px;
-		border: 1px solid var(--color-ink);
-		border-radius: var(--radius-sm);
-		background: var(--color-bg);
-		color: var(--color-ink);
 		font: inherit;
 	}
 	.tools {

@@ -110,7 +110,7 @@
 		{#if editing}
 			<input
 				bind:this={input}
-				class="serif title title-input"
+				class="serif title title-input inline-edit"
 				aria-label="Video title"
 				maxlength="80"
 				bind:value={draft}
@@ -252,10 +252,8 @@
 	.title {
 		max-width: 36ch;
 		padding: 2px 6px;
-		margin: 0 -6px;
-		border: none;
+		margin: 0 -7px;
 		border-radius: var(--radius-sm);
-		background: none;
 		font-size: var(--text-title);
 		line-height: 1.1;
 		white-space: nowrap;
@@ -263,14 +261,16 @@
 		text-overflow: ellipsis;
 		cursor: text;
 	}
+	/* The same box as the field (its 1px border), so the text doesn't move when renaming. */
+	button.title {
+		border: 1px solid transparent;
+		background: none;
+	}
 	button.title:hover {
 		background: var(--color-surface);
 	}
 	.title-input {
 		width: 22ch;
-		border: 1px solid var(--color-ink);
-		background: var(--color-bg);
-		outline: none;
 	}
 	.menu-button {
 		display: grid;
