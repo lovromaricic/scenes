@@ -2844,6 +2844,21 @@ full-height line with its round handle 6 px from the content's top.
   - zoomed in and scrolled sideways, and every frame while playing, it stays aligned (wherever
     it isn't under the track headers).
 
+## The loop button matches Play
+
+- **Same size and shape:** the loop toggle is now the same 44 px round icon button as Play
+  (`IconButton size="lg"`), on the same centre line, with the same 20 px icon and stroke width.
+  Its gap to Play is the controls' own gap.
+- **Quieter than Play when off:** the `soft` variant, a light surface with the ink icon.
+- **On:** the accent with a white icon, slightly darker on hover.
+- **Shared states:** hover, pressed (scale) and the focus ring are the icon buttons' own, the same
+  as Play's.
+- **Test (`playback-loop.test.ts`):**
+  - equal width and height, fully round, centres within half a pixel, the same icon size and
+    stroke, the gap equal to the controls' gap;
+  - off is a non-accent surface with the ink icon, on is the accent with white;
+  - screenshots of both.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

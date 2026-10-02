@@ -467,6 +467,8 @@
 			label={editor.project.loop ? (editor.project.range ? 'Loop the range: on' : 'Loop: on') : 'Loop'}
 			shortcut={isMac ? '⌘L' : 'Ctrl+L'}
 			icon={Repeat}
+			variant="soft"
+			size="lg"
 			class="loop"
 			aria-pressed={!!editor.project.loop}
 			disabled={empty}
@@ -733,10 +735,14 @@
 		box-shadow: var(--focus-ring);
 		outline: none;
 	}
-	/* Loop on: the accent, clearly. */
+	/* Loop: as big and round as Play, but quieter (soft) when off; the accent when on. Hover,
+	   pressed and focus are the icon buttons' own, the same as Play's. */
 	.controls :global(.loop[aria-pressed='true']) {
-		color: var(--color-accent);
-		background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+		background: var(--color-accent);
+		color: #fff;
+	}
+	.controls :global(.loop[aria-pressed='true']:hover:not(:disabled)) {
+		background: var(--color-accent-hover);
 	}
 	.of,
 	.total {

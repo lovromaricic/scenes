@@ -189,4 +189,53 @@ test.describe('Playback: the clock and looping', () => {
 		await expect(page.getByRole('button', { name: 'Watch again' })).toHaveCount(0);
 		await expect(page.locator('.watch').getByRole('button', { name: 'Loop: on' })).toHaveAttribute('aria-pressed', 'true');
 	});
+
+	test('the loop button is the same size and shape as Play, on the same line; off is quiet, on is the accent', async ({ page }, info) => {
+		await setup(page);
+		const play = page.getByRole('button', { name: 'Play', exact: true });
+		const loop = page.getByRole('button', { name: /^Loop/ });
+		const look = (l: typeof play) =>
+			l.evaluate((el) => {
+				const cs = getComputedStyle(el);
+				const r = el.getBoundingClientRect();
+				const svg = el.querySelector('svg')!;
+				return {
+					w: r.width,
+					h: r.height,
+					cy: r.y + r.height / 2,
+					left: r.x,
+					right: r.right,
+					radius: parseFloat(cs.borderTopLeftRadius),
+					bg: cs.backgroundColor,
+					color: cs.color,
+					icon: svg.getBoundingClientRect().width,
+					stroke: svg.getAttribute('stroke-width')
+				};
+			});
+		const p = await look(play);
+		const off = await look(loop);
+		expect(off.w).toBe(p.w);
+		expect(off.h).toBe(p.h);
+		expect(off.w).toBe(off.h);
+		expect(off.radius).toBeGreaterThanOrEqual(off.w / 2); // fully round
+		expect(Math.abs(off.cy - p.cy)).toBeLessThan(0.5);
+		expect(off.icon).toBe(p.icon);
+		expect(off.stroke).toBe(p.stroke);
+		// Spaced like the rest of the controls.
+		const gap = await page.locator('.controls').evaluate((el) => parseFloat(getComputedStyle(el).columnGap));
+		expect(off.left - p.right).toBeCloseTo(gap, 0);
+		// Off: a soft surface with the ink icon (not the accent).
+		expect(off.bg).not.toBe('rgb(214, 63, 31)');
+		expect(off.bg).not.toBe('rgba(0, 0, 0, 0)');
+		expect(off.color).toBe('rgb(20, 20, 23)');
+		await page.locator('.controls').screenshot({ path: info.outputPath('loop-off.png') });
+		// On: the accent with a white icon.
+		await loop.click();
+		await page.mouse.move(0, 0);
+		await expect.poll(async () => (await look(loop)).bg).toBe('rgb(214, 63, 31)'); // after its colour transition
+		const on = await look(loop);
+		expect(on.color).toBe('rgb(255, 255, 255)');
+		expect(on.w).toBe(p.w);
+		await page.locator('.controls').screenshot({ path: info.outputPath('loop-on.png') });
+	});
 });
