@@ -25,4 +25,12 @@ vite.config.ts.timestamp-*
 # Tests
 test-results
 playwright-report
+blob-report
+coverage
+
+# The demo's review frames and video (made by scripts/build-demo.ts)
 demo-review/
+
+# Local tools
+.claude/
+*.log
