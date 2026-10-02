@@ -74,6 +74,19 @@ export class History<T> {
 		return { state: entry.after, label: entry.label };
 	}
 
+	/** Every state the history can bring back (before and after each step). */
+	states(): T[] {
+		return [...this.past, ...this.future].flatMap((e) => [e.before, e.after]);
+	}
+
+	/** Change every state it keeps (e.g. to forget something removed for good). */
+	map(change: (state: T) => T): void {
+		for (const e of [...this.past, ...this.future]) {
+			e.before = change(e.before);
+			e.after = change(e.after);
+		}
+	}
+
 	clear(): void {
 		this.past = [];
 		this.future = [];

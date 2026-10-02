@@ -274,8 +274,8 @@ test.describe('Crop', () => {
 		await page.getByRole('slider', { name: 'Zoom', exact: true }).fill('3');
 		await expect(page.getByText(/Enlarged 5\.3×, may look a bit soft/)).toBeVisible();
 
-		// A second scene from the same clip gets the crop with one click.
-		await page.getByRole('region', { name: 'Your media' }).getByRole('button').first().click();
+		// A second scene from the same clip (double-click it in Your media) doesn't get the crop.
+		await page.getByRole('region', { name: 'Your media' }).locator('[data-media-id]').first().dblclick();
 		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
 		expect(await sceneCrop(page, 1)).toBeNull();
 		await page.getByRole('button', { name: /^Scene 1, / }).click();

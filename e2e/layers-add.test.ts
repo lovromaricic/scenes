@@ -85,7 +85,7 @@ test.describe('Adding layers by dragging', () => {
 		await drag(page, preview.x + 5, preview.y + 5, { media: id }, ['dragleave']);
 
 		// A real drag and drop with the mouse.
-		const tile = page.getByRole('button', { name: /^Add yellow\.jpg/ });
+		const tile = page.getByRole('button', { name: /^yellow\.jpg, photo/ });
 		await tile.dragTo(page.getByTestId('preview'));
 		await expect.poll(async () => (await layers(page)).length).toBe(1);
 		const [layer] = await layers(page);

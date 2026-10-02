@@ -70,8 +70,9 @@ test.describe('Renaming scenes and items', () => {
 		await expect(page.getByRole('button', { name: /^Scene 2, Intro, / })).toBeVisible();
 
 		// Your media keeps the file's own name.
-		await expect(page.getByRole('button', { name: /^Add red\.mp4 as a new scene/ })).toBeVisible();
-		await expect(page.getByRole('button', { name: /^Add Intro/ })).toHaveCount(0);
+		const media = page.getByRole('region', { name: 'Your media' });
+		await expect(media.getByRole('button', { name: /^red\.mp4, video/ })).toBeVisible();
+		await expect(media.getByRole('button', { name: /^Intro/ })).toHaveCount(0);
 
 		// Saved with the project.
 		await expect(page.getByText('Saved on this device')).toBeVisible({ timeout: 10_000 });

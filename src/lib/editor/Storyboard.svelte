@@ -1252,7 +1252,7 @@
 							{#each layout.items as item (item.scene.id)}
 								{@const isDragged = drag?.active && drag.id === item.scene.id}
 								{@const isTrimmed = trim?.id === item.scene.id}
-								{@const selected = editor.selectedId === item.scene.id}
+								{@const selected = editor.selectedIds.includes(item.scene.id)}
 								<div
 									class="card-slot"
 									class:lifted={isDragged}

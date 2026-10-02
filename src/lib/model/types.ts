@@ -153,8 +153,10 @@ export interface Project {
 	loop?: boolean;
 	/** Videos, photos and cards on overlay tracks, drawn over the scenes. */
 	overlays: Overlay[];
-	/** Every photo and video imported into this project, in import order ("Your media"). */
+	/** Every photo, video and sound imported into this project, in import order ("Your media"). */
 	library: string[];
+	/** Names given in Your media, by media id (missing = the file's name). This project only. */
+	mediaNames?: Record<string, string>;
 	createdAt: number;
 	updatedAt: number;
 }

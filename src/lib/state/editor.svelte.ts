@@ -12,6 +12,8 @@ import {
 	requestPersistentStorage,
 	backfillMediaHashes,
 	getFileLink,
+	deleteMedia as deleteStoredMedia,
+	listProjects,
 	type FileLink,
 	type MediaInfo,
 	type ProjectRecord
@@ -290,6 +292,21 @@ const TextTyping = {
 	key: (id: string) => `words:${id}`
 };
 
+/** The project with a file in Your media (at the end, once). */
+function withLibrary(project: Project, mediaId: string): Project {
+	return project.library.includes(mediaId) ? project : { ...project, library: [...project.library, mediaId] };
+}
+
+/** The project without some files in Your media (and the names given to them there). */
+function withoutLibrary(project: Project, ids: Set<string>): Project {
+	const names = Object.entries(project.mediaNames ?? {}).filter(([id]) => !ids.has(id));
+	return {
+		...project,
+		library: project.library.filter((id) => !ids.has(id)),
+		mediaNames: names.length ? Object.fromEntries(names) : undefined
+	};
+}
+
 /** The project's layers and words with some of them retimed (see `draftTiming`). */
 function withTimings(project: Project, timings: Record<string, { start: number; duration: number }>) {
 	const at = <T extends { id: string; start: number; duration: number }>(x: T) =>
@@ -478,7 +495,8 @@ export class EditorStore {
 				project.scenes = project.scenes.filter(hasFile);
 				messages.show(missing.length === 1 ? 'One clip is missing from this device, so it was left out.' : `${missing.length} clips are missing from this device, so they were left out.`, { tone: 'error' });
 			}
-			project.library = project.library.filter((id) => this.media[id]);
+			// Everything the project uses is in Your media (older projects left sounds out).
+			project.library = projectMediaIds(project).filter((id) => this.media[id]);
 			this.project = project;
 			this.selectedId = view?.selectedId ?? null;
 			this.syncPlayer();
@@ -580,9 +598,12 @@ export class EditorStore {
 	}
 
 	/** Leaving this project (for the home screen or another one): store the latest changes now. */
-	close(): Promise<void> {
+	async close(): Promise<void> {
 		clearTimeout(this.thumbTimer);
-		return this.flushSave();
+		await this.flushSave();
+		// The session's undo history goes: files removed from Your media that no project needs
+		// are freed now.
+		if (this.removedMedia.size) await this.freeStorage([...this.removedMedia], false);
 	}
 
 	private async loadThumbnails(ids: string[]): Promise<void> {
@@ -1135,11 +1156,178 @@ export class EditorStore {
 		);
 	}
 
+	// ─── Your media ─────────────────────────────────────────────────────────────────────────
+
+	/** What a file is called in Your media: the name given there, else the file's own. */
+	mediaName(id: string): string {
+		return this.project.mediaNames?.[id] ?? this.media[id]?.name ?? '';
+	}
+
+	/** The scenes, then the items on tracks (in time order), that use any of these files. */
+	mediaUses(ids: string[]): string[] {
+		const p = this.project;
+		const has = (m: string) => ids.includes(m);
+		const byStart = (a: { start: number }, b: { start: number }) => a.start - b.start;
+		return [
+			...p.scenes.filter((s) => s.kind !== 'card' && has(s.mediaId)).map((s) => s.id),
+			...[...p.overlays.filter((o) => o.kind !== 'card' && has(o.mediaId)), ...p.sounds.filter((s) => has(s.mediaId))]
+				.sort(byStart)
+				.map((x) => x.id)
+		];
+	}
+
+	/** Files in Your media nothing in the video uses. */
+	get unusedMedia(): string[] {
+		return this.project.library.filter((id) => this.media[id] && !this.mediaUses([id]).length);
+	}
+
+	/** Rename a file in Your media (this project only; the file keeps its name). Empty: its own name again. */
+	renameMedia(id: string, name: string): void {
+		const n = name.trim();
+		const value = n && n !== this.media[id]?.name ? n : undefined;
+		if (value === this.project.mediaNames?.[id]) return;
+		this.edit('Rename', (p) => {
+			const names = { ...(p.mediaNames ?? {}) };
+			if (value) names[id] = value;
+			else delete names[id];
+			return { ...p, mediaNames: Object.keys(names).length ? names : undefined };
+		});
+	}
+
+	/** A song or recording, or a video's sound, on an audio track at the playhead. Selected. */
+	addMediaToAudio(id: string): void {
+		const info = this.media[id];
+		if (!info || (info.kind !== 'audio' && !info.hasAudio)) return;
+		const start = Math.min(this.time, Math.max(0, this.duration - MIN_SOUND));
+		const duration = info.duration - info.startTime;
+		const sound: Omit<SoundItem, 'trackId'> = {
+			id: newId(),
+			mediaId: id,
+			name: this.mediaName(id).replace(/\.[^.]+$/, '') || 'Sound',
+			start,
+			sourceStart: info.startTime,
+			duration,
+			volume: info.kind === 'audio' ? 0.6 : 1,
+			kind: 'music',
+			fadeIn: 0,
+			fadeOut: 0
+		};
+		this.edit(
+			'Add sound',
+			(p) => {
+				const place = this.audioTrackFor(p, { start, duration });
+				return { ...place.project, sounds: [...place.project.sounds, { ...sound, trackId: place.trackId }] };
+			},
+			{ select: sound.id }
+		);
+		void this.loadWaveforms([id]);
+	}
+
+	/** Select every scene and item that uses these files, and show the first. Returns how many. */
+	showMediaInTimeline(ids: string[]): number {
+		const uses = this.mediaUses(ids).filter((id) => !this.trackOfItem(id)?.locked);
+		if (!uses.length) return 0;
+		this.select(uses[0]);
+		this.extraSelected = uses.slice(1);
+		return uses.length;
+	}
+
+	/** What deleting these files from Your media would remove, or why it can't be done. */
+	mediaDeletion(ids: string[]): { uses: string[]; reason?: string } {
+		const uses = this.mediaUses(ids);
+		const scenes = uses.filter((id) => this.project.scenes.some((s) => s.id === id)).length;
+		if (scenes && scenes >= this.project.scenes.length) return { uses, reason: 'Your video needs at least one scene.' };
+		return { uses };
+	}
+
+	/**
+	 * Delete files from Your media, with the scenes and items that use them (the Scenes track
+	 * closing its gaps), as one undo step. The stored files are freed once nothing needs them
+	 * any more (see `freeStorage`).
+	 */
+	deleteMediaFiles(ids: string[]): void {
+		const { uses, reason } = this.mediaDeletion(ids);
+		if (reason || !ids.length) return;
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
+		const files = new Set(ids);
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
+		const gone = new Set(uses);
+		if (this.editingTextId && gone.has(this.editingTextId)) this.stopEditingText();
+		const label = ids.length > 1 ? `Delete ${ids.length} files` : 'Delete file';
+		this.edit(
+			label,
+			(p) => removeItems({ ...withoutLibrary(p, files), scenes: p.scenes.filter((s) => !gone.has(s.id)) }, gone),
+			{ select: this.selectedId && gone.has(this.selectedId) ? null : this.selectedId }
+		);
+		this.extraSelected = this.extraSelected.filter((id) => !gone.has(id));
+		for (const id of ids) this.removedMedia.add(id);
+		void this.freeStorage(ids);
+	}
+
+	/** Files removed from Your media in this session, freed once nothing needs them. */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, never shown
+	private removedMedia = new Set<string>();
+
+	/**
+	 * The files something still needs: this project (with `library` as given), its undo history
+	 * (unless the session is over) and every other saved project.
+	 */
+	private async mediaNeeded(project: Project, history: boolean): Promise<Set<string>> {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
+		const used = new Set(projectMediaIds(project));
+		if (history) for (const state of this.history.states()) for (const id of projectMediaIds(state)) used.add(id);
+		for (const other of await listProjects()) if (other.id !== project.id) for (const id of projectMediaIds(other)) used.add(id);
+		return used;
+	}
+
+	/** Delete the stored files among `ids` nothing needs (see `mediaNeeded`). Returns the bytes freed. */
+	private async freeStorage(ids: string[], history = true): Promise<number> {
+		const needed = await this.mediaNeeded(this.snapshot(), history);
+		let freed = 0;
+		for (const id of ids) {
+			if (needed.has(id)) continue;
+			freed += this.media[id]?.size ?? 0;
+			await deleteStoredMedia(id);
+			this.removedMedia.delete(id);
+			delete this.media[id];
+			if (this.thumbnails[id]) URL.revokeObjectURL(this.thumbnails[id]);
+			delete this.thumbnails[id];
+		}
+		return freed;
+	}
+
+	/** How much storage removing the unused files would free (the ones nothing else needs). */
+	async unusedMediaSize(): Promise<number> {
+		const ids = this.unusedMedia;
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
+		const needed = await this.mediaNeeded(withoutLibrary(this.snapshot(), new Set(ids)), false);
+		// Earlier steps that still use one (a deleted scene undo could bring back) keep it.
+		for (const state of this.history.states()) for (const id of projectMediaIds({ ...state, library: [] })) needed.add(id);
+		return ids.filter((id) => !needed.has(id)).reduce((sum, id) => sum + (this.media[id]?.size ?? 0), 0);
+	}
+
+	/**
+	 * Remove every unused file from Your media for good (not an undo step: it frees storage).
+	 * Undo forgets them too; a file an earlier step still uses is kept until it isn't needed.
+	 */
+	async removeUnusedMedia(): Promise<{ removed: number; freed: number }> {
+		const ids = this.unusedMedia;
+		if (!ids.length) return { removed: 0, freed: 0 };
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
+		const files = new Set(ids);
+		this.project = { ...withoutLibrary(this.snapshot(), files), updatedAt: Date.now() };
+		this.history.map((state) => withoutLibrary(state, files));
+		this.afterChange();
+		for (const id of ids) this.removedMedia.add(id);
+		const freed = await this.freeStorage(ids);
+		return { removed: ids.length, freed };
+	}
+
 	/** Add something from "Your media" as a new scene, at `index` (default: the end). */
 	addSceneFromMedia(mediaId: string, index = this.project.scenes.length): void {
 		const info = this.media[mediaId];
 		if (!info || info.kind === 'audio') return;
-		const scene = sceneFromMedia(info);
+		const scene = sceneFromMedia({ ...info, name: this.mediaName(mediaId) });
 		this.edit(
 			'Add scene',
 			(p) => {
@@ -1168,13 +1356,12 @@ export class EditorStore {
 	deleteSelected(): void {
 		const id = this.selectedId;
 		if (!id) return;
-		// Several items on tracks: removed together, as one step.
+		// Several selected (items on tracks, and scenes from "Show in timeline"): removed
+		// together, as one step.
 		if (this.selectedIds.length > 1) {
-			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
-			const ids = new Set(this.selectedIds.filter((x) => itemKind(this.project, x) && !this.trackOfItem(x)?.locked));
-			if (this.editingTextId && ids.has(this.editingTextId)) this.stopEditingText();
-			this.edit(`Remove ${ids.size} items`, (p) => removeItems(p, ids), { select: null });
-			this.extraSelected = [];
+			const can = this.deletable(this.selectedIds);
+			if (can.reason) messages.show(can.reason, { item: id });
+			else this.deleteItems(can.ids);
 			return;
 		}
 		if (this.project.scenes.some((s) => s.id === id)) {
@@ -1580,7 +1767,7 @@ export class EditorStore {
 				id: newId(),
 				kind,
 				mediaId,
-				name: nameFromFile(info.name),
+				name: nameFromFile(this.mediaName(mediaId)),
 				duration: Math.max(MIN_OVERLAY_SECONDS, length),
 				sourceStart: kind === 'video' ? info.startTime : 0,
 				box: defaultBox(info, this.project.format),
@@ -2547,7 +2734,7 @@ export class EditorStore {
 			this.edit(
 				'Add music',
 				(p) => {
-					const place = this.audioTrackFor(p, { start, duration });
+					const place = this.audioTrackFor(withLibrary(p, info.id), { start, duration });
 					return { ...place.project, sounds: [...place.project.sounds, { ...sound, trackId: place.trackId }] };
 				},
 				{ select: sound.id }
@@ -2941,7 +3128,7 @@ export class EditorStore {
 			this.edit(
 				'Record voiceover',
 				(p) => {
-					const place = this.audioTrackFor(p, sound);
+					const place = this.audioTrackFor(withLibrary(p, info.id), sound);
 					return { ...place.project, sounds: [...place.project.sounds, { ...sound, trackId: place.trackId }] };
 				},
 				{ select: sound.id }

@@ -62,7 +62,7 @@ test('the preview fills the stage in the project’s shape and follows window si
 	await expectPreviewFills(page, 9 / 16);
 });
 
-test('“Your media” lists imported clips; click or drag one to add it as a scene', async ({
+test('“Your media” lists imported clips; double-click or drag one to add it as a scene', async ({
 	page
 }) => {
 	await openNewVideo(page);
@@ -74,16 +74,16 @@ test('“Your media” lists imported clips; click or drag one to add it as a sc
 	await page.keyboard.press('Delete');
 	await expect(page.getByRole('button', { name: /^Scene \d+, / })).toHaveCount(1);
 	const library = page.getByRole('region', { name: 'Your media' });
-	await expect(library.getByRole('button')).toHaveCount(2);
-	await expect(library.getByRole('button', { name: /^Add red\.mp4/ })).toContainText('4s');
+	await expect(library.locator('[data-media-id]')).toHaveCount(2);
+	await expect(library.getByRole('button', { name: /^red\.mp4, video/ })).toContainText('4s');
 
-	// Click: added at the end.
-	await library.getByRole('button', { name: /^Add red\.mp4/ }).click();
+	// Double-click: added at the end.
+	await library.getByRole('button', { name: /^red\.mp4, video/ }).dblclick();
 	await expect.poll(() => cardNames(page)).toEqual(['Green', 'Red']);
 
 	// Drag: dropped before the first card.
 	const target = (await page.getByRole('button', { name: /^Scene 1, / }).boundingBox())!;
-	const source = (await library.getByRole('button', { name: /^Add green\.mp4/ }).boundingBox())!;
+	const source = (await library.getByRole('button', { name: /^green\.mp4, video/ }).boundingBox())!;
 	await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
 	await page.mouse.down();
 	await page.mouse.move(target.x + 30, target.y + 30, { steps: 10 });
@@ -96,5 +96,5 @@ test('“Your media” lists imported clips; click or drag one to add it as a sc
 	await page.keyboard.press(`${mod}+z`);
 	await expect.poll(() => cardNames(page)).toEqual(['Green', 'Red']);
 	await page.reload();
-	await expect(page.getByRole('region', { name: 'Your media' }).getByRole('button')).toHaveCount(2);
+	await expect(page.getByRole('region', { name: 'Your media' }).locator('[data-media-id]')).toHaveCount(2);
 });

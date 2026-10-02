@@ -73,7 +73,7 @@ test.describe('Ripple, snapping and the end of the video', () => {
 
 		// Drag the PNG from "Your media" onto the Logo track, near the start.
 		const laneBox = (await logoLane.boundingBox())!;
-		await page.getByRole('button', { name: /^Add quads\.png/ }).dragTo(logoLane, { targetPosition: { x: 4, y: laneBox.height / 2 } });
+		await page.getByRole('button', { name: /^quads\.png, photo/ }).dragTo(logoLane, { targetPosition: { x: 4, y: laneBox.height / 2 } });
 		await expect.poll(() => api(page, (s) => s.project.overlays.length)).toBe(1);
 		const logo = await api(page, (s) => s.project.overlays[0].id);
 		expect(await api(page, (s) => s.project.tracks.find((t) => t.id === s.project.overlays[0].trackId)!.name)).toBe('Logo');

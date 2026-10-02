@@ -71,3 +71,18 @@ describe('ending a run of merged edits', () => {
 		expect(h.undo()?.state).toBe('s1');
 	});
 });
+
+describe('what the history keeps', () => {
+	it('lists every state it can bring back, and can change them all', () => {
+		const h = new History<{ files: string[] }>();
+		h.record('a', { files: ['x'] }, { files: ['x', 'y'] }, undefined, 0);
+		h.record('b', { files: ['x', 'y'] }, { files: ['y'] }, undefined, 5000);
+		h.undo();
+		expect(h.states().flatMap((s) => s.files).sort()).toEqual(['x', 'x', 'x', 'y', 'y', 'y']);
+		// Forget "x" everywhere (e.g. removed for good): undo and redo no longer bring it back.
+		h.map((s) => ({ files: s.files.filter((f) => f !== 'x') }));
+		expect(h.states().some((s) => s.files.includes('x'))).toBe(false);
+		expect(h.redo()?.state).toEqual({ files: ['y'] });
+		expect(h.undo()?.state).toEqual({ files: ['y'] });
+	});
+});

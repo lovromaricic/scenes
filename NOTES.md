@@ -3288,6 +3288,60 @@ order.
     scene;
   - Duplicate (right after), Split here (where right-clicked), duplicating a scene.
 
+## Your media: select, right-click, rename, delete, Remove unused
+
+- **Sounds are in Your media now:** songs and voiceovers join `project.library` when added.
+  When a project opens, everything it uses is added to Your media, so older projects get their
+  sounds too. Audio tiles show a music note.
+- **Selecting:** a click selects a file (accent outline); Shift- or Cmd/Ctrl-click adds or
+  removes more. **Double-click** adds it: a picture as a scene at the end, a sound on an audio
+  track. Before, a single click added it. Dragging is unchanged (pictures only). Each tile's
+  name is shown under it.
+- **Right-click** (the shared `Menu`, at the pointer):
+  - Add as scene (pictures; "Add 2 as scenes" for several);
+  - Add as layer at playhead (one picture);
+  - Add to audio track (a sound, or a video with sound);
+  - Show in timeline: selects every scene and item using it, and shows the first. Disabled
+    with "Not used" when nothing uses it;
+  - Rename (one file);
+  - a divider and Delete, in red, with ⌫ or Delete. The Delete key on a selected tile deletes
+    the file, not what's selected on the storyboard.
+- **Show in timeline** can select scenes along with items: `extraSelected` may now hold
+  scenes, and scene cards show as selected when they're in `selectedIds`. Deleting several
+  goes through `deleteItems`, so scenes and items go together, and never the last scene.
+- **Rename** in Your media is for this project only: `project.mediaNames`, an undo step. The
+  stored file keeps its name; clearing the name brings the file's back. New scenes and layers
+  made from it take the given name.
+- **Delete** (`deleteMediaFiles`):
+  - an unused file goes right away (one undo step);
+  - a used one asks first: "This is used in 2 places in your video. Deleting it removes them
+    too.", with Show in timeline, Cancel and Delete. Its scenes (the gap closes) and items go
+    with it, in one undo step;
+  - when that would remove every scene, it's blocked: "Your video needs at least one scene."
+- **Freeing storage:** a deleted file's stored copy goes once nothing needs it: this project,
+  its undo history in this session (`History.states()`), or any other saved project. Undo could
+  bring it back while editing, so it's freed when you leave the project (`EditorStore.close`).
+- **Remove unused** (at the top of Your media, only when something's unused) asks first, saying
+  how many files and how much storage it frees. It's for good, so it's not an undo step:
+  - the files go from Your media, and from Your media in every undo step
+    (`History.map()`);
+  - each file nothing needs any more is deleted from storage. A file an earlier step still
+    uses (a deleted scene undo could bring back) is kept for now.
+- **Tests:**
+  - Unit: `History.states()` and `map()`.
+  - `media-library.test.ts`:
+    - the menu for a video and a song; add as scene, as layer at the playhead, to an audio
+      track; Show in timeline selects all three uses, the first in view; Shift and Cmd/Ctrl
+      selection with the menu for several; rename in Your media only (the file and scenes
+      keep their names), clearing it, undo;
+    - deleting an unused file (undo; the Delete key), a used one (the question, Show in
+      timeline, Cancel, Delete removing its scene, one undo for both), and blocked when it
+      would remove every scene;
+    - Remove unused (the question with the storage it frees; the files gone from storage);
+      a used file deleted while editing stays stored until you leave the project.
+  - Updated for the new tile behaviour (double-click to add; tiles named after the file):
+    `stage-media`, `crop`, `layers-add`, `tracks-moving`, `rename-items`.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
