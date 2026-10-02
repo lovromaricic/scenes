@@ -2809,6 +2809,41 @@ the start if it has to.
   right-click menu instead of the buttons) and `export-dialog.test.ts` (no "What" for the whole
   video; Range chosen for part of it).
 
+## Fix: the playhead's handle scrolled away with the tracks
+
+**Cause.** The playhead was one element in the tracks' scrolling content (`.grid`): a
+full-height line with its round handle 6 px from the content's top.
+- The ruler row is `position: sticky` (`top: 0`), so it stays at the top of the scroller while
+  the content scrolls under it.
+- When the tracks were scrolled down, the content's top, and with it the handle, went out of view
+  above the ruler, leaving only the line.
+- At the top, the line (z-index 16) was also drawn across the ruler (z-index 15).
+
+**Fix:**
+- **Handle on the ruler.** The handle (and a short stem down to the ruler's edge) is now part of
+  the ruler (`.playhead-head` inside `.ruler`), positioned by time like the ticks and the range.
+  So it never scrolls vertically, and it sits on top of the range and its edges (z-index 4 in the
+  ruler).
+- **The line stays in the content,** across the tracks, above track backgrounds and items. The
+  ruler row is now above it (z-index 17), so the line passes under the ruler and the handle is
+  always on top.
+- **Kept the same:** both use the same `map.x(time)`, so they're aligned at any horizontal scroll,
+  zoom and during playback. Menus, popovers and the toolbar are outside the scroller, above all of
+  it.
+- **Dragging** the handle uses the same `onRulerDown` (pointer x on the ruler), so it works the
+  same at any scroll position.
+- **Checked the others:**
+  - The range's edges and the range's live label were already in the ruler.
+  - The snap line is a full-height line like the playhead's (it also passes under the ruler now).
+  - The items' live labels move with their items on purpose.
+- **Tests (`playhead-scroll.test.ts`, with ten extra tracks so the tracks scroll):**
+  - scrolled to the bottom and back: the handle stays inside the ruler, doesn't move on screen,
+    is the topmost element at its centre (also over the range's start edge), and its centre is
+    within 1.5 px of the line's;
+  - dragging it while scrolled down moves the playhead (not the range);
+  - zoomed in and scrolled sideways, and every frame while playing, it stays aligned (wherever
+    it isn't under the track headers).
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

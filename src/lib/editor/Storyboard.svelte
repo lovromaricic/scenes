@@ -1088,6 +1088,18 @@
 					{#each rulerTicks as t (t)}
 						<span class="tick mono" style:left="{map.x(t)}px">{formatClock(t)}</span>
 					{/each}
+					<!-- The playhead's handle: part of the ruler, so it never scrolls away with the
+						tracks, and on top of the range and its edges. -->
+					<div class="playhead-head" style:translate="{map.x(editor.time)}px 0" data-testid="playhead-head">
+						<span class="stem" aria-hidden="true"></span>
+						<button
+							type="button"
+							class="handle"
+							aria-label="Playhead at {formatClock(editor.time)}. Use arrow keys to move."
+							onpointerdown={onRulerDown}
+							onkeydown={onPlayheadKey}
+						></button>
+					</div>
 				</div>
 			</div>
 
@@ -1311,20 +1323,14 @@
 				></span>
 			{/if}
 
-			<!-- Playhead -->
+			<!-- The playhead's line, across the tracks (its handle is on the ruler, which stays in
+				view: see the ruler above). Under the ruler, above the tracks and items. -->
 			<div
 				class="playhead"
+				aria-hidden="true"
 				style:translate="{HEADER_W + map.x(editor.time)}px 0"
 				style:visibility={map.x(editor.time) < scrollLeft - 1 ? 'hidden' : undefined}
-			>
-				<button
-					type="button"
-					class="handle"
-					aria-label="Playhead at {formatClock(editor.time)}. Use arrow keys to move."
-					onpointerdown={onRulerDown}
-					onkeydown={onPlayheadKey}
-				></button>
-			</div>
+			></div>
 		</div>
 	</div>
 </section>
@@ -1424,10 +1430,11 @@
 		width: var(--header-w);
 		background: var(--color-bg);
 	}
+	/* Above the playhead's and snap lines (they pass under it), so its handle is always on top. */
 	.ruler-row {
 		position: sticky;
 		top: 0;
-		z-index: 15;
+		z-index: 17;
 		background: var(--color-bg);
 	}
 	.main-row {
@@ -1836,10 +1843,29 @@
 		z-index: 16;
 		will-change: translate;
 	}
+	/* On the ruler: the handle and a stem down to the ruler's edge, where the line takes over. */
+	.playhead-head {
+		position: absolute;
+		z-index: 4;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		width: 0;
+		pointer-events: none;
+		will-change: translate;
+	}
+	.stem {
+		position: absolute;
+		top: 13px;
+		bottom: -1px;
+		left: -1px;
+		width: 2px;
+		background: var(--color-accent);
+	}
 	.handle {
 		position: absolute;
 		top: 6px;
-		left: 50%;
+		left: 0;
 		width: 14px;
 		height: 14px;
 		translate: -50% 0;
