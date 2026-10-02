@@ -2859,6 +2859,49 @@ full-height line with its round handle 6 px from the content's top.
   - off is a non-accent surface with the ink icon, on is the accent with white;
   - screenshots of both.
 
+## Keyframe markers: red diamonds in a strip
+
+**One shape.** Every keyframe on the timeline is the same red diamond, whatever its easing. The
+per-easing shapes (diamond, circle, square, triangle, ring) are gone. `data-easing` still names
+the kind, for tests.
+- **Look:** accent fill with a thin white edge, so it reads on dark cards, thumbnails and white
+  words.
+- **Selected:** 20% larger, with a 2 px white edge and a soft shadow.
+- Volume points keep their own style.
+
+**Placement:**
+- **In a strip.** Markers sit in a 12 px strip along the item's bottom edge (`.kf-strip`).
+  - Items with keyframes keep room for it (`.keyed`): layers get padding below their name, and
+    words' row ends above the strip. So the diamonds never cover the name, icon or length.
+  - Scene cards with Custom framing keep their strip at the bottom of the picture, above the
+    name.
+- **At the edges.** A keyframe at the item's very start or end is drawn just inside the item
+  (`drawnX` clamps by half a diamond), so it's whole and clickable.
+  - The markers sit above the trim handles (z-index 4 against 2) only where they are, in the
+    strip, so the rest of the edge still trims.
+- **Close together:** markers may overlap; a click picks the one nearest the pointer
+  (`nearestAt`), not just the one drawn on top. Zooming in separates them.
+
+**Easing:**
+- The tooltip says the time and easing ("0:02.40 · Ease in and out"). The right-click menu
+  checks the current easing (as before).
+- On the selected item only, a faint accent line between each keyframe and the next draws its
+  easing across the strip, from low to high (`easingPath`): straight for Linear, curved for the
+  eases, a step for Hold, wavy past the end for Overshoot and Bounce.
+
+**Tests:**
+- Unit (`easingPath.test.ts`): straight, step, curved and overshooting lines.
+- E2E (`keyframe-diamonds.test.ts`):
+  - the same diamond for linear, eased and hold (accent fill, white edge, 45° turn, same size);
+  - selected: 1.2× with a 2 px edge and a shadow;
+  - no overlap with the name on words and on a card layer;
+  - start and end keyframes inside the item, each clickable (going to 0 s and 4 s), and the
+    edge above the strip still trims;
+  - tooltips;
+  - three easing lines only when selected, the linear one straight;
+  - the ✓ in the menu;
+  - two overlapping keyframes: clicking at the one underneath selects it.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

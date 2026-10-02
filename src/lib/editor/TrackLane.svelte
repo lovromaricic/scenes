@@ -322,6 +322,7 @@
 				class="item-slot {e.kind}"
 				class:active={!!g}
 				class:narrow={width < 64}
+				class:keyed={e.kind !== 'sound' && !track.locked && !!e.item.keyframes?.length}
 				data-item-id={e.item.id}
 				style:left="{map.x(start)}px"
 				style:width="{width}px"
@@ -574,6 +575,13 @@
 		height: 100%;
 		padding: 0 var(--space-3);
 		font-size: var(--text-sm);
+	}
+	/* With keyframes: room for their strip along the bottom, so they never cover the name. */
+	.keyed.overlay .item {
+		padding-bottom: 13px;
+	}
+	.keyed .words {
+		height: calc(100% - 12px);
 	}
 	.narrow .meta,
 	.narrow .words .name,

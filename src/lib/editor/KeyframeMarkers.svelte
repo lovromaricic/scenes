@@ -1,14 +1,15 @@
 <!--
 	@component
-	An item's keyframes as small markers on its card in the storyboard (layers, words, and scene
-	cards with Custom framing). Their shape shows the easing that starts there, like Premiere:
-	a diamond for Linear, a round mark for eased curves, a square for Hold, a triangle for
-	Overshoot and a ring for Bounce.
+	An item's keyframes as small red diamonds in a thin strip along the bottom of its card in the
+	storyboard (layers, words, and scene cards with Custom framing), clear of the item's name. Every
+	keyframe has the same diamond; its easing is in the tooltip ("0:02.40 · Ease in and out") and
+	the right-click menu, and on the selected item a faint line between keyframes draws it
+	(straight, curved, stepped or wavy).
 
-	Click: select it (and its item) and go there. Shift-click: add to or take from the selection.
-	Drag: move the selected keyframes in time, snapping to the playhead, other keyframes, item
-	edges and scene boundaries (Alt: no snapping). Right-click: easing presets, Edit curve…, Copy,
-	Copy, Delete.
+	Click: select it (the nearest one, when several overlap) and go there. Shift-click: add to or
+	take from the selection. Drag: move the selected keyframes in time, snapping to the playhead,
+	other keyframes, item edges and scene boundaries (Alt: no snapping). Right-click: easing
+	presets, Edit curve…, Copy, Delete.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -27,6 +28,7 @@
 	import { frameBatch } from '$lib/ui/frameBatch';
 	import { portal } from '$lib/ui/portal';
 	import type { LaneServices } from './lanes';
+	import { easingPath } from './easingPath';
 
 	interface Props {
 		itemId: string;
@@ -51,11 +53,52 @@
 			: []
 	);
 
-	function shape(e: Easing): string {
+	/** The kind of easing (for tests and styling hooks; every keyframe looks the same). */
+	function kind(e: Easing): string {
 		const name = easingPreset(e);
 		if (name === 'linear') return 'linear';
 		if (name === 'hold' || name === 'overshoot' || name === 'bounce') return name;
 		return 'eased';
+	}
+
+	function easingName(e: Easing): string {
+		const n = easingPreset(e);
+		return n === 'custom' ? 'Custom curve' : EASING_LABELS[n];
+	}
+
+	/** Half a diamond's width: markers at an item's very start or end are kept fully inside it. */
+	const HALF = 7;
+	/** Where a marker at time `t` is drawn (inside the item, however close to its edges). */
+	const drawnX = (t: number) => Math.max(HALF, Math.min(width - HALF, xOf(t)));
+	/** The strip's height and the line's low and high points in it. */
+	const STRIP = 12;
+
+	/** On the selected item: the easing between each keyframe and the next, as a faint line. */
+	const curves = $derived.by(() => {
+		if (editor.selectedId !== itemId || markers.length < 2) return [];
+		const sorted = [...markers].sort((a, b) => a.t - b.t);
+		return sorted.slice(0, -1).map((m, i) => ({
+			id: m.k.id,
+			d: easingPath(m.k.easing, drawnX(m.t), drawnX(sorted[i + 1].t), STRIP - 3, 3)
+		}));
+	});
+
+	let strip = $state<HTMLDivElement>();
+
+	/** The marker nearest to the pointer (several can overlap when zoomed out). */
+	function nearestAt(clientX: number, fallback: { id: string; t: number }) {
+		if (!strip) return fallback;
+		const px = clientX - strip.getBoundingClientRect().left;
+		let best = fallback;
+		let dist = Infinity;
+		for (const m of markers) {
+			const d = Math.abs(drawnX(m.t) - px);
+			if (d < dist) {
+				dist = d;
+				best = { id: m.k.id, t: m.t };
+			}
+		}
+		return best;
 	}
 
 	const drags = new DragScope();
@@ -64,10 +107,11 @@
 		if (editor.keyframeDragDelta !== null) editor.keyframeDragDelta = null;
 	});
 
-	function onpointerdown(event: PointerEvent, id: string, t: number) {
+	function onpointerdown(event: PointerEvent, clickedId: string, clickedT: number) {
 		if (event.button !== 0) return;
 		event.preventDefault();
 		event.stopPropagation();
+		const { id, t } = nearestAt(event.clientX, { id: clickedId, t: clickedT });
 		if (editor.selectedId !== itemId) editor.select(itemId);
 		const ref = { itemId, id };
 		if (event.shiftKey) {
@@ -174,30 +218,38 @@
 
 <svelte:window onpointerdown={onWindowPointerDown} />
 
-{#each markers as m (m.k.id)}
-	{@const selected = editor.isKeyframeSelected(itemId, m.k.id)}
-	{@const t = m.t + (selected && editor.keyframeDragDelta !== null ? editor.keyframeDragDelta : 0)}
-	{@const x = xOf(t)}
-	{#if x >= -6 && x <= width + 6}
-		<span
-			class="kf {shape(m.k.easing)}"
-			class:selected
-			style:left="{x}px"
-			role="button"
-			tabindex="-1"
-			aria-label="Keyframe at {t.toFixed(2)} s, {(() => {
-				const n = easingPreset(m.k.easing);
-				return n === 'custom' ? 'custom curve' : EASING_LABELS[n];
-			})()}"
-			aria-pressed={selected}
-			data-keyframe={m.k.id}
-			data-keyframe-item={itemId}
-			data-easing={shape(m.k.easing)}
-			onpointerdown={(e) => onpointerdown(e, m.k.id, m.t)}
-			oncontextmenu={(e) => oncontextmenu(e, m.k.id)}
-		></span>
+<!-- The strip along the bottom of the item: the easing lines (selected item) and the diamonds. -->
+<div class="kf-strip" bind:this={strip} style:height="{STRIP}px">
+	{#if curves.length}
+		<svg class="kf-curves" {width} height={STRIP} aria-hidden="true" data-testid="keyframe-curves">
+			{#each curves as c (c.id)}
+				<path d={c.d} data-curve-from={c.id} />
+			{/each}
+		</svg>
 	{/if}
-{/each}
+	{#each markers as m (m.k.id)}
+		{@const selected = editor.isKeyframeSelected(itemId, m.k.id)}
+		{@const t = m.t + (selected && editor.keyframeDragDelta !== null ? editor.keyframeDragDelta : 0)}
+		{@const x = xOf(t)}
+		{#if x >= -6 && x <= width + 6}
+			<span
+				class="kf"
+				class:selected
+				style:left="{drawnX(t)}px"
+				role="button"
+				tabindex="-1"
+				title="{editor.formatTime(t)} · {easingName(m.k.easing)}"
+				aria-label="Keyframe at {t.toFixed(2)} s, {easingName(m.k.easing).toLowerCase()}"
+				aria-pressed={selected}
+				data-keyframe={m.k.id}
+				data-keyframe-item={itemId}
+				data-easing={kind(m.k.easing)}
+				onpointerdown={(e) => onpointerdown(e, m.k.id, m.t)}
+				oncontextmenu={(e) => oncontextmenu(e, m.k.id)}
+			></span>
+		{/if}
+	{/each}
+</div>
 {#if snapLine !== null}
 	<span class="kf-snap" style:left="{xOf(snapLine)}px" aria-hidden="true"></span>
 {/if}
@@ -231,59 +283,61 @@
 {/if}
 
 <style>
+	/* A thin strip along the item's bottom edge (the item keeps room for it: see TrackLane). */
+	.kf-strip {
+		position: absolute;
+		z-index: 4;
+		left: 0;
+		right: 0;
+		bottom: 1px;
+		pointer-events: none;
+	}
+	.kf-curves {
+		position: absolute;
+		inset: 0;
+		overflow: visible;
+	}
+	.kf-curves path {
+		fill: none;
+		stroke: var(--color-accent);
+		stroke-width: 1.25;
+		opacity: 0.45;
+	}
+	/* Every keyframe: a red diamond with a thin white edge, readable on any item. */
 	.kf {
 		position: absolute;
 		top: 50%;
-		z-index: 4;
-		width: 11px;
-		height: 11px;
+		z-index: 1;
+		width: 14px;
+		height: 14px;
 		translate: -50% -50%;
 		cursor: ew-resize;
 		touch-action: none;
+		pointer-events: auto;
 	}
-	/* The mark itself, drawn with a white fill and a dark outline so it shows on any picture. */
 	.kf::after {
 		content: '';
 		position: absolute;
-		inset: 1px;
-		background: var(--color-bg);
-		box-shadow: 0 0 0 1.25px var(--color-ink);
-	}
-	.kf.linear::after {
-		inset: 2px;
+		left: 50%;
+		top: 50%;
+		width: 7px;
+		height: 7px;
+		translate: -50% -50%;
 		rotate: 45deg;
-	}
-	.kf.eased::after {
-		border-radius: 50%;
-	}
-	.kf.hold::after {
-		inset: 1.5px;
 		border-radius: 1px;
+		background: var(--color-accent);
+		box-shadow: 0 0 0 1.25px #fff;
+		transition: scale var(--dur-fast) var(--ease-out);
 	}
-	/* A triangle (pointing past the target), white with a dark edge like the others. */
-	.kf.overshoot {
-		filter: drop-shadow(0 0 0.8px var(--color-ink)) drop-shadow(0 0 0.4px var(--color-ink));
-	}
-	.kf.overshoot::after {
-		inset: 0;
-		box-shadow: none;
-		background: var(--color-bg);
-		clip-path: polygon(50% 0, 100% 100%, 0 100%);
-	}
-	.kf.bounce::after {
-		border-radius: 50%;
-		background: transparent;
-		box-shadow:
-			0 0 0 1.25px var(--color-ink),
-			inset 0 0 0 2px var(--color-bg),
-			inset 0 0 0 10px var(--color-ink);
+	/* Selected: a little larger, a thicker white edge and a soft shadow. */
+	.kf.selected {
+		z-index: 2;
 	}
 	.kf.selected::after {
-		background: var(--color-accent);
-		box-shadow: 0 0 0 1.25px var(--color-accent);
-	}
-	.kf.overshoot.selected::after {
-		background: var(--color-accent);
+		scale: 1.2;
+		box-shadow:
+			0 0 0 2px #fff,
+			0 1px 3px rgb(0 0 0 / 0.45);
 	}
 	.kf-snap {
 		position: absolute;
