@@ -3079,6 +3079,35 @@ move and one switching the view to Fit. When the first fired first, the zoom lab
 for a moment (seen once in a full run of `stage-zoom.test.ts`). One timer now does both, in
 order.
 
+## No more "pinned to the end of the video"
+
+- **Removed:** items that ended exactly at the video's end used to stretch or shrink with it
+  whenever the scenes changed (in `reconcileTimeline`), and showed an "end" marker.
+  - Both are gone: items keep the start and length they were given.
+  - `reconcileTimeline` only moves items with the scenes when ripple is on; its `maxDuration`
+    argument, `MIN_ANCHORED` and `EditorStore.endsWithVideo` are removed.
+- **Existing projects:** being "pinned" was never stored, only worked out from the end time. So
+  items that were pinned simply keep their current position and length.
+- **Extend to end of video:** a new right-click menu on items on overlay and audio tracks
+  (layers, words, sounds) has "Extend to end of video" (`EditorStore.extendToEnd`).
+  - It stretches the item once to end at the video's current end, as far as its clip allows: a
+    video layer's clip, a sound's file.
+  - It's one undo step ("Extend to end").
+  - If the item already starts at the end, a bubble says so.
+- **Snapping** to the video's end when trimming or moving is unchanged.
+- **Tests:**
+  - Unit: an item ending at the end keeps its length when scenes are added or removed (ripple on
+    or off).
+  - `tracks-ripple.test.ts`: the logo snapped to the end has no marker and keeps its length when
+    scenes are added. Extend to end then stretches it, it's at the end in the preview, and
+    deleting a scene doesn't shrink it.
+  - `extend-to-end.test.ts`:
+    - words go to 24 s;
+    - a 3 s video layer only to its clip's end;
+    - a 12 s song only to its own end;
+    - undo is one step each;
+    - adding a scene afterwards doesn't move them.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

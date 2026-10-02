@@ -7,17 +7,15 @@
  *   moved goes along with it; one over a part that was cut keeps its distance to the next scene
  *   (not going back past the cut). So items after a change shift by the same amount and stay
  *   lined up with the later scenes.
- * - Either way, an item that ended exactly at the video's end still ends there: it stretches or
- *   shrinks with the video (within what it can show, e.g. a video's own length).
+ * - Items always keep the length they were given (nothing follows the video's end; "Extend to end
+ *   of video" stretches an item once, on request).
  *
  * Only items the edit itself didn't place or change are adjusted.
  */
 
-import { placeScenes, totalDuration, type PlacedScene } from './timeline';
+import { placeScenes, type PlacedScene } from './timeline';
 import type { Project, Scene } from './types';
 
-/** Shortest an item may become when it follows the video's end. */
-export const MIN_ANCHORED = 0.3;
 const EPS = 1e-3;
 
 type Timed = { id: string; start: number; duration: number; trackId: string };
@@ -82,23 +80,13 @@ export function mapTime(t: number, before: PlacedScene[], after: PlacedScene[]):
 	return Math.max(cut, t + newLength - oldLength);
 }
 
-/**
- * Adjust the items after an edit changed the scenes (see the top of this file). `maxDuration`
- * says how long an item may become (e.g. a video overlay can't outlast its clip).
- */
-export function reconcileTimeline<P extends WithTimeline>(
-	before: WithTimeline,
-	after: P,
-	ripple: boolean,
-	maxDuration: (item: Timed, list: 'overlays' | 'texts' | 'sounds') => number = () => Infinity
-): P {
+/** Adjust the items after an edit changed the scenes (see the top of this file). */
+export function reconcileTimeline<P extends WithTimeline>(before: WithTimeline, after: P, ripple: boolean): P {
 	const oldPlaced = placeScenes(before.scenes);
 	const newPlaced = placeScenes(after.scenes);
-	if (sameTimeline(oldPlaced, newPlaced)) return after;
-	const oldLength = totalDuration(before.scenes);
-	const newLength = totalDuration(after.scenes);
+	if (sameTimeline(oldPlaced, newPlaced) || !ripple) return after;
 
-	const adjust = <T extends Timed>(list: T[], previous: Timed[], key: 'overlays' | 'texts' | 'sounds'): T[] =>
+	const adjust = <T extends Timed>(list: T[], previous: Timed[]): T[] =>
 		list.map((item) => {
 			const was = previous.find((x) => x.id === item.id);
 			// New, or placed by this very edit: leave it where it was put.
@@ -109,20 +97,15 @@ export function reconcileTimeline<P extends WithTimeline>(
 				was.trackId !== item.trackId
 			)
 				return item;
-			const start = ripple ? mapTime(item.start, oldPlaced, newPlaced) : item.start;
-			const endedWithVideo = oldLength > 0 && Math.abs(item.start + item.duration - oldLength) < EPS;
-			let duration = item.duration;
-			if (endedWithVideo && newLength > 0) {
-				duration = Math.min(Math.max(MIN_ANCHORED, newLength - start), maxDuration(item, key));
-			}
-			if (Math.abs(start - item.start) < EPS && Math.abs(duration - item.duration) < EPS) return item;
-			return { ...item, start, duration };
+			const start = mapTime(item.start, oldPlaced, newPlaced);
+			if (Math.abs(start - item.start) < EPS) return item;
+			return { ...item, start };
 		});
 
 	return {
 		...after,
-		overlays: adjust(after.overlays, before.overlays, 'overlays'),
-		texts: adjust(after.texts, before.texts, 'texts'),
-		sounds: adjust(after.sounds, before.sounds, 'sounds')
+		overlays: adjust(after.overlays, before.overlays),
+		texts: adjust(after.texts, before.texts),
+		sounds: adjust(after.sounds, before.sounds)
 	};
 }

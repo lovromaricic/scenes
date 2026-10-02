@@ -28,6 +28,8 @@
 	import VolumeLine from './VolumeLine.svelte';
 	import type { TimeMap } from './scale';
 	import type { DropTarget, LaneServices } from './lanes';
+	import { Menu, type MenuItem } from '$lib/ui';
+	import { portal } from '$lib/ui/portal';
 
 	interface Props {
 		track: Track;
@@ -102,6 +104,22 @@
 		e.kind === 'sound'
 			? Math.min(start + duration, Math.max(editor.duration, start + 0.05))
 			: start + duration;
+
+	// ─── Right-click on an item ─────────────────────────────────────────────────────────────
+	let itemMenu = $state<{ id: string; x: number; y: number } | null>(null);
+	let itemMenuAnchor = $state<HTMLElement>();
+
+	function onitemmenu(event: MouseEvent, id: string) {
+		event.preventDefault();
+		if (track.locked) return;
+		if (!editor.selectedIds.includes(id)) editor.select(id);
+		itemMenu = { id, x: event.clientX, y: event.clientY };
+	}
+
+	/** The menu's items (they keep the item: the menu closes before an item runs). */
+	function itemMenuItems(id: string): MenuItem[] {
+		return [{ label: 'Extend to end of video', onselect: () => editor.extendToEnd(id) }];
+	}
 
 	function onpointerdown(event: PointerEvent, e: Entry, mode: Mode) {
 		if (event.button !== 0 || track.locked) return;
@@ -319,7 +337,6 @@
 			{@const length = Math.max(0, end - start)}
 			{@const width = Math.max(1, map.width(start, length) - 3)}
 			{@const selected = editor.selectedIds.includes(e.item.id)}
-			{@const atEnd = editor.endsWithVideo(e.item)}
 			<div
 				class="item-slot {e.kind}"
 				class:active={!!g}
@@ -347,6 +364,7 @@
 						if (ev.detail === 0 && !track.locked) editor.select(e.item.id);
 					}}
 					onkeydown={(ev) => onkeydown(ev, e)}
+					oncontextmenu={(ev) => onitemmenu(ev, e.item.id)}
 				>
 					{#if e.kind === 'overlay'}
 						<span
@@ -419,13 +437,6 @@
 							></span>
 						{/if}
 					{/if}
-					{#if atEnd}
-						<span
-							class="end-marker mono"
-							title="Stays until the end of the video"
-							aria-label="Lasts to the end">end</span
-						>
-					{/if}
 				</button>
 				{#if !track.locked && !g && (e.kind === 'sound' || (e.kind === 'overlay' && e.item.kind === 'video' && e.item.sound.on))}
 					<!-- The volume line (rubber band) across anything with sound. -->
@@ -478,7 +489,28 @@
 	{/if}
 </div>
 
+{#if itemMenu}
+	<div use:portal>
+		<span
+			bind:this={itemMenuAnchor}
+			class="menu-anchor"
+			style:left="{itemMenu.x}px"
+			style:top="{itemMenu.y}px"
+			aria-hidden="true"
+		></span>
+		{#if itemMenuAnchor}
+			<Menu label="Item" items={itemMenuItems(itemMenu.id)} anchor={itemMenuAnchor} onclose={() => (itemMenu = null)} />
+		{/if}
+	</div>
+{/if}
+
 <style>
+	.menu-anchor {
+		position: fixed;
+		width: 1px;
+		height: 1px;
+		pointer-events: none;
+	}
 	.lane-items {
 		position: relative;
 	}
@@ -620,19 +652,6 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-	}
-	.end-marker {
-		position: absolute;
-		/* Top right, clear of the length below. */
-		top: 3px;
-		right: 10px;
-		padding: 0 4px;
-		border-radius: 3px;
-		background: var(--color-ink);
-		color: var(--color-on-ink);
-		font-size: 9px;
-		line-height: 13px;
-		pointer-events: none;
 	}
 	.trim {
 		position: absolute;

@@ -54,7 +54,7 @@ async function settled(locator: Locator) {
 }
 
 test.describe('Ripple, snapping and the end of the video', () => {
-	test('a Logo track with a PNG stretched to the end stays until the end after adding scenes', async ({ page }) => {
+	test('a Logo track with a PNG stretched to the end keeps its length as scenes are added; Extend to end of video stretches it once', async ({ page }) => {
 		await openNewVideo(page);
 		await importViaPicker(page, ['green.mp4', 'quads.png'], 'Choose photos & videos');
 		await expect(page.getByRole('button', { name: /^Scene 2, / })).toBeVisible();
@@ -86,7 +86,7 @@ test.describe('Ripple, snapping and the end of the video', () => {
 		}, logo);
 
 		// Stretch its end to the end of the video with the handle: it snaps there, with a snap line
-		// across all tracks, and shows the "end" marker.
+		// across all tracks.
 		const item = page.locator(`[data-item-id="${logo}"]`);
 		await item.locator('.item').click();
 		const handle = item.locator('[data-trim="end"]');
@@ -104,21 +104,27 @@ test.describe('Ripple, snapping and the end of the video', () => {
 		await page.mouse.up();
 		const length = await api(page, (s) => s.duration);
 		expect(round(await api(page, (s) => s.project.overlays[0].start + s.project.overlays[0].duration))).toBe(round(length));
-		await expect(item.locator('.end-marker')).toBeVisible();
+		// Nothing marks it as following the end any more.
+		await expect(item.locator('.end-marker')).toHaveCount(0);
 
-		// Add more scenes (ripple is off): the logo still lasts to the end.
+		// Add more scenes (ripple is off): the logo keeps the length it was given.
 		await page.getByRole('button', { name: /^Clips/ }).click();
 		await importViaPicker(page, ['red.mp4', 'blue.webm'], 'Choose files');
 		await expect(page.getByRole('button', { name: /^Scene 3, / })).toBeVisible();
 		const longer = await api(page, (s) => s.duration);
 		expect(longer).toBeGreaterThan(length + 5);
-		const o = await api(page, (s) => s.project.overlays[0]);
+		let o = await api(page, (s) => s.project.overlays[0]);
 		expect(o.start).toBe(0);
+		expect(round(o.start + o.duration)).toBe(round(length));
+
+		// "Extend to end of video" (right-click) stretches it once, to the new end.
+		await page.keyboard.press('Escape');
+		await item.locator('.item').click({ button: 'right' });
+		await page.getByRole('menuitem', { name: 'Extend to end of video' }).click();
+		o = await api(page, (s) => s.project.overlays[0]);
 		expect(round(o.start + o.duration)).toBe(round(longer));
-		await expect(item.locator('.end-marker')).toBeVisible();
 
 		// On the picture near the very end: the logo is there (hiding its track changes that spot).
-		await page.keyboard.press('Escape');
 		await seekTo(page, longer - 0.2);
 		const shown = await previewPixel(page, 0.05, 0.06);
 		await api(page, (s) => s.setTrackFlag(s.project.tracks[0].id, 'hidden', true));
@@ -126,12 +132,11 @@ test.describe('Ripple, snapping and the end of the video', () => {
 		expect(shown.some((v, i) => Math.abs(v - hidden[i]) > 60)).toBe(true);
 		await api(page, (s) => s.setTrackFlag(s.project.tracks[0].id, 'hidden', false));
 
-		// And when the video gets shorter, it ends with it again.
+		// When the video gets shorter, it doesn't shrink with it either.
 		await page.getByRole('button', { name: /^Scene 3, / }).click();
 		await page.keyboard.press('Delete');
-		const shorter = await api(page, (s) => s.duration);
 		const o2 = await api(page, (s) => s.project.overlays[0]);
-		expect(round(o2.start + o2.duration)).toBe(round(shorter));
+		expect(round(o2.start + o2.duration)).toBe(round(longer));
 	});
 
 	test('ripple off keeps items at their times; on, they move with the scenes', async ({ page }) => {

@@ -73,15 +73,13 @@ describe('ripple', () => {
 		expect(mapTime(3, placeScenes([A, B, C]), placeScenes(split))).toBe(3);
 	});
 
-	it('an item ending at the video’s end stays there when the length changes (ripple on or off)', () => {
+	it('an item ending at the video’s end keeps its length when the video gets longer or shorter', () => {
 		const logo = text('logo', 0, 10);
 		const before = project([A, B, C], [logo]);
 		const D = scene('D', 5);
-		expect(times(reconcileTimeline(before, project([A, B, C, D], [logo]), false))).toEqual({ logo: [0, 15] });
-		expect(times(reconcileTimeline(before, project([A, B, C, D], [logo]), true))).toEqual({ logo: [0, 15] });
-		expect(times(reconcileTimeline(before, project([A, C], [logo]), false))).toEqual({ logo: [0, 7] });
-		// Not beyond what it can show.
-		expect(times(reconcileTimeline(before, project([A, B, C, D], [logo]), false, () => 12))).toEqual({ logo: [0, 12] });
+		expect(times(reconcileTimeline(before, project([A, B, C, D], [logo]), false))).toEqual({ logo: [0, 10] });
+		expect(times(reconcileTimeline(before, project([A, B, C, D], [logo]), true))).toEqual({ logo: [0, 10] });
+		expect(times(reconcileTimeline(before, project([A, C], [logo]), false))).toEqual({ logo: [0, 10] });
 	});
 
 	it('items placed by the edit itself are left alone', () => {

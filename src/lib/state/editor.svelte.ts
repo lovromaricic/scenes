@@ -635,18 +635,11 @@ export class EditorStore {
 
 	/**
 	 * After a change to the scenes, adjust the items on the other tracks: with ripple on they move
-	 * with the scenes; either way, items ending at the video's end stay there (see ripple.ts).
-	 * Anything that then overlaps goes on a new track just above.
+	 * with the scenes; otherwise they keep their times (see ripple.ts). Anything that then
+	 * overlaps goes on a new track just above.
 	 */
 	private reconcile(before: Project, after: Project): Project {
-		let next = reconcileTimeline(before, after, this.ripple, (item, list) => {
-			if (list === 'overlays') return this.overlayMaxDuration(item as Overlay);
-			if (list === 'sounds') {
-				const s = item as SoundItem;
-				return this.soundBounds(s).end - s.sourceStart;
-			}
-			return Infinity;
-		});
+		let next = reconcileTimeline(before, after, this.ripple);
 		if (next === after) return after;
 		for (const i of allItems(next)) {
 			const was = getItem(after, i.id);
@@ -821,9 +814,28 @@ export class EditorStore {
 		if (onTrack) this.activeTrackId = onTrack;
 	}
 
-	/** Whether an item ends exactly at the end of the video (it then stays there, see ripple). */
-	endsWithVideo(item: { start: number; duration: number }): boolean {
-		return this.duration > 0 && Math.abs(item.start + item.duration - this.duration) < 1e-3;
+	/**
+	 * Stretch an item (a layer, words or a sound) once so it ends at the video's end, as far as
+	 * its clip allows. Undoable. Returns whether it changed.
+	 */
+	extendToEnd(id: string): boolean {
+		const end = this.duration;
+		const o = this.project.overlays.find((x) => x.id === id);
+		const w = this.project.texts.find((x) => x.id === id);
+		const sound = this.project.sounds.find((x) => x.id === id);
+		const item = o ?? w ?? sound;
+		if (!item || this.trackOfItem(id)?.locked) return false;
+		if (end - item.start < 0.05) {
+			messages.show('It already starts at the end of the video.', { item: id });
+			return false;
+		}
+		const max = o ? this.overlayMaxDuration(o) : sound ? this.soundBounds(sound).end - sound.sourceStart : Infinity;
+		const duration = Math.min(max, end - item.start);
+		if (Math.abs(duration - item.duration) < 1e-6) return false;
+		if (o) this.setOverlayTiming(id, o.start, duration, undefined, undefined, 'Extend to end');
+		else if (w) this.setTextTiming(id, w.start, duration, 'Extend to end');
+		else if (sound) this.setSoundTiming(id, { start: sound.start, sourceStart: sound.sourceStart, duration }, undefined, 'Extend to end');
+		return true;
 	}
 
 	select(id: string | null): void {
@@ -1423,7 +1435,7 @@ export class EditorStore {
 	}
 
 	/** Change an overlay's timing (start in timeline seconds). */
-	setOverlayTiming(id: string, start: number, duration: number, sourceStart?: number, key?: string): void {
+	setOverlayTiming(id: string, start: number, duration: number, sourceStart?: number, key?: string, label = 'Layer timing'): void {
 		const o = this.project.overlays.find((o) => o.id === id);
 		if (!o || this.trackOfItem(id)?.locked) return;
 		const at = Math.max(0, start);
@@ -1433,7 +1445,7 @@ export class EditorStore {
 		);
 		if (!this.videoRoom(o, at, length)) return;
 		this.edit(
-			'Layer timing',
+			label,
 			(p) => {
 				const overlays = p.overlays.map((x) =>
 					x.id === id
@@ -3015,11 +3027,11 @@ export class EditorStore {
 		else this.updateText('Link scale', id, (t) => ({ ...t, scaleLinked: linked }));
 	}
 
-	setTextTiming(id: string, start: number, duration: number): void {
+	setTextTiming(id: string, start: number, duration: number, label = 'Timing'): void {
 		if (this.trackOfItem(id)?.locked) return;
 		const d = this.duration;
 		this.edit(
-			'Timing',
+			label,
 			(p) =>
 				settle(
 					{ ...p, texts: p.texts.map((t) => (t.id === id ? retimed(t, clampTextTiming({ ...t, start, duration }, d)) : t)) },
