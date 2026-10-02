@@ -269,6 +269,22 @@ interface EditOptions {
  */
 let hashesBackfilled = false;
 
+/**
+ * A range set by hand stays where it is, but never past the video's end: when the video gets
+ * shorter, its end (and if need be its start) comes back within it. (With no video left, it goes
+ * back to following the video.)
+ */
+function clampRange(project: Project): Project {
+	const r = project.range;
+	if (!r) return project;
+	const d = totalDuration(project.scenes);
+	if (r.end <= d + 1e-6) return project;
+	const end = d;
+	const start = Math.min(r.start, Math.max(0, end - 1 / 30));
+	if (end - start < 1 / 60) return { ...project, range: null };
+	return { ...project, range: { start, end } };
+}
+
 /** Typing words: one undo key per text item (see typeTextWords). */
 const TextTyping = {
 	key: (id: string) => `words:${id}`
@@ -599,7 +615,7 @@ export class EditorStore {
 	/** Apply one undoable change. `change` gets a copy of the project and returns the new one. */
 	edit(label: string, change: (project: Project) => Project, options: EditOptions = {}): void {
 		const before = this.snapshot();
-		const after = { ...this.reconcile(before, change(structuredClone(before))), updatedAt: Date.now() };
+		const after = clampRange({ ...this.reconcile(before, change(structuredClone(before))), updatedAt: Date.now() });
 		if (!this.videosFit(before, after)) return;
 		this.history.record(label, before, after, options.key);
 		this.project = after;
@@ -731,10 +747,10 @@ export class EditorStore {
 
 	// ─── Loop and the clock ─────────────────────────────────────────────────────────────────
 
-	/** What repeats while playing: the range when one is set, otherwise the whole video; or null. */
+	/** What repeats while playing: the range when it's shorter than the video, else the whole video; or null. */
 	loopRange(): { start: number; end: number } | null {
 		if (!this.project.loop) return null;
-		return this.project.range ?? { start: 0, end: this.player.length };
+		return this.rangeIsPart ? this.range : { start: 0, end: this.player.length };
 	}
 
 	/**
@@ -2584,7 +2600,26 @@ export class EditorStore {
 	/** Shortest range (seconds). */
 	static readonly MIN_RANGE = 1 / 30;
 
-	/** Set the range (kept within the video, start before end); null clears it. Saved and undoable. */
+	/**
+	 * The range, always there: the one set (by dragging its edges, I and O, the ruler's menu), or
+	 * the whole video when none is (`project.range` null: it follows the video's length as scenes
+	 * change). Kept within the video.
+	 */
+	get range(): { start: number; end: number } {
+		const d = this.duration;
+		const r = this.project.range;
+		if (!r) return { start: 0, end: d };
+		const end = Math.min(d, r.end);
+		return { start: Math.min(r.start, end), end };
+	}
+
+	/** Whether the range is only part of the video (so saving and looping use it). */
+	get rangeIsPart(): boolean {
+		const r = this.range;
+		return r.start > 1e-3 || r.end < this.duration - 1e-3;
+	}
+
+	/** Set the range (kept within the video, start before end); null resets it to the whole video. Saved and undoable. */
 	setRange(range: { start: number; end: number } | null, key?: string, label = 'Range'): void {
 		const d = this.duration;
 		let next: { start: number; end: number } | null = null;
@@ -2598,21 +2633,22 @@ export class EditorStore {
 	}
 
 	/** I: the range starts at the playhead (it ends where it did, or at the end of the video). */
-	setRangeStart(): void {
-		const r = this.project.range;
-		const start = this.time;
-		this.setRange({ start, end: r && r.end > start + EditorStore.MIN_RANGE ? r.end : this.duration }, undefined, 'Range start');
+	setRangeStart(at = this.time): void {
+		const r = this.range;
+		const start = at;
+		this.setRange({ start, end: r.end > start + EditorStore.MIN_RANGE ? r.end : this.duration }, undefined, 'Range start');
 	}
 
 	/** O: the range ends at the playhead (it starts where it did, or at the start of the video). */
-	setRangeEnd(): void {
-		const r = this.project.range;
-		const end = this.time;
-		this.setRange({ start: r && r.start < end - EditorStore.MIN_RANGE ? r.start : 0, end }, undefined, 'Range end');
+	setRangeEnd(at = this.time): void {
+		const r = this.range;
+		const end = at;
+		this.setRange({ start: r.start < end - EditorStore.MIN_RANGE ? r.start : 0, end }, undefined, 'Range end');
 	}
 
-	clearRange(): void {
-		this.setRange(null, undefined, 'Clear range');
+	/** Back to the whole video (and following its length again): Alt/Option+X, a double-click. */
+	resetRange(): void {
+		this.setRange(null, undefined, 'Reset range');
 	}
 
 	/** The range from the start of the selected items (or scene) to the end of the last one. */

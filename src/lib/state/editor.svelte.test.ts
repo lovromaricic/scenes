@@ -309,3 +309,34 @@ describe('EditorStore looping', () => {
 	});
 });
 
+describe('EditorStore range', () => {
+	it('is the whole video (following its length) until set, then stays put, clamped to the video', () => {
+		const store = setup(); // 4 + 3 + 3 s
+		expect(store.project.range ?? null).toBeNull();
+		expect(store.range).toEqual({ start: 0, end: 10 });
+		expect(store.rangeIsPart).toBe(false);
+		// Follows the length while it's the whole video.
+		store.setSceneLength(store.project.scenes[0].id, 2);
+		expect(store.range).toEqual({ start: 0, end: 8 });
+		// Set: kept, even when the video grows; part of the video now.
+		store.setRange({ start: 1, end: 7 });
+		store.setSceneLength(store.project.scenes[0].id, 4);
+		expect(store.project.range).toEqual({ start: 1, end: 7 });
+		expect(store.rangeIsPart).toBe(true);
+		// The video gets shorter than its end: the end comes back to the video's end.
+		store.deleteScene(store.project.scenes[2].id);
+		expect(store.project.range).toEqual({ start: 1, end: 7 });
+		store.deleteScene(store.project.scenes[1].id);
+		expect(store.project.range).toEqual({ start: 1, end: 4 });
+		// I and O keep the other end; reset goes back to following.
+		store.seek(2);
+		store.setRangeStart();
+		expect(store.project.range).toEqual({ start: 2, end: 4 });
+		store.resetRange();
+		expect(store.project.range).toBeNull();
+		store.seek(3);
+		store.setRangeEnd();
+		expect(store.project.range).toEqual({ start: 0, end: 3 });
+	});
+});
+

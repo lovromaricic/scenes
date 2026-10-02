@@ -1,6 +1,6 @@
 <!--
 	@component
-	"Save video": choose what to save (the whole video, or the range set with I and O) and what to
+	"Save video": choose what to save (the whole video, or the range when it's shorter) and what to
 	save it as (a video, and the other kinds added below), see its size, length and about how big
 	the file will be, watch the progress, get the file.
 -->
@@ -52,7 +52,7 @@
 	let dialog: HTMLDialogElement;
 	let preset = $state<PresetId>('best');
 	/** What to save: all of it, or the range set with I and O. */
-	let what = $state<'whole' | 'range'>(editor.project.range ? 'range' : 'whole');
+	let what = $state<'whole' | 'range'>(editor.rangeIsPart ? 'range' : 'whole');
 	/** What to save it as. */
 	type SaveAs = 'video' | 'gif' | 'audio' | 'frame' | 'overlays';
 	let saveAs = $state<SaveAs>('video');
@@ -91,7 +91,7 @@
 	let jpgQuality = $state(0.9);
 	/** A single frame is at the playhead (the range doesn't apply). */
 	const usesWhat = $derived(saveAs !== 'frame');
-	const range = $derived(what === 'range' && editor.project.range ? editor.project.range : null);
+	const range = $derived(what === 'range' && editor.rangeIsPart ? editor.range : null);
 	/** How long what's saved lasts. */
 	const length = $derived(range ? Math.max(0, range.end - range.start) : editor.duration);
 	/** GIF: format (GIF or animated WebP where the browser can make WebP), size, rate, loop, dither. */
@@ -114,11 +114,9 @@
 		{ value: 'whole' as const, label: 'Whole video', description: formatLength(editor.duration) },
 		{
 			value: 'range' as const,
-			label: 'Range',
-			disabled: !editor.project.range,
-			description: editor.project.range
-				? `${formatClock(editor.project.range.start)} – ${formatClock(editor.project.range.end)}`
-				: 'Set a range first: I for its start, O for its end'
+			// Its start and end, in view.
+			label: `Range ${editor.formatTime(editor.range.start)} – ${editor.formatTime(editor.range.end)}`,
+			description: formatLength(editor.range.end - editor.range.start)
 		}
 	]);
 	const saveAsOptions: { value: SaveAs; label: string; description: string }[] = [
@@ -326,7 +324,8 @@
 			“{editor.project.title}”. It’s made right here on your device — nothing is uploaded.
 		</p>
 		<div class="choices">
-			{#if usesWhat}
+			<!-- Only when the range is part of the video: otherwise it's the whole video. -->
+			{#if usesWhat && editor.rangeIsPart}
 				<Field label="What">
 					<ChipGroup label="What" size="sm" options={whatOptions} bind:value={what} />
 				</Field>

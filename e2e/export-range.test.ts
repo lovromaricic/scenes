@@ -26,7 +26,7 @@ async function setup(page: Page) {
 test.describe('Range', () => {
 	test.setTimeout(180_000);
 
-	test('I and O set it at the playhead; it shows on the ruler; Alt+X clears it; saved and undoable', async ({ page }) => {
+	test('I and O set it at the playhead; it shows on the ruler; Alt+X resets it to the whole video; saved and undoable', async ({ page }) => {
 		await setup(page);
 		await seekTo(page, 1);
 		await page.keyboard.press('i');
@@ -41,9 +41,11 @@ test.describe('Range', () => {
 		expect(r.x - card.x).toBeCloseTo(pps, -1);
 		expect(r.width).toBeCloseTo(2 * pps, -1);
 
+		// Back to the whole video (and following its length again): still on the ruler, all of it.
 		await page.keyboard.press('Alt+x');
 		expect(await range(page)).toBeNull();
-		await expect(page.getByTestId('range')).toHaveCount(0);
+		const whole = (await page.getByTestId('range').boundingBox())!;
+		expect(whole.width).toBeCloseTo(7 * pps, -1);
 		await page.keyboard.press(`${mod}+z`);
 		expect(await range(page)).toEqual({ start: 1, end: 3 });
 		await expect(page.getByText('Saved on this device')).toBeVisible({ timeout: 10_000 });
@@ -52,12 +54,14 @@ test.describe('Range', () => {
 		expect(await range(page)).toEqual({ start: 1, end: 3 });
 	});
 
-	test('drag its edges (snapping to scene edges), the toolbar buttons, and Set range to selection', async ({ page }) => {
+	test('drag its edges (snapping to scene edges), and the ruler’s menu: Set range to selection, Reset', async ({ page }) => {
 		await setup(page);
+		// The toolbar no longer has range buttons.
+		await expect(page.getByRole('button', { name: /Range (start|end) at the playhead|More range options/ })).toHaveCount(0);
 		await seekTo(page, 1);
-		await page.getByRole('button', { name: 'Range start at the playhead' }).click();
+		await page.keyboard.press('i');
 		await seekTo(page, 3);
-		await page.getByRole('button', { name: 'Range end at the playhead' }).click();
+		await page.keyboard.press('o');
 		expect(await range(page)).toEqual({ start: 1, end: 3 });
 		const card = (await page.locator('.card-slot').first().boundingBox())!;
 		const pps = card.width / 4;
@@ -76,11 +80,12 @@ test.describe('Range', () => {
 
 		// The second scene selected: the range covers it.
 		await page.getByRole('button', { name: /^Scene 2, / }).click();
-		await page.getByRole('button', { name: 'More range options' }).click();
+		const ruler = (await page.locator('.ruler').boundingBox())!;
+		await page.mouse.click(ruler.x + 40, ruler.y + 6, { button: 'right' });
 		await page.getByRole('menuitem', { name: 'Set range to selection' }).click();
 		expect(await range(page)).toEqual({ start: 4, end: 7 });
-		await page.getByRole('button', { name: 'More range options' }).click();
-		await page.getByRole('menuitem', { name: 'Clear range' }).click();
+		await page.mouse.click(ruler.x + 40, ruler.y + 6, { button: 'right' });
+		await page.getByRole('menuitem', { name: 'Reset to whole video' }).click();
 		expect(await range(page)).toBeNull();
 	});
 

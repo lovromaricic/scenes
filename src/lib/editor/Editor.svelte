@@ -213,10 +213,10 @@
 			editor.toggleLoop();
 			return;
 		}
-		// Alt/Option+X clears the range (by key position: Option+X types a symbol on a Mac).
+		// Alt/Option+X resets the range to the whole video (by key position: Option+X types a symbol on a Mac).
 		if (event.altKey && !mod && event.code === 'KeyX' && !isTyping(event.target)) {
 			event.preventDefault();
-			editor.clearRange();
+			editor.resetRange();
 			return;
 		}
 		if (mod || event.altKey || isTyping(event.target) || event.defaultPrevented) return;

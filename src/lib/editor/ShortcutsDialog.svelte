@@ -20,7 +20,7 @@
 				[['Space'], 'Play or pause'],
 				[['←', '→'], 'Back or forward one frame'],
 				[['Shift', '←'], 'Back one second (Shift + → forward)'],
-				[[mod, 'L'], 'Loop: repeat the range if one is set, else the whole video'],
+				[[mod, 'L'], 'Loop: repeat the range when it’s shorter than the video, else the whole video'],
 				[['Home'], 'Go to the start'],
 				[['End'], 'Go to the end']
 			]
@@ -37,7 +37,7 @@
 				[['Alt', '←'], 'Move the selected scene earlier (Alt + → later)'],
 				[['Esc'], 'Deselect'],
 				[['I'], 'Start the range at the playhead (O ends it)'],
-				[['Alt', 'X'], 'Clear the range'],
+				[['Alt', 'X'], 'Reset the range to the whole video (or double-click it)'],
 				[['F'], 'Save the frame at the playhead as a PNG']
 			]
 		},

@@ -2755,6 +2755,60 @@ or bottom handles, because the height always fits the lines.
 - **Updated for the new format:** the clock in `phase1-layout` and `phase2-import-playback`, and
   the live labels in `drag-smooth` and `sound-editing`.
 
+## The range, always on the ruler
+
+**One range, always there.** `project.range` null now means "the whole video, following its
+length" (it used to mean "no range"). A `{start, end}` means an edge has been set.
+- `EditorStore.range` is always a range: the one set, kept within the video, or 0 to the video's
+  length.
+- `rangeIsPart` says whether it's shorter than the video.
+- Existing projects (no range) start with the whole video, and `.scenes` files carry it as
+  before: nothing to migrate.
+
+**Following and clamping.** While it's the whole video, it follows scenes being added, removed or
+trimmed (nothing is stored). Once an edge is moved it stays put. If the video then gets shorter
+than its end, every edit clamps it (`clampRange` in `edit()`): the end to the video's end, and
+the start if it has to.
+
+**On the ruler:**
+- **The band:** a light band, barely tinted while it's the whole video.
+- **Edges:** thin lines with small grips, darker on hover, in 14 px-wide hit areas. Dragging one
+  sets it, snapping to the playhead, item and scene edges, keyframe and volume markers, and the
+  video's ends (`rangeTargets`; Alt: no snapping), with its time in a live label. It's one undo
+  step.
+- **Moving it:** when the range is part of the video, dragging inside it moves the whole range
+  (either edge snaps), clamped to the video.
+  - A click inside still moves the playhead, as anywhere on the ruler.
+  - On the whole-video range, the ruler is just for the playhead.
+- **Resetting:** a double-click inside resets it to the whole video. The double-click is counted
+  by hand, because cancelling the drag's `pointerdown` swallows the browser's `dblclick`.
+  Alt/Option+X resets it too.
+- **Keys:** I and O set the start and end at the playhead, keeping the other end.
+- **Removed:** the toolbar's three range buttons (start, end, "⋯").
+- **Right-click on the ruler:** Set start here, Set end here (at the time clicked), Set range to
+  selection, Reset to whole video.
+  - The clicked time is captured when the items are built: the menu closes, and forgets it,
+    before an item runs.
+
+**Saving and looping:**
+- The Save dialog's "What" only appears when the range is part of the video. It's then chosen,
+  and its label shows the start and end ("Range 0:02.00 – 0:05.00").
+- Otherwise the whole video is saved.
+- Looping repeats the range only when it's part of the video.
+
+**Tests:**
+- Unit: following, kept once set, clamped as scenes go, I/O keeping the other end, reset.
+- E2E (`range-always.test.ts`):
+  - a new project's range over the whole video, growing with a scene;
+  - dragging an edge: live label, snapping to the cut, Alt not snapping;
+  - kept as the video grows, clamped when it shrinks;
+  - moving it by dragging inside, a click inside moving the playhead, double-click resetting it;
+  - the right-click menu's start and end where clicked, and I and O;
+  - the Save dialog and the loop for the whole video and for part of it.
+- Updated: `export-range.test.ts` (Alt+X keeps a whole-video range on the ruler; I/O and the
+  right-click menu instead of the buttons) and `export-dialog.test.ts` (no "What" for the whole
+  video; Range chosen for part of it).
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

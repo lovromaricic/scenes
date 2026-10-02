@@ -24,9 +24,6 @@
 	import { dragHasVisual, handleVisualDrop } from '$lib/media/dragTypes';
 	import Maximize from '@lucide/svelte/icons/maximize-2';
 	import MoveHorizontal from '@lucide/svelte/icons/move-horizontal';
-	import ArrowRightToLine from '@lucide/svelte/icons/arrow-right-to-line';
-	import ArrowLeftToLine from '@lucide/svelte/icons/arrow-left-to-line';
-	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -434,57 +431,147 @@
 		return url ? `url("${url}")` : 'none';
 	}
 
+	// ─── The range: always on the ruler ────────────────────────────────────────────────────
+	const shownRange = $derived(editor.range);
+	/** The live label while an edge or the whole range is dragged (its time, and where). */
+	let rangeLabel = $state<{ text: string; x: number } | null>(null);
+
+	/** Everything the range's edges snap to: the playhead, items, scenes, markers, start and end. */
+	function rangeTargets(): number[] {
+		return [...services.snapTargets([]), ...editor.keyframeTimes()];
+	}
+
 	/**
-	 * Drag an edge of the range on the ruler: snapping to the playhead and scene edges (Alt: no
-	 * snapping). One undo step.
+	 * Drag an edge of the range: snapping to the playhead, item and scene edges, markers and the
+	 * video's ends (Alt: no snapping), with its time in a label. Once moved, the range stays where
+	 * it's put (it no longer follows the video's length). One undo step.
 	 */
 	function onRangeEdgeDown(event: PointerEvent, edge: 'start' | 'end') {
-		if (event.button !== 0 || !editor.project.range) return;
+		if (event.button !== 0) return;
 		event.preventDefault();
 		event.stopPropagation();
-		editor.beginGesture();
+		const start = editor.range;
 		const snapper = new Snapper();
+		const targets = rangeTargets();
+		let moved = false;
 		const batch = frameBatch((e: PointerEvent) => {
-			const r = editor.project.range;
-			if (!r) return;
+			if (!moved) {
+				moved = true;
+				editor.beginGesture();
+			}
 			let t = toFrame(map.t(Math.max(0, contentX(e.clientX))), editor.project.format.fps);
-			const targets = e.altKey
-				? []
-				: [editor.time, 0, duration, ...editor.placed.flatMap((p) => [p.start, p.end])];
 			t += snapper.snap([t], targets, map.x, e.altKey).shift;
 			const min = 1 / 30;
 			const next =
 				edge === 'start'
-					? { start: Math.max(0, Math.min(t, r.end - min)), end: r.end }
-					: { start: r.start, end: Math.min(duration, Math.max(t, r.start + min)) };
+					? { start: Math.max(0, Math.min(t, start.end - min)), end: start.end }
+					: { start: start.start, end: Math.min(duration, Math.max(t, start.start + min)) };
 			editor.live((p) => {
 				p.range = next;
 			});
+			const at = edge === 'start' ? next.start : next.end;
+			rangeLabel = { text: editor.formatTime(at), x: map.x(at) };
 		});
 		drags.start(event, {
 			move: (e) => batch.push(e),
 			end: () => {
 				batch.flush();
-				editor.endGesture('Range');
+				rangeLabel = null;
+				if (moved) editor.endGesture('Range');
 			}
 		});
 	}
 
-	let rangeMenu = $state(false);
-	let rangeMenuButton = $state<HTMLButtonElement>();
-	const rangeMenuItems = $derived<MenuItem[]>([
-		{
-			label: 'Set range to selection',
-			disabled: !editor.selectedIds.length,
-			onselect: () => editor.setRangeToSelection()
-		},
-		{
-			label: 'Clear range',
-			shortcut: 'Alt+X',
-			disabled: !editor.project.range,
-			onselect: () => editor.clearRange()
+	/**
+	 * Inside the range (when it's part of the video): a click moves the playhead, as anywhere on
+	 * the ruler; a drag moves the whole range (snapping either edge). On the whole-video range the
+	 * ruler is just for the playhead.
+	 */
+	/** The last click inside the range (a second one soon after, close by, is a double-click). */
+	let lastRangeClick = { at: 0, x: 0 };
+
+	function onRangeDown(event: PointerEvent) {
+		if (event.button !== 0 || !editor.rangeIsPart) return;
+		event.preventDefault();
+		event.stopPropagation();
+		// Double-click (counted here: the drag below would swallow the browser's own): reset.
+		if (
+			event.timeStamp - lastRangeClick.at < 450 &&
+			Math.abs(event.clientX - lastRangeClick.x) < 6
+		) {
+			lastRangeClick = { at: 0, x: 0 };
+			editor.resetRange();
+			return;
 		}
-	]);
+		const start = editor.range;
+		const length = start.end - start.start;
+		const x0 = event.clientX;
+		const snapper = new Snapper();
+		const targets = rangeTargets();
+		let moved = false;
+		const batch = frameBatch((e: PointerEvent) => {
+			if (!moved) {
+				if (Math.abs(e.clientX - x0) < DRAG_THRESHOLD) return;
+				moved = true;
+				editor.beginGesture();
+			}
+			// By the time under the pointer (the timeline's scale isn't even everywhere).
+			const t0 = map.t(contentX(x0));
+			let from = toFrame(start.start + map.t(contentX(e.clientX)) - t0, editor.project.format.fps);
+			from = Math.max(0, Math.min(duration - length, from));
+			from += snapper.snap([from, from + length], targets, map.x, e.altKey).shift;
+			from = Math.max(0, Math.min(duration - length, from));
+			editor.live((p) => {
+				p.range = { start: from, end: from + length };
+			});
+			rangeLabel = { text: editor.formatTime(from), x: map.x(from) };
+		});
+		drags.start(event, {
+			move: (e) => batch.push(e),
+			end: () => {
+				batch.flush();
+				rangeLabel = null;
+				if (moved) editor.endGesture('Move range');
+				else {
+					lastRangeClick = { at: event.timeStamp, x: event.clientX };
+					editor.seek(timeFromPointer(event));
+				}
+			}
+		});
+	}
+
+	/** Right-click on the ruler: the range's options, for the time clicked. */
+	let rulerMenu = $state<{ x: number; y: number; t: number } | null>(null);
+	let rulerMenuAnchor = $state<HTMLElement>();
+	function onRulerContextMenu(event: MouseEvent) {
+		event.preventDefault();
+		rulerMenu = {
+			x: event.clientX,
+			y: event.clientY,
+			t: Math.min(duration, Math.max(0, map.t(contentX(event.clientX))))
+		};
+	}
+	const rulerMenuItems = $derived.by<MenuItem[]>(() => {
+		if (!rulerMenu) return [];
+		// The time clicked, kept here: the menu closes (and forgets it) before an item runs.
+		const t = rulerMenu.t;
+		return [
+			{ label: 'Set start here', shortcut: 'I', onselect: () => editor.setRangeStart(t) },
+			{ label: 'Set end here', shortcut: 'O', onselect: () => editor.setRangeEnd(t) },
+			{
+				label: 'Set range to selection',
+				disabled: !editor.selectedIds.length,
+				onselect: () => editor.setRangeToSelection()
+			},
+			{
+				label: 'Reset to whole video',
+				shortcut: 'Alt+X',
+				separator: true,
+				disabled: !editor.project.range,
+				onselect: () => editor.resetRange()
+			}
+		];
+	});
 
 	/** A pointer's x on the timeline (content pixels): measured from the lanes' left edge. */
 	function contentX(clientX: number): number {
@@ -848,14 +935,22 @@
 	/>
 {/if}
 
-{#if rangeMenu && rangeMenuButton}
-	<Menu
-		label="Range"
-		items={rangeMenuItems}
-		anchor={rangeMenuButton}
-		align="end"
-		onclose={() => (rangeMenu = false)}
-	/>
+{#if rulerMenu}
+	<span
+		bind:this={rulerMenuAnchor}
+		class="menu-anchor"
+		style:left="{rulerMenu.x}px"
+		style:top="{rulerMenu.y}px"
+		aria-hidden="true"
+	></span>
+	{#if rulerMenuAnchor}
+		<Menu
+			label="Range"
+			items={rulerMenuItems}
+			anchor={rulerMenuAnchor}
+			onclose={() => (rulerMenu = null)}
+		/>
+	{/if}
 {/if}
 
 {#if trackMenu}
@@ -896,38 +991,6 @@
 	onpointerdown={onEmptyPointerDown}
 >
 	<div class="zoom">
-		<!-- Compact, so the toolbar covers as little of the ruler as it can. -->
-		<div class="range-tools" role="group" aria-label="Range">
-			<button
-				type="button"
-				class="fit icon"
-				aria-label="Range start at the playhead"
-				title="Start the range at the playhead (I)"
-				onclick={() => editor.setRangeStart()}
-			>
-				<ArrowRightToLine size={13} strokeWidth={2} aria-hidden="true" />
-			</button>
-			<button
-				type="button"
-				class="fit icon"
-				aria-label="Range end at the playhead"
-				title="End the range at the playhead (O)"
-				onclick={() => editor.setRangeEnd()}
-			>
-				<ArrowLeftToLine size={13} strokeWidth={2} aria-hidden="true" />
-			</button>
-			<button
-				bind:this={rangeMenuButton}
-				type="button"
-				class="fit icon"
-				aria-label="More range options"
-				aria-haspopup="menu"
-				title="Range options"
-				onclick={() => (rangeMenu = !rangeMenu)}
-			>
-				<Ellipsis size={13} strokeWidth={2} aria-hidden="true" />
-			</button>
-		</div>
 		<button
 			type="button"
 			class="fit ripple"
@@ -986,28 +1049,41 @@
 						<Plus size={12} strokeWidth={2.2} aria-hidden="true" />Overlay track
 					</button>
 				</div>
-				<div class="ruler" role="presentation" bind:this={rulerLane} onpointerdown={onRulerDown}>
-					{#if editor.project.range}
-						{@const r = editor.project.range}
-						<!-- The range set with I and O: drag its edges to change it. -->
-						<div
-							class="range"
-							data-testid="range"
-							style:left="{map.x(r.start)}px"
-							style:width="{Math.max(2, map.x(r.end) - map.x(r.start))}px"
+				<div
+					class="ruler"
+					role="presentation"
+					bind:this={rulerLane}
+					onpointerdown={onRulerDown}
+					oncontextmenu={onRulerContextMenu}
+				>
+					<!-- The range, always there (the whole video until an edge is moved): drag its
+						edges, or inside it to move it; double-click to go back to the whole video. -->
+					<div
+						class="range"
+						class:part={editor.rangeIsPart}
+						data-testid="range"
+						role="presentation"
+						style:left="{map.x(shownRange.start)}px"
+						style:width="{Math.max(2, map.x(shownRange.end) - map.x(shownRange.start))}px"
+						onpointerdown={onRangeDown}
+					>
+						{#each ['start', 'end'] as const as edge (edge)}
+							<span
+								class="range-edge {edge}"
+								role="slider"
+								tabindex="-1"
+								aria-label="Range {edge}"
+								aria-valuenow={edge === 'start' ? shownRange.start : shownRange.end}
+								title="Drag to set the range’s {edge} (Alt: no snapping)"
+								data-range-edge={edge}
+								onpointerdown={(e) => onRangeEdgeDown(e, edge)}
+							></span>
+						{/each}
+					</div>
+					{#if rangeLabel}
+						<span class="range-label mono" data-testid="range-label" style:left="{rangeLabel.x}px"
+							>{rangeLabel.text}</span
 						>
-							{#each ['start', 'end'] as const as edge (edge)}
-								<span
-									class="range-edge {edge}"
-									role="slider"
-									tabindex="-1"
-									aria-label="Range {edge}"
-									aria-valuenow={edge === 'start' ? r.start : r.end}
-									data-range-edge={edge}
-									onpointerdown={(e) => onRangeEdgeDown(e, edge)}
-								></span>
-							{/each}
-						</div>
 					{/if}
 					{#each rulerTicks as t (t)}
 						<span class="tick mono" style:left="{map.x(t)}px">{formatClock(t)}</span>
@@ -1466,32 +1542,50 @@
 		cursor: ew-resize;
 		touch-action: none;
 	}
+	/* The range: a light band (barely there while it's the whole video), edges easy to grab. */
 	.range {
 		position: absolute;
 		top: 0;
 		bottom: 0;
+		background: color-mix(in srgb, var(--color-ink) 5%, transparent);
+	}
+	.range.part {
 		background: color-mix(in srgb, var(--color-ink) 12%, transparent);
-		border-left: 2px solid var(--color-ink);
-		border-right: 2px solid var(--color-ink);
+		cursor: grab;
 	}
 	.range-edge {
 		position: absolute;
+		z-index: 1;
 		top: 0;
 		bottom: 0;
-		width: 12px;
+		width: 14px;
 		cursor: ew-resize;
 		touch-action: none;
 	}
-	/* A small grip at the bottom of each edge: easy to grab even under the playhead's knob. */
+	/* A thin line with a small grip at the bottom: light, but easy to find. */
+	.range-edge::before {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 0;
+		bottom: 0;
+		width: 1.5px;
+		translate: -50% 0;
+		background: color-mix(in srgb, var(--color-ink) 55%, transparent);
+	}
 	.range-edge::after {
 		content: '';
 		position: absolute;
 		left: 50%;
 		bottom: 0;
-		width: 8px;
-		height: 9px;
+		width: 7px;
+		height: 8px;
 		translate: -50% 0;
 		border-radius: 2px 2px 0 0;
+		background: color-mix(in srgb, var(--color-ink) 70%, transparent);
+	}
+	.range-edge:hover::before,
+	.range-edge:hover::after {
 		background: var(--color-ink);
 	}
 	.range-edge.start {
@@ -1500,13 +1594,24 @@
 	.range-edge.end {
 		right: -7px;
 	}
-	.range-tools {
-		display: inline-flex;
-		gap: 4px;
-		margin-right: var(--space-2);
+	.range-label {
+		position: absolute;
+		z-index: 3;
+		top: 2px;
+		translate: -50% 0;
+		padding: 1px 6px;
+		border-radius: var(--radius-pill);
+		background: var(--color-ink);
+		color: var(--color-on-ink);
+		font-size: var(--text-xs);
+		white-space: nowrap;
+		pointer-events: none;
 	}
-	.fit.icon {
-		padding: 0 5px;
+	.menu-anchor {
+		position: fixed;
+		width: 1px;
+		height: 1px;
+		pointer-events: none;
 	}
 	.fit:disabled {
 		opacity: 0.45;
