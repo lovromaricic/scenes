@@ -37,6 +37,12 @@ describe('compose', () => {
 		expect(c.transition).toBeNull();
 	});
 
+	it('shows the last scene at the very end, and no scene after it (an overlay going on past it)', () => {
+		// A is 4 s, B 5 s: the video's scenes end at 9 s.
+		expect(compose(placed, 9, bounds).a?.placed.scene.id).toBe('b');
+		expect(compose(placed, 9.5, bounds)).toEqual({ a: null, b: null, transition: null });
+	});
+
 	it('runs the transition half before and half after the cut', () => {
 		expect(compose(placed, 3.49, bounds).transition).toBeNull();
 		const start = compose(placed, 3.5, bounds);

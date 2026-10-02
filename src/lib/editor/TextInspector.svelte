@@ -138,7 +138,7 @@
 				increaseLabel="Later"
 				value={Math.round(item.start * 10) / 10}
 				min={0}
-				max={Math.max(0, Math.floor((editor.duration - item.duration) * 10) / 10)}
+				max={Math.max(item.start, editor.duration)}
 				step={0.5}
 				format={formatSeconds}
 				onchange={(v) => editor.setTextTiming(item.id, v, item.duration)}
@@ -151,7 +151,6 @@
 				increaseLabel="Longer"
 				value={Math.round(item.duration * 10) / 10}
 				min={MIN_TEXT}
-				max={Math.max(MIN_TEXT, Math.floor((editor.duration - item.start) * 10) / 10)}
 				step={0.5}
 				format={formatSeconds}
 				onchange={(v) => editor.setTextTiming(item.id, item.start, v)}

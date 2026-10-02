@@ -5,6 +5,7 @@ import {
 	projectAudioClips,
 	sceneAudioClips,
 	soundAudioClips,
+	END_FADE,
 	soundEnd,
 	type AudioClip
 } from './clips';
@@ -89,13 +90,22 @@ describe('soundAudioClips', () => {
 		expect(clip).toMatchObject({ start: 0, end: 20, volume: 0.5, fadeIn: 1.5, fadeOut: 3 });
 	});
 	it('uses the clip’s fade lengths, shortened together for short sounds', () => {
-		expect(soundAudioClips([{ ...music, fadeIn: 0, fadeOut: 0 }], 20)[0]).toMatchObject({
+		expect(soundAudioClips([{ ...music, fadeIn: 0, fadeOut: 0 }], 80)[0]).toMatchObject({
 			fadeIn: 0,
 			fadeOut: 0
 		});
 		expect(soundAudioClips([{ ...music, fadeIn: 2, fadeOut: 4.5 }], 20)[0]).toMatchObject({ fadeIn: 2, fadeOut: 4.5 });
 		// 1.5 + 3 s of fades in a 3 s clip: both shrink in proportion, to fill it.
 		expect(soundAudioClips([music], 3)[0]).toMatchObject({ fadeIn: 1, fadeOut: 2 });
+	});
+	it('fades a song out briefly where the video ends before it does', () => {
+		// 60 s song, 20 s video: cut at 20 s with a short fade-out.
+		expect(soundAudioClips([{ ...music, fadeIn: 0, fadeOut: 0 }], 20)[0]).toMatchObject({
+			end: 20,
+			fadeOut: END_FADE
+		});
+		// Its own longer fade-out is kept, ending at the video's end.
+		expect(soundAudioClips([{ ...music, fadeOut: 3 }], 20)[0]).toMatchObject({ end: 20, fadeOut: 3 });
 	});
 	it('skips silent sounds and sounds after the end of the video', () => {
 		expect(soundAudioClips([{ ...music, volume: 0 }], 20)).toEqual([]);

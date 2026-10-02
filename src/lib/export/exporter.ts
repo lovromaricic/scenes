@@ -15,7 +15,7 @@ import {
 import { mixdown } from '$lib/audio/mixdown';
 import { projectAudioClips } from '$lib/audio/clips';
 import type { SourceBounds } from '$lib/model/edits';
-import { placeScenes } from '$lib/model/timeline';
+import { placeScenes, videoLength } from '$lib/model/timeline';
 import type { Project, Scene } from '$lib/model/types';
 import { exportFileName, outputSize, videoBitrate, type ExportPreset } from './presets';
 import { FrameRenderer } from './renderer';
@@ -158,7 +158,7 @@ export function exportRange(duration: number, range?: ExportRange | null): Expor
 
 export async function exportVideo(request: ExportRequest): Promise<ExportResult> {
 	const { project, preset, signal } = request;
-	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	const duration = videoLength(project);
 	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
 	const range = exportRange(duration, request.range);
 	const length = range.end - range.start;
@@ -262,7 +262,7 @@ export interface FrameRequest {
  */
 export async function exportFrame(request: FrameRequest): Promise<ExportResult> {
 	const { project } = request;
-	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	const duration = videoLength(project);
 	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving a frame.');
 	const { width, height } = project.format;
 	// The very end of the video shows its last frame.
@@ -339,7 +339,7 @@ export function estimateAudioBytes(format: AudioFormat, seconds: number, bitrate
  */
 export async function exportAudio(request: AudioRequest): Promise<ExportResult> {
 	const { project, format, signal } = request;
-	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	const duration = videoLength(project);
 	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
 	const range = exportRange(duration, request.range);
 	const length = range.end - range.start;
@@ -408,7 +408,7 @@ export interface GifRequest {
 /** An animated GIF (or WebP) of the video or its range, drawn like the video export. */
 export async function exportGif(request: GifRequest): Promise<ExportResult> {
 	const { project, signal } = request;
-	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	const duration = videoLength(project);
 	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
 	const range = exportRange(duration, request.range);
 	const length = range.end - range.start;
@@ -498,7 +498,7 @@ export function estimateOverlaysBytes(format: OverlaysFormat, width: number, hei
  */
 export async function exportOverlays(request: OverlaysRequest): Promise<ExportResult> {
 	const { project, format, signal } = request;
-	const duration = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	const duration = videoLength(project);
 	if (duration <= 0) throw new ExportError('Add at least one photo or video before saving.');
 	const range = exportRange(duration, request.range);
 	const length = range.end - range.start;

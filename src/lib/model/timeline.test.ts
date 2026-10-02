@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeScenes, sceneAtTime, sceneDuration, totalDuration } from './timeline';
+import { placeScenes, sceneAtTime, sceneDuration, totalDuration, videoLength } from './timeline';
 import type { Scene } from './types';
 
 function scene(id: string, length: number, extra: Partial<Scene> = {}): Scene {
@@ -58,5 +58,19 @@ describe('sceneAtTime', () => {
 	});
 	it('returns null for an empty project', () => {
 		expect(sceneAtTime([], 0)).toBeNull();
+	});
+});
+
+describe('videoLength', () => {
+	it('is the latest end of any scene, layer or words (not sounds)', () => {
+		const scenes = [scene('a', 3)];
+		expect(videoLength({ scenes })).toBe(3);
+		// A card ending at 5 s, after a 3 s scene: the video is 5 s.
+		expect(videoLength({ scenes, overlays: [{ start: 1, duration: 4 }] })).toBe(5);
+		expect(videoLength({ scenes, texts: [{ start: 2, duration: 4.5 }] })).toBe(6.5);
+		// Items that end before the last scene don't change it.
+		expect(videoLength({ scenes, overlays: [{ start: 0, duration: 1 }], texts: [] })).toBe(3);
+		// Overlays alone (no scene) still make a video.
+		expect(videoLength({ scenes: [], overlays: [{ start: 0, duration: 2 }] })).toBe(2);
 	});
 });

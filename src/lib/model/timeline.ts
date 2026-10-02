@@ -33,8 +33,26 @@ export function placeScenes(scenes: Scene[]): PlacedScene[] {
 	});
 }
 
+/** How long the Scenes track is (the scenes back to back). See `videoLength` for the video's length. */
 export function totalDuration(scenes: Scene[]): number {
 	return scenes.reduce((sum, s) => sum + sceneDuration(s), 0);
+}
+
+/**
+ * The video's length, everywhere (the clock, the top bar, the ruler, the range, looping, playback,
+ * Fit, saving): where the last thing ends on the Scenes track or on any picture or words track,
+ * hidden tracks included (hiding a track doesn't change the length). Sounds don't make the video
+ * longer: a sound past the end is cut off there, with a short fade.
+ */
+export function videoLength(project: {
+	scenes: Scene[];
+	overlays?: { start: number; duration: number }[];
+	texts?: { start: number; duration: number }[];
+}): number {
+	let end = totalDuration(project.scenes);
+	for (const o of project.overlays ?? []) end = Math.max(end, o.start + o.duration);
+	for (const t of project.texts ?? []) end = Math.max(end, t.start + t.duration);
+	return end;
 }
 
 /**

@@ -8,7 +8,7 @@ import {
 	type FrameSource,
 	type FrameResult
 } from '$lib/media/frames';
-import { placeScenes, type PlacedScene } from '$lib/model/timeline';
+import { placeScenes, videoLength, type PlacedScene } from '$lib/model/timeline';
 import { compose, scenesNeeded, type Composition, type LayerRef } from '$lib/model/composition';
 import type { SourceBounds } from '$lib/model/edits';
 import type { Size } from '$lib/model/crop';
@@ -237,8 +237,8 @@ export class Player {
 		void ensureFonts(project.texts.map((t) => resolveTextStyle(t).font));
 		this.sounds = project.sounds;
 		this.placed = placeScenes(project.scenes);
-		this.duration = this.placed.at(-1)?.end ?? 0;
 		this.overlays = project.overlays ?? [];
+		this.duration = videoLength(project);
 		this.tracks = project.tracks ?? [];
 		this.placedOverlays = placeOverlays(this.overlays, this.tracks.map((t) => t.id));
 		this.projectWidth = project.format.width;
@@ -518,7 +518,8 @@ export class Player {
 		const c = this.composition(t);
 		const a = c.a && this.layerFrame(c.a, playing);
 		const b = c.b && this.layerFrame(c.b, playing);
-		const scenesReady = !!a && a.exact && (!c.b || (!!b && b.exact));
+		// No scene (after the last one, under an overlay that goes on): only the overlays to wait for.
+		const scenesReady = (!c.a || (!!a && a.exact)) && (!c.b || (!!b && b.exact));
 		return scenesReady && this.overlaysAt(t).every((p) => this.overlayFrame(p, t, playing)?.exact ?? false);
 	}
 

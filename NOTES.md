@@ -3108,6 +3108,45 @@ order.
     - undo is one step each;
     - adding a scene afterwards doesn't move them.
 
+## Fix: the video's length counts overlays
+
+- **The bug:** the video's length only counted the Scenes track. So a card going on after the
+  last scene (a 3 s scene, a card to 5 s) was cut off at 3 s in the player, the time display,
+  the range and the saved file.
+- **One function for the length:** `videoLength(project)` in `model/timeline.ts` is the latest
+  end of anything on the Scenes track or on an overlay track (layers and words).
+  - Hidden tracks count too, so hiding a track doesn't change the length.
+  - Sound doesn't make the video longer.
+  - Used everywhere: `EditorStore.duration` (time display, top bar, ruler and its end, range,
+    loop, playback end, Watch mode), the player, the export (renderer and all of `exporter.ts`),
+    project thumbnails, the home page, and the audio mix.
+- **After the last scene:** `compose()` returns no scene there (the very end of the last scene
+  still shows it). Overlays are drawn over the background (black) in the preview, Watch mode and
+  the saved file. The player's "frame ready" check no longer waits for a scene that isn't there.
+- **Sound past the end:**
+  - In playback and the saved file it's cut at the end with a short fade-out (`END_FADE`, 0.5 s,
+    or its own fade-out if that's longer).
+  - In the storyboard it's drawn at its full length, dimmed past the end. Trimming its end works
+    from its real end.
+- **Words and layers may run past the last scene:** the words' timing no longer stops at the
+  video's end (`setTextTiming`, `resizeTextTiming`; adding words still fits them in). The
+  inspectors' Start and Length fields allow it too.
+- **Live while dragging:** while a layer or words are moved or trimmed, `EditorStore.draftTiming`
+  holds where they'd go, so the length (ruler, striped region, time display) follows the drag.
+  The Fit scale uses the saved length, so the storyboard doesn't rescale under the pointer.
+- **Storyboard:** from the last scene's end to the video's end, the Scenes track shows an empty,
+  lightly striped region. The "+ Scene" card stays right after the last scene, and Fit zoom
+  includes the region.
+- **Tests:**
+  - Unit: `videoLength`; `compose` after the last scene; the end fade-out for sounds.
+  - `video-length.test.ts`:
+    - a 3 s scene plus a card to 5 s makes a 5 s video: time display, range 0–5, Watch mode,
+      the striped region, card over black at 4 s, and playback stopping at 5 s;
+    - trimming and moving the card change the length live, during the drag;
+    - a longer song keeps the video at 5 s and is dimmed past 5 s;
+    - the saved file is 5 s, with the card over black after 3 s and the song fading out at the
+      end.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

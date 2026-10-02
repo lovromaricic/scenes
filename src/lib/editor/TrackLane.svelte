@@ -42,7 +42,10 @@
 
 	const editor = useEditor();
 	const drags = new DragScope();
-	onDestroy(() => drags.dispose());
+	onDestroy(() => {
+		drags.dispose();
+		if (gesture) editor.draftTiming = null;
+	});
 
 	/** Snap within this many pixels. */
 
@@ -99,11 +102,8 @@
 
 	let lane: HTMLDivElement;
 
-	/** Where an item ends on screen: sound clips stop when the video ends. */
-	const visibleEnd = (e: Entry, start: number, duration: number) =>
-		e.kind === 'sound'
-			? Math.min(start + duration, Math.max(editor.duration, start + 0.05))
-			: start + duration;
+	/** Where an item ends on screen (a song past the video's end shows whole, dimmed there). */
+	const visibleEnd = (_e: Entry, start: number, duration: number) => start + duration;
 
 	// ─── Right-click on an item ─────────────────────────────────────────────────────────────
 	let itemMenu = $state<{ id: string; x: number; y: number } | null>(null);
@@ -223,6 +223,19 @@
 			else g.fadeOut = round(end - t);
 		}
 		services.setSnap(snapped === null ? null : map.x(snapped));
+		// The video's length follows a layer or words as they move or are trimmed.
+		if (g.kind !== 'sound') {
+			const shift = g.start - o.start;
+			const draft: Record<string, { start: number; duration: number }> = {
+				[g.id]: { start: g.start, duration: g.duration }
+			};
+			if (g.mode === 'move')
+				for (const id of g.group) {
+					const x = [...editor.project.overlays, ...editor.project.texts].find((i) => i.id === id);
+					if (x) draft[id] = { start: x.start + shift, duration: x.duration };
+				}
+			editor.draftTiming = draft;
+		}
 	}
 
 	/** An item with one edge trimmed by `delta` seconds (within its kind's limits). */
@@ -239,6 +252,7 @@
 	function onend() {
 		const g = gesture;
 		gesture = null;
+		editor.draftTiming = null;
 		services.autoScroll(null);
 		services.setSnap(null);
 		services.showTarget(null, track.id);
@@ -410,6 +424,15 @@
 								<line class="fade-line out" x1={width - fadeOutPx} y1="0" x2={width} y2={h} />
 							{/if}
 						</svg>
+						{#if end > editor.duration + 0.001}
+							<!-- Past the video's end: not heard (it fades out at the end). -->
+							<span
+								class="past-end"
+								data-testid="past-end"
+								title="Past the end of the video: not heard"
+								style:left="{Math.max(0, map.x(editor.duration) - map.x(start))}px"
+							></span>
+						{/if}
 						<span class="sound-name">
 							{#if e.item.kind === 'music'}<Music
 									size={11}
@@ -635,6 +658,16 @@
 	.fade-area {
 		fill: var(--color-bg);
 		opacity: 0.55;
+	}
+	/* A song's part past the video's end: dimmed (it isn't heard). */
+	.past-end {
+		position: absolute;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		border-radius: 0 inherit inherit 0;
+		background: color-mix(in srgb, var(--color-bg) 65%, transparent);
+		pointer-events: none;
 	}
 	.sound-name {
 		position: absolute;

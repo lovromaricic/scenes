@@ -46,12 +46,8 @@
 		h: Math.round(o.box.h * format.height)
 	});
 	const trackName = $derived(editor.track(o.trackId)?.name ?? '');
-	const maxLength = $derived(
-		Math.max(
-			MIN_OVERLAY_SECONDS,
-			Math.min(editor.overlayMaxDuration(o), editor.duration - placed.start)
-		)
-	);
+	// A layer may run past the last scene (the video gets longer), as far as its clip goes.
+	const maxLength = $derived(Math.max(MIN_OVERLAY_SECONDS, editor.overlayMaxDuration(o)));
 
 	const fields = [
 		{ key: 'x', label: 'X' },
@@ -185,7 +181,7 @@
 				increaseLabel="Later"
 				value={Math.round(placed.start * 10) / 10}
 				min={0}
-				max={Math.max(0, editor.duration - MIN_OVERLAY_SECONDS)}
+				max={Math.max(placed.start, editor.duration)}
 				step={0.5}
 				format={(v) => formatClock(v)}
 				onchange={(v) => editor.setOverlayTiming(o.id, v, o.duration)}

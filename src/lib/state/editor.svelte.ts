@@ -23,7 +23,6 @@ import {
 	MIN_SOUND,
 	MUSIC_FADE_IN,
 	MUSIC_FADE_OUT,
-	soundEnd,
 	splitSound,
 	trimSound
 } from '$lib/model/sound';
@@ -101,7 +100,7 @@ import {
 	type SourceBounds
 } from '$lib/model/edits';
 import { History } from '$lib/model/history';
-import { placeScenes, sceneDuration, totalDuration } from '$lib/model/timeline';
+import { placeScenes, sceneDuration, totalDuration, videoLength } from '$lib/model/timeline';
 import { TEXT_ENTER } from '$lib/model/textAnimation';
 import { TRANSITION_SECONDS } from '$lib/model/composition';
 import { formatFromClip, type ProjectFormat } from '$lib/model/format';
@@ -277,7 +276,7 @@ let hashesBackfilled = false;
 function clampRange(project: Project): Project {
 	const r = project.range;
 	if (!r) return project;
-	const d = totalDuration(project.scenes);
+	const d = videoLength(project);
 	if (r.end <= d + 1e-6) return project;
 	const end = d;
 	const start = Math.min(r.start, Math.max(0, end - 1 / 30));
@@ -289,6 +288,13 @@ function clampRange(project: Project): Project {
 const TextTyping = {
 	key: (id: string) => `words:${id}`
 };
+
+/** The project's layers and words with some of them retimed (see `draftTiming`). */
+function withTimings(project: Project, timings: Record<string, { start: number; duration: number }>) {
+	const at = <T extends { id: string; start: number; duration: number }>(x: T) =>
+		timings[x.id] ? { ...x, ...timings[x.id] } : x;
+	return { scenes: project.scenes, overlays: project.overlays.map(at), texts: project.texts.map(at) };
+}
 
 export class EditorStore {
 	project = $state<Project>(newProject());
@@ -361,7 +367,14 @@ export class EditorStore {
 	/** Resolves once the saved project has been restored (or there was none). */
 	private loaded: Promise<void> | null = null;
 
-	duration = $derived(totalDuration(this.project.scenes));
+	/**
+	 * While a layer or words are dragged in the storyboard: where they'd go (by id), so the video's
+	 * length follows the drag live. Not part of the project; cleared when the drag ends.
+	 */
+	draftTiming = $state<Record<string, { start: number; duration: number }> | null>(null);
+
+	/** The video's length (scenes, layers and words: see `videoLength`), live during a drag. */
+	duration = $derived(videoLength(this.draftTiming ? withTimings(this.project, this.draftTiming) : this.project));
 	placed = $derived(placeScenes(this.project.scenes));
 	selectedScene = $derived(this.placed.find((p) => p.scene.id === this.selectedId) ?? null);
 	selectedText = $derived(this.project.texts.find((t) => t.id === this.selectedId) ?? null);
@@ -2515,7 +2528,7 @@ export class EditorStore {
 
 	/** A sound clip with one edge trimmed by `delta` seconds (not applied; see setSoundTiming). */
 	trimmedSound(sound: SoundItem, edge: 'start' | 'end', delta: number): SoundItem {
-		return trimSound(sound, edge, delta, this.soundBounds(sound), soundEnd(sound, this.duration));
+		return trimSound(sound, edge, delta, this.soundBounds(sound));
 	}
 
 	/**
@@ -3029,7 +3042,8 @@ export class EditorStore {
 
 	setTextTiming(id: string, start: number, duration: number, label = 'Timing'): void {
 		if (this.trackOfItem(id)?.locked) return;
-		const d = this.duration;
+		// Words may run past the last scene: they make the video longer, like any overlay.
+		const d = Infinity;
 		this.edit(
 			label,
 			(p) =>
@@ -3044,7 +3058,7 @@ export class EditorStore {
 
 	/** Move one edge of a text's timing (used by the Words lane). */
 	resizeTextTiming(item: TextItem, edge: 'start' | 'end', delta: number): TextItem {
-		return resizeText(item, edge, delta, this.duration);
+		return resizeText(item, edge, delta, Infinity);
 	}
 
 	deleteText(id: string): void {

@@ -18,7 +18,7 @@
 	import { droppedHandles, isProjectFile, projectOpener } from '$lib/files/opener.svelte';
 	import { saveProjectToFile } from '$lib/files/save';
 	import { projectThumbnail, requestPersistentStorage, storageEstimate } from '$lib/media/db';
-	import { totalDuration } from '$lib/model/timeline';
+	import { videoLength } from '$lib/model/timeline';
 	import { formatBytes } from '$lib/export/presets';
 	import { allProjects, duplicateProject, removeProject, renameProject } from '$lib/state/library';
 	import { newId } from '$lib/state/project';
@@ -45,7 +45,7 @@
 			list.push({
 				id: p.id,
 				title: p.title,
-				duration: totalDuration(p.scenes),
+				duration: videoLength(p),
 				width: p.format.width,
 				height: p.format.height,
 				updatedAt: p.updatedAt,

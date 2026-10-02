@@ -124,7 +124,10 @@ test.describe('Adding layers by dragging', () => {
 		expect(list[0].start).toBeCloseTo(6, 0);
 
 		// A photo from the computer onto the same time: it overlaps, so it goes on a new track above.
-		await drop(page, x, y, { files: [file('yellow.jpg', 'image/jpeg')] });
+		// (The card goes on past the last scene, so the video got longer and Fit rescaled: 6 s again.)
+		const pxNow = (await box(page, '.card-slot')).width / 4;
+		const x6 = lane.x + pxNow * 6;
+		await drop(page, x6, y, { files: [file('yellow.jpg', 'image/jpeg')] });
 		await expect.poll(async () => (await layers(page)).length).toBe(2);
 		list = await layers(page);
 		const photo = list.find((l) => l.kind === 'photo')!;

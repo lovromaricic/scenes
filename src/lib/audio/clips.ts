@@ -1,5 +1,5 @@
 import type { Project, Scene, SoundItem } from '$lib/model/types';
-import { placeScenes, totalDuration } from '$lib/model/timeline';
+import { placeScenes, videoLength } from '$lib/model/timeline';
 import { placeOverlays, type Overlay } from '$lib/model/overlay';
 import type { Track } from '$lib/model/tracks';
 
@@ -63,18 +63,24 @@ export function bufferPlacement(
 	return { timelineStart: from, offset: (from - natural) * clip.speed };
 }
 
+/** The fade-out given to a sound that's cut off by the video's end. */
+export const END_FADE = 0.5;
+
 /**
  * Music and voiceovers as timeline audio clips: each clip's trimmed part of its file, where it's
- * placed, with its fades at its (trimmed) edges. A clip still playing when the video ends fades
- * out by then.
+ * placed, with its fades at its (trimmed) edges. A clip still playing when the video ends is cut
+ * there, with a short fade-out (END_FADE, or its own if longer).
  */
-export function soundAudioClips(sounds: SoundItem[], videoLength: number): AudioClip[] {
+
+export function soundAudioClips(sounds: SoundItem[], videoEnd: number): AudioClip[] {
 	const clips: AudioClip[] = [];
 	for (const sound of sounds) {
-		const end = soundEnd(sound, videoLength);
+		const end = soundEnd(sound, videoEnd);
 		const length = end - sound.start;
 		if (length <= 0.05 || sound.volume <= 0) continue;
 		const fades = effectiveFades(sound, length);
+		// Cut off by the video's end: a short fade-out there (at least), so it doesn't stop dead.
+		if (end < sound.start + sound.duration - 1e-3) fades.fadeOut = Math.min(length, Math.max(fades.fadeOut, END_FADE));
 		clips.push({
 			id: sound.id,
 			mediaId: sound.mediaId,
@@ -94,10 +100,9 @@ export function soundAudioClips(sounds: SoundItem[], videoLength: number): Audio
 /** The sound of video layers that have it turned on (off by default). */
 export function overlayAudioClips(
 	overlays: Overlay[],
-	scenes: Scene[],
+	length: number,
 	hasAudio: (mediaId: string) => boolean
 ): AudioClip[] {
-	const length = totalDuration(scenes);
 	return placeOverlays(overlays)
 		.filter(
 			(p) =>
@@ -131,10 +136,12 @@ export function projectAudioClips(
 ): AudioClip[] {
 	const tracks = project.tracks ?? [];
 	const silent = new Set(tracks.filter((t) => (t.kind === 'audio' ? t.muted : t.hidden)).map((t) => t.id));
+	// The video's length counts hidden layers and words too (hiding doesn't change it).
+	const length = videoLength(project);
 	return [
 		...sceneAudioClips(project.scenes, hasAudio),
-		...overlayAudioClips((project.overlays ?? []).filter((o) => !silent.has(o.trackId)), project.scenes, hasAudio),
-		...soundAudioClips(project.sounds.filter((s) => !silent.has(s.trackId)), totalDuration(project.scenes))
+		...overlayAudioClips((project.overlays ?? []).filter((o) => !silent.has(o.trackId)), length, hasAudio),
+		...soundAudioClips(project.sounds.filter((s) => !silent.has(s.trackId)), length)
 	];
 }
 

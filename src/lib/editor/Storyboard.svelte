@@ -5,7 +5,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { trimEdge } from '$lib/model/edits';
 	import { formatClock } from '$lib/model/time';
-	import { sceneDuration } from '$lib/model/timeline';
+	import { sceneDuration, videoLength } from '$lib/model/timeline';
 	import type { Scene } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
 	import SceneCard from './SceneCard.svelte';
@@ -119,9 +119,17 @@
 	let frozenPps = $state<number | null>(null);
 
 	const durations = $derived(scenes.map(sceneDuration));
-	/** The scale that shows the whole video ("Fit"). */
+	const scenesEnd = $derived(durations.reduce((a, b) => a + b, 0));
+	/** How far the video goes on past the last scene (an overlay that continues), live during a drag. */
+	const tail = $derived(Math.max(0, duration - scenesEnd));
+	/** The same, as saved (the scale doesn't change under the pointer while an item is dragged). */
+	const savedTail = $derived(Math.max(0, videoLength(editor.project) - scenesEnd));
+	/** The scale that shows the whole video ("Fit"), with any overlay past the last scene. */
 	const fittedPps = $derived(
-		fitTimeline(durations, trackWidth - HEADER_W - TRACK_PAD - ADD_CARD_W - END_PAD - CARD_GAP)
+		fitTimeline(
+			savedTail > 0.001 ? [...durations, savedTail] : durations,
+			trackWidth - HEADER_W - TRACK_PAD - ADD_CARD_W - END_PAD - CARD_GAP
+		)
 	);
 	/** Zoom slider, 0 = Fit, 1 = closest. */
 	let zoom = $state(0);
@@ -1310,6 +1318,18 @@
 									</div>
 								{/each}
 							{/if}
+							{#if tail > 0.001 && !drag?.active}
+								<!-- The video goes on past the last scene (an overlay continues): nothing here,
+								     the background shows. -->
+								<div
+									class="scenes-tail"
+									data-testid="scenes-tail"
+									style:left="{layout.end}px"
+									style:width="{Math.max(0, map.x(duration) - layout.end)}px"
+									title="No scene here: the background shows under the overlays"
+									aria-hidden="true"
+								></div>
+							{/if}
 							{#each { length: importing } as _, i (i)}
 								<div
 									class="loading-card"
@@ -1883,6 +1903,19 @@
 		/* Above the trim handles, which stay grabbable above and below the button. */
 		z-index: 5;
 		animation: fade-in var(--dur) var(--ease-out);
+	}
+	/* Past the last scene, up to the video's end: empty, lightly striped. */
+	.scenes-tail {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		border-radius: var(--radius-card);
+		background: repeating-linear-gradient(
+			-45deg,
+			transparent 0 6px,
+			color-mix(in srgb, var(--color-border) 55%, transparent) 6px 7px
+		);
+		pointer-events: none;
 	}
 	.add-scene {
 		position: absolute;

@@ -61,7 +61,12 @@ export function compose(
 ): Composition {
 	if (placed.length === 0) return { a: null, b: null, transition: null };
 	let i = placed.findIndex((p) => t < p.end);
-	if (i === -1) i = placed.length - 1;
+	if (i === -1) {
+		// After the last scene (an overlay goes on past it): no scene, the background shows. The
+		// very end of the last scene still shows it.
+		if (t > placed[placed.length - 1].end + 1e-3) return { a: null, b: null, transition: null };
+		i = placed.length - 1;
+	}
 	const layer = (p: PlacedScene): LayerRef => ({
 		placed: p,
 		sourceTime: extendedSourceTime(p, t, bounds(p)),

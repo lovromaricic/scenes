@@ -5,7 +5,7 @@ import type { MediaInfo } from '$lib/media/db';
 import type { Project } from '$lib/model/types';
 import { drawCard } from '$lib/render/card';
 import { visualsAt } from '$lib/render/visuals';
-import { placeScenes } from '$lib/model/timeline';
+import { placeScenes, videoLength } from '$lib/model/timeline';
 import { compose } from '$lib/model/composition';
 import { sceneFrameAt } from '$lib/model/keyframes';
 import { overlayDraw } from '$lib/render/overlay';
@@ -42,7 +42,7 @@ function sceneAtStart(project: Pick<Project, 'scenes'>) {
 
 /** Pictures and words on (shown) overlay tracks at the very start, lowest track first. */
 function startVisuals(project: Project) {
-	const length = placeScenes(project.scenes).at(-1)?.end ?? 0;
+	const length = videoLength(project);
 	return visualsAt(project, 0, length);
 }
 

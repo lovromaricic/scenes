@@ -3,7 +3,7 @@ import type { FrameResult } from '$lib/media/frames';
 import { compose, scenesNeeded } from '$lib/model/composition';
 import type { SourceBounds } from '$lib/model/edits';
 import { placeOverlays, type PlacedOverlay } from '$lib/model/overlay';
-import { placeScenes, type PlacedScene } from '$lib/model/timeline';
+import { placeScenes, videoLength, type PlacedScene } from '$lib/model/timeline';
 import type { Project, Scene } from '$lib/model/types';
 import { CardCache } from '$lib/render/card';
 import { Compositor, type CompositeFrame } from '$lib/render/compositor';
@@ -49,7 +49,7 @@ export class FrameRenderer {
 
 	constructor(private readonly o: RendererOptions) {
 		this.placed = placeScenes(o.project.scenes);
-		this.duration = this.placed.at(-1)?.end ?? 0;
+		this.duration = videoLength(o.project);
 		this.layers = placeOverlays(o.project.overlays ?? []);
 		this.canvas = new OffscreenCanvas(o.width, o.height);
 		this.compositor = new Compositor(this.canvas, { transparent: !!o.overlaysOnly });
