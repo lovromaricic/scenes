@@ -3483,6 +3483,33 @@ PNG layers.
   - each open is a new copy, and the demo is unchanged;
   - it plays through in real time without stalls and stops at 22 s.
 
+## Fix: Your media scrolled sideways
+
+- **The cause:** each tile's name (and the field for renaming it) had negative side margins
+  (−5 px), so its text lined up with the field's. The last name in each row stuck out 3 px past
+  the grid's right edge, which the grid's 2 px padding didn't absorb. The grid scrolls (down),
+  so it scrolled sideways too: content 207 px wide in 204 px (at 1440 px). The grid columns were
+  already `repeat(2, minmax(0, 1fr))`, and long names were already cut with an ellipsis. It
+  wasn't the names' length.
+- **The fix** (`MediaLibrary.svelte`):
+  - no negative margins: the name and its rename field are one box (block, `width: 100%`,
+    `min-width: 0`, `box-sizing: border-box`, the same padding and a 1 px border, transparent
+    on the name), so the text doesn't move when renaming;
+  - long names stay one line, cut with "…" (`white-space: nowrap`, `overflow: hidden`,
+    `text-overflow: ellipsis`), with the full name in the tile's tooltip, as before;
+  - tiles are `box-sizing: border-box`;
+  - `overflow-x: hidden` on the grid, as a safety net only.
+- **The other side panels** were checked at 900, 1100 and 1440 px wide: the Add column, the
+  Settings column (with a clip, then words selected), and the font picker's list. None
+  overflowed, so they're unchanged.
+- **Test** (`panel-overflow.test.ts`): two very long file names (with and without spaces) and a
+  long name given in Your media. At three window widths it checks:
+  - the media grid, Your media, the Add and Settings columns and the font picker: their
+    `scrollWidth` equals their `clientWidth`;
+  - each name stays inside its tile, on one line, cut with "…", with the full name as the
+    tooltip.
+  With the old code it fails (207 vs 204).
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

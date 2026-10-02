@@ -305,6 +305,8 @@
 		padding: 2px;
 		list-style: none;
 		overflow-y: auto;
+		/* Only ever scrolls down (a safety net: nothing in it is wider than its column). */
+		overflow-x: hidden;
 		/* At least a row of tiles; below that the whole Add column scrolls. */
 		min-height: 88px;
 	}
@@ -317,6 +319,7 @@
 	.item {
 		position: relative;
 		display: block;
+		box-sizing: border-box;
 		width: 100%;
 		padding: 0;
 		border: 1px solid var(--color-border);
@@ -376,10 +379,15 @@
 		font-size: 10.5px;
 	}
 	/* The name, and the field that replaces it while renaming (same place, no shift). */
+	/* Within the tile's width (no negative margins: they made the grid scroll sideways). The
+	   name and its field have the same box, so the text doesn't move when renaming. */
 	.name,
 	li :global(.media-name-field) {
+		display: block;
+		box-sizing: border-box;
+		width: 100%;
+		min-width: 0;
 		height: 20px;
-		margin: 0 -5px;
 		padding: 0 4px;
 		border: 1px solid transparent;
 		font-size: var(--text-xs);
