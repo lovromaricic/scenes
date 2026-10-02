@@ -27,9 +27,10 @@
 </script>
 
 <div class="head">
-	<NameTitle prefix={isMusic ? 'Music' : 'Voiceover'} item={sound} />
+	<NameTitle plain={isMusic ? 'Music' : 'Voiceover'} item={sound} />
 	<p class="subtitle">
-		{sound.name} · plays for <span class="mono">{formatClock(plays)}</span>
+		{sound.label ? `${isMusic ? 'Music' : 'Voiceover'} · ` : ''}{sound.name} · starts at
+		<span class="mono">{formatClock(sound.start)}</span> · plays for <span class="mono">{formatClock(plays)}</span>
 		{#if sound.start + sound.duration > editor.duration + 0.05}
 			<br />It stops when the video ends.
 		{/if}

@@ -98,11 +98,12 @@
 
 <div class="head">
 	<div class="title-row">
-		<NameTitle prefix="Layer" item={o} />
+		<NameTitle plain="Layer" item={o} />
 		<KeyframeButtons id={o.id} />
 	</div>
 	<p class="subtitle">
-		{kindLabel} · {o.name} · on {trackName}
+		{o.label ? 'Layer · ' : ''}{kindLabel}{o.name === kindLabel ? '' : ` · ${o.name}`} · starts at
+		<span class="mono">{formatClock(placed.start)}</span> · on {trackName}
 	</p>
 </div>
 

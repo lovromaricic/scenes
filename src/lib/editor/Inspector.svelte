@@ -68,12 +68,14 @@
 		{#key scene.id}
 			<div class="head">
 				<div class="title-row">
-					<NameTitle prefix="Scene {placed.index + 1}" item={scene} />
+					<NameTitle plain="Scene {placed.index + 1}" item={scene} />
 					<!-- Scenes animate their Custom framing (the buttons show once it's Custom). -->
 					<KeyframeButtons id={scene.id} />
 				</div>
 				<p class="subtitle">
-					{scene.name} · starts at <span class="mono">{formatClock(placed.start)}</span>
+					<!-- Renamed: which scene it is moves down here. -->
+					{scene.label ? `Scene ${placed.index + 1} · ` : ''}{scene.name} · starts at
+					<span class="mono">{formatClock(placed.start)}</span>
 				</p>
 			</div>
 

@@ -24,8 +24,10 @@
 </script>
 
 <div class="head">
-	<NameTitle prefix="Scene {placed.index + 1}" item={placed.scene} />
-	<p class="subtitle">Card · starts at <span class="mono">{formatClock(placed.start)}</span></p>
+	<NameTitle plain="Scene {placed.index + 1}" item={placed.scene} />
+	<p class="subtitle">
+		{placed.scene.label ? `Scene ${placed.index + 1} · ` : ''}Card · starts at <span class="mono">{formatClock(placed.start)}</span>
+	</p>
 </div>
 
 <div class="fields">

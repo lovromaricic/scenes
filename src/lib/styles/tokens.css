@@ -19,7 +19,7 @@
 	--color-accent-hover: color-mix(in srgb, var(--color-accent) 88%, var(--color-ink));
 	--color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg));
 	/* Selected text: a light accent tint (instead of the browser's blue). */
-	--color-text-selection: color-mix(in srgb, var(--color-accent) 22%, var(--color-bg));
+	--color-text-selection: color-mix(in srgb, var(--color-accent) 13%, var(--color-bg));
 	--color-on-ink: var(--color-bg);
 	--color-on-ink-muted: color-mix(in srgb, var(--color-bg) 68%, var(--color-ink));
 	--color-ink-line: color-mix(in srgb, var(--color-bg) 16%, var(--color-ink));

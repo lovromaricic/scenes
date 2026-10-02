@@ -3210,6 +3210,38 @@ order.
       right-click; words show their words until renamed and again once cleared; a song
       renamed from its settings keeps its file's name.
 
+## Renaming in the settings heading: the whole heading
+
+- **Before:** clicking the heading kept a fixed "Scene 2 ·" in front of a wide gray field. The
+  selected text was a strong pink.
+- **Now** (`NameTitle.svelte`, prop `plain`):
+  - Clicking the heading turns the whole heading into the field, with its text selected, so
+    typing replaces it.
+  - Renamed, the heading is just the name ("Intro"). Which one it is moves to the line
+    underneath:
+    - scenes: "Scene 2 · Green · starts at 0:04" (cards: "Scene 2 · Card · starts at…");
+    - layers: "Layer · Video · beach · starts at 0:01 · on Overlay 1" (the file's name is left
+      out when it's the same as the type, like "Card");
+    - words: "Words · starts at…" above the typing hint;
+    - sounds: "Music · song · starts at… · plays for…".
+  - Not renamed, the heading is "Scene 2" / "Layer" / "Words" / "Music" as before. Typing that
+    back, or clearing the field, removes the name.
+  - On the storyboard, scenes still show "2 · Intro".
+- **The field** uses the same `.inline-edit` look as renaming the video. It has the heading's
+  font, size and place (the shown heading has a transparent border and the same padding), and
+  it's as wide as its text: `NameEditor`'s `fit` mode puts an invisible copy of the text in the
+  same grid cell, with a little room for the caret and italic letters. The heading's hover
+  area is sized to the text, instead of the whole row.
+- **Selected text** (everywhere) is a lighter accent tint: `--color-text-selection` is now 13%
+  accent (was 22%).
+- **Tests** (`rename-items.test.ts`):
+  - a new test: click "Scene 2", the whole heading is the field with it all selected; same
+    font and text position; as wide as its text; the same border, background and selection
+    tint as the video-title field. Then "Intro" makes the heading "Intro", with "Scene 2 · Green"
+    underneath and "2 · Intro" on the storyboard. Typing "Scene 2" back removes the name.
+  - the earlier tests now expect the name as the heading and the position in the line
+    underneath.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

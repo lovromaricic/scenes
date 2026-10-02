@@ -4,7 +4,7 @@
 	import { Button, ChipGroup, Field, PillStepper } from '$lib/ui';
 	import { TEXT_ANIMATIONS } from '$lib/model/catalog';
 	import { MIN_TEXT } from '$lib/model/edits';
-	import { formatSeconds } from '$lib/model/time';
+	import { formatClock, formatSeconds } from '$lib/model/time';
 	import type { TextAnimation, TextItem } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
 	import TextStylePicker from './TextStylePicker.svelte';
@@ -36,10 +36,13 @@
 
 <div class="head">
 	<div class="title-row">
-		<NameTitle prefix={title} {item} />
+		<NameTitle plain={title} {item} />
 		<KeyframeButtons id={item.id} />
 	</div>
-	<p class="subtitle">Double-click the words on the video to type.</p>
+	<p class="subtitle">
+		{#if item.label}{title} · starts at <span class="mono">{formatClock(item.start)}</span><br />{/if}
+		Double-click the words on the video to type.
+	</p>
 </div>
 
 <div class="fields">
