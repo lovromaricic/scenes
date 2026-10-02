@@ -3344,7 +3344,7 @@ order.
 
 ## The Casa Rossa demo
 
-A 22-second TV-style ad for a fictional tomato sauce, with a voiceover, shipped with the app as a
+A 23-second TV-style ad for a fictional tomato sauce, with a voiceover, shipped with the app as a
 demo. **The editor isn't changed for it.** Where the editor can't do exactly what the ad asks, the
 closest thing is used (listed below). One earlier fix to the editor is kept (agreed): transparent
 PNG layers.
@@ -3365,7 +3365,7 @@ PNG layers.
   - `static/demo/casa-rossa.jpg`, the Demo card's picture (the frame at 14.45 s: the tomatoes
     and the badge in, before "TOMATOES.");
   - `demo-review/` (git-ignored): the exported MP4 and the stills to review.
-- **Home screen:** a "Demo" card ("Casa Rossa · 22 sec ad", with its picture) after New video.
+- **Home screen:** a "Demo" card ("Casa Rossa · 23 sec ad", with its picture) after New video.
   Opening it fetches the file and stores it as a new project every time (`projectOpener.openCopy`
   → `storeOpenedFile` in `copy` mode, titled "Casa Rossa ad", with the demo picture as its
   thumbnail). The file in `static/` is never changed or linked.
@@ -3377,8 +3377,8 @@ PNG layers.
 - **Voiceover lines:** files can only be added as sounds through the Music button (voiceovers
   come from recording). So each line is added there, placed at its time, set to 100% with no
   fades, and its kind set to `voice` with `edit()`.
-- **The music's dip:** made with volume points, as asked: 100% at 0.0, 35% at 0.2 and 21.0, 0% at
-  22.0, all Linear. The music file itself is silent for its first ~0.15 s, so the 100% start isn't
+- **The music's dip:** made with volume points, as asked: 100% at 0.0, 35% at 0.2 and 22.0, 0% at
+  23.0, all Linear. The music file itself is silent for its first ~0.15 s, so the 100% start isn't
   heard.
 - **Text alignment:** there's none, so left-aligned lines are centred half their measured width
   in from x = 120. Widths are measured in the page with the same font files the editor draws
@@ -3423,18 +3423,48 @@ PNG layers.
   - "Hand-cut. Every time." at y = 395.
 - **The clip near its end:** only 1.0–5.5 s of it is used, so its end (a basket appears from
   about 8 s) never shows. The last frames before the cut (13.35, 13.39) are clean.
-- **The outro** (18.8–22.0) is the terrace photo (`demo_image1`) in place of the white card.
+- **The outro** (19.8–23.0) is the terrace photo (`demo_image1`) in place of the white card.
   It uses Custom framing that zooms from 105% to 112%, Ease out.
 - **Shade:** a black card over the whole frame at 35%, on its own "Shade" track (just above the
-  scenes, under the words). It fades in over 18.8–19.05, the second half of the crossfade into
-  the outro, so the darkening doesn't pop in.
+  scenes, under the words). It fades in across the whole crossfade into the outro (19.55–20.05),
+  as the split screen fades out.
 - **Outro words for the photo:** "Casa Rossa" white with a soft shadow, "Taste the sun." white,
   and "Tomato sauce · Available now" white at 80%. Fonts, sizes, places and timing are kept.
 - **Checked:** stills at 9.5, 11.5, 13.0, 19.5 and 21.5 s, plus the crossfade into the outro
-  (18.6–19.0). Everything reads. The kitchen half of the split screen still ends at 18.8 (as
-  specified), so it gives way to the terrace partway through that crossfade, as before.
+  (19.5–20.1). Everything reads, and the split screen now fades out with that crossfade
+  (see below).
 
-### The split screen ("Speed and looks", 16.8–18.8)
+### A longer split screen, and everything leaving with its transition
+- **The split screen is 3 s** (16.8–19.8, was 2 s). The hands clip now starts at 3.5 s, so its
+  6 s at 2× (3.5–9.5) stay inside the 10 s clip. The kitchen half (from 3.0 s) runs 3.25 s.
+  "Ready in", "10" and "MINUTES", the kitchen half and the divider keep their entrance times.
+- **Everything after it moved by +1.0 s:**
+  - the outro is 19.8–23.0;
+  - the sixth voice line is at 19.85;
+  - "Casa Rossa" is at 19.93 (its keyframes 19.93–20.35), "Taste the sun." at 21.45, and the
+    tagline at 21.9;
+  - the project is 23.0 s, with the music trimmed to 23.0, at 35% until 22.0 and out by 23.0;
+  - the Demo card says "Casa Rossa · 23 sec ad".
+- **The uneven fade into the outro:** a transition runs half before and half after the scene
+  change (cut − d/2 to cut + d/2), and only the Scenes track takes part. The layers and words on
+  the split screen ended at the change and vanished halfway through the crossfade, while the
+  picture under them was still fading.
+- **The fix, for every transition:** whatever ends at a scene change now runs on to the
+  transition's end and does what the outgoing scene does, on the same curve (the renderer's
+  smoothstep), sampled every eighth of the transition:
+  - **crossfade** (2 → 3 and 5 → 6): it fades out with the picture. That's "SINCE 1962" and the
+    garden line; and the kitchen half, the divider, "Ready in", "10" and "MINUTES";
+  - **slide** (1 → 2): "Italian." and its bar move off to the left with the red card;
+  - **zoom** (4 → 5): "100%", the tomatoes, "TOMATOES.", "Nothing else.", the badge and "NEW"
+    grow and fade with the dark card;
+  - 3 → 4 is a cut, so there's nothing to do there.
+  The words' built-in 0.25 s fade-out is off for these (`exitFade: false`, set with the
+  editor's `edit()`: there's no setter), so only this one applies. The outro's shade fades in
+  across the same crossfade (19.55–20.05).
+- **Checked:** frames every 0.1 s across each transition, and stills at 18.5, 19.5 and 21.0 s.
+  The whole frame changes together, with no half-faded frames and no text left over.
+
+### The split screen ("Speed and looks", 16.8–19.8)
 - **Left half:** the kitchen clip (from 3.0 s) as a layer filling exactly the left half: 960 ×
   1080 at (480, 540), no rounded corners, no border, sound off. It slides in from x = −480 at
   16.8 to x = 480 at 17.15 (Ease out), on "Split screen".
@@ -3469,7 +3499,7 @@ PNG layers.
   5–6 dB above the music: clearly audible, though a deeper dip (for example 25%) would make it
   stand out more.
 
-### Review (stills at 0.8, 2.0, 3.2, 5.0, 7.0, 9.5, 10.0, 11.5, 12.0, 13.0, 15.0, 17.0, 17.5, 18.5, 19.5, 20.0, 21.5 s, from the exported MP4)
+### Review (stills at 0.8, 2.0, 3.2, 5.0, 7.0, 9.5, 10.0, 11.5, 12.0, 13.0, 15.0, 17.0, 17.5, 18.5, 19.5, 21.0, 22.5 s, from the exported MP4)
 - **"SINCE 1962"** would sit on the kitchen's bright window at the top left, where it's hard to
   read (seen in the first version). It's at the top right instead, over the dark cabinets
   (right edge at x = 1800, y = 110), with a soft shadow.
@@ -3484,21 +3514,23 @@ PNG layers.
 - Everything else reads cleanly: nothing overlaps awkwardly or sits too close to the edges. Each
   text shows at its moment: "Ready in" is popping in at 17.0, and "Taste the sun." isn't in yet
   at 20.0 (it's at 20.45).
-- **Playback in the editor:** 22.42 s of wall time for the 22 s, about 60 frames a second, and
+- **Playback in the editor:** 23.45 s of wall time for the 23 s, about 60 frames a second, and
   the picture never paused for more than 23 ms (from the demo test).
-- **Export:** 1920 × 1080, 24 fps, H.264 + AAC. The video stream is 22.000 s (528 frames); the
-  audio is 22.08 s, from AAC's end padding. The music is down to about −39 dB in the last 0.2 s.
+- **Export:** 1920 × 1080, 24 fps, H.264 + AAC. The video stream is 23.000 s (552 frames); the
+  audio is 23.08 s, from AAC's end padding. The music is down to about −39 dB in the last 0.2 s.
   The frames match the preview.
 
 ### Tests
 - **Unit:** `scripts/demo.test.ts` checks the built file against the spec:
   - the twelve files;
-  - format, scene changes at 3.8, 8.9, 13.4, 16.8, 18.8 and 22.0, and transitions with their
+  - format, scene changes at 3.8, 8.9, 13.4, 16.8, 19.8 and 23.0, and transitions with their
     lengths;
-  - the clips: muted, framed and keyframed; the hands clip from 4.0 s at 2× in Golden, framed
+  - the clips: muted, framed and keyframed; the hands clip from 3.5 s at 2× in Golden, framed
     into the right half;
   - the split screen: the left half's box, its slide in, and the divider (its size,
     unlinked height keyframes, and track above the left half);
+  - whatever ends at a scene change leaves through the transition: it ends at the transition's
+    end, gone (faded, or off to the left for the slide), with no built-in fade-out of its own;
   - the tomato field (from 1.0 s, muted, 100% → 110%) with its words high on the left, and no
     picture-in-picture; the terrace outro (105% → 112%), its 35% shade under the words, and
     the white outro words;
@@ -3509,7 +3541,7 @@ PNG layers.
   - the Demo card and its picture; opening it gives an editable copy with everything in it
     (the sounds and their times included), and the tomatoes are drawn transparent;
   - each open is a new copy, and the demo is unchanged;
-  - it plays through in real time without stalls and stops at 22 s.
+  - it plays through in real time without stalls and stops at 23 s.
 
 ## Fix: Your media scrolled sideways
 

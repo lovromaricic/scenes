@@ -1,5 +1,5 @@
 /**
- * Builds the demo project that ships with the app: "Casa Rossa", a 22-second TV-style ad for a
+ * Builds the demo project that ships with the app: "Casa Rossa", a 23-second TV-style ad for a
  * (fictional) tomato sauce, with a voiceover. Run it with:
  *
  *     node scripts/build-demo.ts            (add --no-export to skip the MP4 and stills)
@@ -28,8 +28,8 @@ const ASSETS = path.join(ROOT, 'demo-assets');
 const OUT = path.join(ROOT, 'static', 'demo');
 const REVIEW = path.join(ROOT, 'demo-review');
 const PORT = 4319;
-const LENGTH = 22;
-const STILLS = [0.8, 2.0, 3.2, 5.0, 7.0, 9.5, 10.0, 11.5, 12.0, 13.0, 15.0, 17.0, 17.5, 18.5, 19.5, 20.0, 21.5];
+const LENGTH = 23;
+const STILLS = [0.8, 2.0, 3.2, 5.0, 7.0, 9.5, 10.0, 11.5, 12.0, 13.0, 15.0, 17.0, 17.5, 18.5, 19.5, 21.0, 22.5];
 const CARD_PICTURE_AT = 14.45;
 const MUSIC = 'the_mountain-italian-485568.mp3';
 /** The voiceover, one file per line, and where each starts. */
@@ -39,7 +39,7 @@ const VOICE: [string, number][] = [
 	['voiceover_line3.wav', 9.0],
 	['voiceover_line4.wav', 13.5],
 	['voiceover_line5.wav', 16.9],
-	['voiceover_line6.wav', 18.85]
+	['voiceover_line6.wav', 19.85]
 ];
 const exportVideo = !process.argv.includes('--no-export');
 
@@ -72,7 +72,7 @@ async function buildPicture(): Promise<void> {
 	const s = (window as unknown as { __scenes: Editor }).__scenes;
 	const W = 1920;
 	const H = 1080;
-	const LENGTH = 22;
+	const LENGTH = 23;
 	const newId = () => crypto.randomUUID();
 	const E = {
 		linear: { kind: 'bezier', x1: 0, y1: 0, x2: 1, y2: 1 },
@@ -165,11 +165,12 @@ async function buildPicture(): Promise<void> {
 	s.rename(hands, 'Ready in 10');
 	s.rename(terrace, 'Casa Rossa');
 
-	const changes = [3.8, 8.9, 13.4, 16.8, 18.8];
-	const lengths = [3.8, 8.9 - 3.8, 13.4 - 8.9, 16.8 - 13.4, 18.8 - 16.8, LENGTH - 18.8];
-	// The field clip from 1.0 s; the hands clip from 4.0 s, twice as fast.
+	const changes = [3.8, 8.9, 13.4, 16.8, 19.8];
+	const lengths = [3.8, 8.9 - 3.8, 13.4 - 8.9, 16.8 - 13.4, 19.8 - 16.8, LENGTH - 19.8];
+	// The field clip from 1.0 s; the hands clip from 3.5 s, twice as fast (3 s of the scene use
+	// 6 s of the clip: 3.5–9.5 s, inside its 10 s).
 	s.trimScene(field, 'start', 1.0);
-	s.trimScene(hands, 'start', 4.0);
+	s.trimScene(hands, 'start', 3.5);
 	s.setSceneSpeed(hands, 2);
 	[red, kitchen, field, ink, hands, terrace].forEach((id: string, i: number) => s.setSceneLength(id, lengths[i]));
 	for (const id of [kitchen, field, hands]) s.setSceneVolume(id, 0);
@@ -389,27 +390,65 @@ async function buildPicture(): Promise<void> {
 	// Its bottom on the same line as "10"'s.
 	pop(await words({ track: 'Captions', words: 'MINUTES', start: 18.15, end: changes[4], x: minX, y: 625, font: F.anton, px: 120, color: WHITE, shadow: SOFT }), 18.15, minX, 625);
 
-	// Outro, over the terrace: a black shade at 35% between the picture and the words (fading in
-	// with the crossfade's second half), and the words in white.
-	const shade = s.addCardOverlay(changes[4], tracks['Shade']);
+	// Outro, over the terrace: a black shade at 35% between the picture and the words, fading in
+	// across the whole crossfade into it (19.55–20.05), and the words in white.
+	const shadeFrom = changes[4] - 0.25;
+	const shade = s.addCardOverlay(shadeFrom, tracks['Shade']);
 	s.setOverlayCard(shade, { background: '#000000', rect: null });
 	s.setOverlayBox(shade, box(960, 540, W, H));
-	s.setOverlayTiming(shade, changes[4], LENGTH - changes[4]);
-	animate(shade, changes[4], [
-		[changes[4], { x: 960, y: 540, opacity: 0 }, E.out],
+	s.setOverlayTiming(shade, shadeFrom, LENGTH - shadeFrom);
+	animate(shade, shadeFrom, [
+		[shadeFrom, { x: 960, y: 540, opacity: 0 }, E.linear],
 		[changes[4] + 0.25, { x: 960, y: 540, opacity: 0.35 }]
 	]);
 	s.rename(shade, 'Shade');
-	const name = await words({ track: 'Headlines', words: 'Casa Rossa', start: 18.93, end: LENGTH, x: 960, y: 470, font: F.serif, px: 200, color: WHITE, shadow: SOFT });
-	animate(name, 18.93, [
-		[18.93, { x: 960, y: 470, scale: 0.8, opacity: 0 }, E.overshoot],
-		[19.35, { x: 960, y: 470 }]
+	const name = await words({ track: 'Headlines', words: 'Casa Rossa', start: 19.93, end: LENGTH, x: 960, y: 470, font: F.serif, px: 200, color: WHITE, shadow: SOFT });
+	animate(name, 19.93, [
+		[19.93, { x: 960, y: 470, scale: 0.8, opacity: 0 }, E.overshoot],
+		[20.35, { x: 960, y: 470 }]
 	]);
-	await words({ track: 'Captions', words: 'Taste the sun.', start: 20.45, end: LENGTH, x: 960, y: 640, font: F.geist(600), px: 56, color: WHITE, animation: 'fade' });
-	const tagline = await words({ track: 'Labels', words: spaced('Tomato sauce · Available now'), start: 20.9, end: LENGTH, x: 960, y: 980, font: F.geist(400), px: 28, animation: 'fade' });
+	await words({ track: 'Captions', words: 'Taste the sun.', start: 21.45, end: LENGTH, x: 960, y: 640, font: F.geist(600), px: 56, color: WHITE, animation: 'fade' });
+	const tagline = await words({ track: 'Labels', words: spaced('Tomato sauce · Available now'), start: 21.9, end: LENGTH, x: 960, y: 980, font: F.geist(400), px: 28, animation: 'fade' });
 	s.setTextColors(tagline, { fill: { color: WHITE, opacity: 0.8 } });
 
-	// The music: from the start of the file, 22 s.
+	// ── Layers and words leave with their scene, through its transition ──
+	// A transition runs half before and half after the scene change (cut − d/2 to cut + d/2), but
+	// only the Scenes track takes part. So whatever ends at a scene change runs on to the end of
+	// the transition and does what the outgoing scene does there, on the same curve (the
+	// renderer's smoothstep): pushed out to the left by a slide, faded by a crossfade, zoomed in
+	// and faded by a zoom. It's sampled every eighth of the transition. Words lose their built-in
+	// 0.25 s fade-out (exitFade: false, set with edit(): there's no setter), so only this is used.
+	const smooth = (p: number) => p * p * (3 - 2 * p);
+	const between = (a: number, b: number, p: number) => smooth(Math.min(1, Math.max(0, (p - a) / (b - a))));
+	for (const [scene, cut] of [[red, changes[0]], [kitchen, changes[1]], [ink, changes[3]], [hands, changes[4]]] as [string, number][]) {
+		const [, kind, d] = transitions.find(([id]) => id === scene)!;
+		const [from, to] = [cut - d / 2, cut + d / 2];
+		const ending = [...s.project.overlays, ...s.project.texts].filter((i: { start: number; duration: number }) => Math.abs(i.start + i.duration - cut) < 1e-3);
+		for (const item of ending as { id: string; start: number; sourceStart?: number; text?: string }[]) {
+			const at = s.itemValues(item.id, from);
+			const steps = Array.from({ length: 9 }, (_, i) => i / 8).map((p) => {
+				const e = smooth(p);
+				const v = { ...at };
+				if (kind === 'slide') v.x = at.x - e;
+				else if (kind === 'crossfade') v.opacity = at.opacity * (1 - e);
+				else if (kind === 'zoom') {
+					const k = 1 + 0.6 * e;
+					Object.assign(v, { x: 0.5 + (at.x - 0.5) * k, y: 0.5 + (at.y - 0.5) * k, scaleX: at.scaleX * k, scaleY: at.scaleY * k, opacity: at.opacity * (1 - between(0.25, 0.75, p)) });
+				}
+				return { id: newId(), time: Math.round((from + p * d - item.start) * 1000) / 1000, values: v, easing: E.linear };
+			});
+			s.updateKeyframes(item.id, 'Leave with the scene', (list: { time: number }[]) => [...list.filter((k) => k.time < from - item.start - 1e-3), ...steps]);
+			if (item.text === undefined) s.setOverlayTiming(item.id, item.start, to - item.start, item.sourceStart);
+			else s.setTextTiming(item.id, item.start, to - item.start);
+		}
+		const words = ending.filter((i: { text?: string }) => i.text !== undefined).map((i: { id: string }) => i.id);
+		s.edit('No exit fade', (p: { texts: { id: string; exitFade?: boolean }[] }) => ({
+			...p,
+			texts: p.texts.map((t) => (words.includes(t.id) ? { ...t, exitFade: false } : t))
+		}));
+	}
+
+	// The music: from the start of the file, 23 s.
 	const music = s.project.sounds[0];
 	s.setSoundTiming(music.id, { start: 0, sourceStart: music.sourceStart, duration: LENGTH });
 }
@@ -419,15 +458,15 @@ function buildAudio(voice: [string, number][]): void {
 	const s = (window as unknown as { __scenes: Editor }).__scenes;
 	const [music, ...lines] = s.project.sounds;
 	// The music: full volume, no fades; volume points take it from 100% down to 35% by 0.2 s
-	// (under the voice) until 21.0 s, then to nothing at 22.0 s.
+	// (under the voice) until 22.0 s, then to nothing at 23.0 s.
 	s.setSoundVolume(music.id, 1);
 	s.setSoundFades(music.id, 0, 0);
 	s.setDefaultEasing('linear');
 	for (const [t, gain] of [
 		[0, 1],
 		[0.2, 0.35],
-		[21.0, 0.35],
-		[22.0, 0]
+		[22.0, 0.35],
+		[23.0, 0]
 	])
 		s.addVolumePoint(music.id, t, gain);
 	s.setDefaultEasing('ease-in-out');

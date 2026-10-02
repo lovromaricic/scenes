@@ -213,14 +213,14 @@
 				<button
 					type="button"
 					class="demo"
-					aria-label="Demo: Casa Rossa, a 22 second ad. Opens a copy you can edit."
+					aria-label="Demo: Casa Rossa, a 23 second ad. Opens a copy you can edit."
 					aria-busy={openingDemo}
 					onclick={openDemo}
 				>
 					<img src={DEMO_PICTURE} alt="" draggable="false" />
 					<span class="demo-chip">{openingDemo ? 'Opening…' : 'Demo'}</span>
 					<span class="demo-text">
-						<span class="serif demo-title">Casa Rossa · 22 sec ad</span>
+						<span class="serif demo-title">Casa Rossa · 23 sec ad</span>
 						<span class="demo-hint">Opens a copy you can edit</span>
 					</span>
 				</button>

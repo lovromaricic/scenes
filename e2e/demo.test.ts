@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { scenes } from './helpers';
 
 /**
- * The demo that ships with the app ("Casa Rossa", a 22-second ad with a voiceover, made by scripts/build-demo.ts):
+ * The demo that ships with the app ("Casa Rossa", a 23-second ad with a voiceover, made by scripts/build-demo.ts):
  * a card on the home screen that always opens a new, editable copy.
  */
 
@@ -38,7 +38,7 @@ test.describe('The demo', () => {
 	test('the home screen shows it; opening it makes an editable copy with everything in it', async ({ page }) => {
 		await page.goto('/');
 		const card = page.getByRole('button', { name: /^Demo: Casa Rossa/ });
-		await expect(card).toContainText('Casa Rossa · 22 sec ad');
+		await expect(card).toContainText('Casa Rossa · 23 sec ad');
 		await expect(card).toContainText('Demo');
 		// Its picture loads.
 		await expect.poll(() => card.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
@@ -68,7 +68,7 @@ test.describe('The demo', () => {
 				transitions: s.project.scenes.map((x) => x.transition.kind)
 			})`
 		);
-		expect(summary.duration).toBeCloseTo(22, 3);
+		expect(summary.duration).toBeCloseTo(23, 3);
 		expect(summary.format).toEqual({ preset: 'landscape', width: 1920, height: 1080, fps: 24 });
 		expect(summary.scenes).toEqual(['card', 'video', 'video', 'card', 'video', 'photo']);
 		expect(summary.transitions).toEqual(['slide', 'crossfade', 'cut', 'zoom', 'crossfade', 'cut']);
@@ -77,7 +77,7 @@ test.describe('The demo', () => {
 		// The music, and the voiceover's six lines where they're said.
 		expect(summary.sounds).toEqual([
 			{ kind: 'music', start: 0 },
-			...[0.2, 3.9, 9, 13.5, 16.9, 18.85].map((start) => ({ kind: 'voice', start }))
+			...[0.2, 3.9, 9, 13.5, 16.9, 19.85].map((start) => ({ kind: 'voice', start }))
 		]);
 		expect(summary.tracks).toContain('Headlines');
 		expect(summary.tracks).toContain('Shade');
@@ -118,7 +118,7 @@ test.describe('The demo', () => {
 		await expect(page.getByRole('button', { name: /^Demo: Casa Rossa/ })).toBeVisible();
 	});
 
-	test('it plays through in the editor in real time, without stalls, and stops at 22 s', async ({ page }) => {
+	test('it plays through in the editor in real time, without stalls, and stops at 23 s', async ({ page }) => {
 		await openDemo(page);
 		await api(page, 's => s.seek(0)');
 		await expect.poll(() => scenes(page, (s) => s.player.isFrameReady()), { timeout: 20_000 }).toBe(true);
@@ -146,10 +146,10 @@ test.describe('The demo', () => {
 					requestAnimationFrame(tick);
 				})
 		);
-		expect(run.end).toBeGreaterThan(21.9);
+		expect(run.end).toBeGreaterThan(22.9);
 		// Real time (a little slack for starting up).
-		expect(run.wall).toBeGreaterThan(21.5);
-		expect(run.wall).toBeLessThan(24);
+		expect(run.wall).toBeGreaterThan(22.5);
+		expect(run.wall).toBeLessThan(25);
 		// The picture never froze for long.
 		expect(run.longestStall).toBeLessThan(250);
 		test.info().annotations.push({ type: 'playback', description: JSON.stringify(run) });
