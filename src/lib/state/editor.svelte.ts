@@ -109,6 +109,7 @@ import { migrateProject, projectMediaIds } from '$lib/model/projects';
 import { fingerprint } from '$lib/media/fingerprint';
 import { makeProjectThumbnail, thumbnailKey } from './projectThumbnail';
 import { DEFAULT_FRAME, type SceneFrame } from '$lib/model/framing';
+import { formatTime, type TimeFormat } from '$lib/model/time';
 import { offscreenCenter, turnedHalf, type OffscreenSide } from '$lib/model/offscreen';
 import { shadowParams } from '$lib/render/overlay';
 import { layoutText } from '$lib/render/text';
@@ -226,6 +227,15 @@ function readDefaultEasing(): EasingPreset {
 		return v && v in EASINGS ? (v as EasingPreset) : DEFAULT_EASING;
 	} catch {
 		return DEFAULT_EASING;
+	}
+}
+
+const TIME_FORMAT_KEY = 'scenes.timeFormat';
+function readTimeFormat(): TimeFormat {
+	try {
+		return localStorage.getItem(TIME_FORMAT_KEY) === 'frames' ? 'frames' : 'seconds';
+	} catch {
+		return 'seconds';
 	}
 }
 
@@ -679,6 +689,8 @@ export class EditorStore {
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
 		const collapsed = new Map(this.project.tracks.map((t) => [t.id, !!t.collapsed]));
 		const next = structuredClone(state);
+		// So is looping (it isn't an edit).
+		next.loop = this.project.loop;
 		next.tracks = next.tracks.map((t) =>
 			collapsed.has(t.id) && collapsed.get(t.id) !== !!t.collapsed ? { ...t, collapsed: collapsed.get(t.id) } : t
 		);
@@ -714,6 +726,47 @@ export class EditorStore {
 			bounds: (scene) => this.bounds(scene),
 			sourceSize: (id) => (media[id] ? { width: media[id].width, height: media[id].height } : null)
 		});
+		this.player.setLoop(this.loopRange());
+	}
+
+	// ─── Loop and the clock ─────────────────────────────────────────────────────────────────
+
+	/** What repeats while playing: the range when one is set, otherwise the whole video; or null. */
+	loopRange(): { start: number; end: number } | null {
+		if (!this.project.loop) return null;
+		return this.project.range ?? { start: 0, end: this.player.length };
+	}
+
+	/**
+	 * Turn looping on or off for this project (Ctrl/Cmd+L). Saved with the project, but not an
+	 * undo step: it's how you watch, not an edit (undo and redo keep it as it is).
+	 */
+	setLoop(on: boolean): void {
+		if (!!this.project.loop === on) return;
+		this.project = { ...this.project, loop: on || undefined };
+		this.player.setLoop(this.loopRange());
+		this.scheduleSave();
+	}
+
+	toggleLoop(): void {
+		this.setLoop(!this.project.loop);
+	}
+
+	/** Clock times in hundredths of a second, or seconds and frames (remembered on this device). */
+	timeFormat = $state<TimeFormat>(readTimeFormat());
+
+	toggleTimeFormat(): void {
+		this.timeFormat = this.timeFormat === 'seconds' ? 'frames' : 'seconds';
+		try {
+			localStorage.setItem(TIME_FORMAT_KEY, this.timeFormat);
+		} catch {
+			// Not remembered, but it still switches.
+		}
+	}
+
+	/** A clock time in the chosen format, at the project's frame rate. */
+	formatTime(t: number): string {
+		return formatTime(t, this.timeFormat, this.project.format.fps);
 	}
 
 	togglePlay(): void {

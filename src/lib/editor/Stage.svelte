@@ -3,11 +3,11 @@
 	import { preventNativeDrag } from '$lib/ui/drag';
 	import Play from '@lucide/svelte/icons/play';
 	import Pause from '@lucide/svelte/icons/pause';
+	import Repeat from '@lucide/svelte/icons/repeat';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import { onMount } from 'svelte';
 	import { Button, IconButton, Menu, type MenuItem } from '$lib/ui';
 	import { formatRatio } from '$lib/model/format';
-	import { formatClock } from '$lib/model/time';
 	import { useEditor } from '$lib/state/context';
 	import TextOverlay from './TextOverlay.svelte';
 	import OverlayBoxOverlay from './OverlayBoxOverlay.svelte';
@@ -26,6 +26,7 @@
 	let { onpick }: Props = $props();
 
 	const editor = useEditor();
+	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 	let canvas: HTMLCanvasElement;
 	let previewW = $state(0);
@@ -462,11 +463,27 @@
 			disabled={empty}
 			onclick={() => editor.togglePlay()}
 		/>
-		<p class="clock mono" data-testid="clock">
-			<span class="now">{formatClock(editor.time)}</span>
+		<IconButton
+			label={editor.project.loop ? (editor.project.range ? 'Loop the range: on' : 'Loop: on') : 'Loop'}
+			shortcut={isMac ? '⌘L' : 'Ctrl+L'}
+			icon={Repeat}
+			class="loop"
+			aria-pressed={!!editor.project.loop}
+			disabled={empty}
+			onclick={() => editor.toggleLoop()}
+		/>
+		<!-- Click to switch between hundredths of a second and frames (remembered on this device). -->
+		<button
+			type="button"
+			class="clock mono"
+			data-testid="clock"
+			title={editor.timeFormat === 'seconds' ? 'Show frames' : 'Show seconds'}
+			onclick={() => editor.toggleTimeFormat()}
+		>
+			<span class="now">{editor.formatTime(editor.time)}</span>
 			<span class="of">of</span>
-			<span class="total">{formatClock(editor.duration)}</span>
-		</p>
+			<span class="total">{editor.formatTime(editor.duration)}</span>
+		</button>
 		{#if !empty && editor.ready}
 			<button
 				bind:this={zoomButton}
@@ -699,7 +716,27 @@
 	.clock {
 		display: flex;
 		gap: 0.5ch;
+		padding: 4px 8px;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--color-ink);
 		font-size: var(--text-md);
+		/* Digits all the same width, so the time doesn't wobble while it runs. */
+		font-variant-numeric: tabular-nums;
+		cursor: pointer;
+	}
+	.clock:hover {
+		background: var(--color-surface);
+	}
+	.clock:focus-visible {
+		box-shadow: var(--focus-ring);
+		outline: none;
+	}
+	/* Loop on: the accent, clearly. */
+	.controls :global(.loop[aria-pressed='true']) {
+		color: var(--color-accent);
+		background: color-mix(in srgb, var(--color-accent) 14%, transparent);
 	}
 	.of,
 	.total {

@@ -106,9 +106,9 @@ test.describe('Smooth dragging', () => {
 		}
 		// It actually grew with the cursor: 120 px, within a frame.
 		expect(widths.at(-1)! - widths[0]).toBeGreaterThan(120 - 2 - pps / 30 - 1);
-		// The label shows the length, live, in tenths of a second.
+		// The label shows the length, live, as a clock time (hundredths of a second).
 		// (The first move is under the 3 px it takes to start a drag.)
-		expect(free[2].label).toMatch(/^\d+\.\d s$/);
+		expect(free[2].label).toMatch(/^\d+:\d\d\.\d\d$/);
 		expect(new Set(free.map((s) => s.label)).size).toBeGreaterThan(5);
 		// The length is a whole number of frames.
 		const len = await api<number>(page, `s => s.project.overlays.find((o) => o.id === '${id}').duration`);
@@ -184,7 +184,7 @@ test.describe('Smooth dragging', () => {
 			expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(-0.01);
 			expect(xs[i] - xs[i - 1]).toBeLessThan(6);
 		}
-		expect(label).toMatch(/^\d+:\d\d\.\d$/);
+		expect(label).toMatch(/^\d+:\d\d\.\d\d$/);
 		await page.waitForTimeout(1500);
 		expect(await undoSteps(page)).toBe(undo0 + 1);
 		expect(await saves(page)).toBe(saves0 + 1);

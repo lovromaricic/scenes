@@ -96,8 +96,8 @@ test.describe('Editing sound clips', () => {
 		await dragBy(page, startHandle, pps * 2, 0, {
 			alt: true,
 			hold: async () => {
-				// The new length, live, in tenths of a second.
-				await expect(page.getByTestId('item-drag-label')).toHaveText(/^1\d\.\d s$/);
+				// The new length, live, as a clock time (hundredths of a second).
+				await expect(page.getByTestId('item-drag-label')).toHaveText(/^0:1\d\.\d\d$/);
 			}
 		});
 		let [s] = await sounds(page);

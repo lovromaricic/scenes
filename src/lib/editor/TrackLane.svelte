@@ -23,7 +23,7 @@
 	import { DragScope } from '$lib/ui/drag';
 	import Waveform from './Waveform.svelte';
 	import KeyframeMarkers from './KeyframeMarkers.svelte';
-	import { Snapper, formatTenths, toFrame } from './snap';
+	import { Snapper, toFrame } from './snap';
 	import { frameBatch } from '$lib/ui/frameBatch';
 	import VolumeLine from './VolumeLine.svelte';
 	import type { TimeMap } from './scale';
@@ -460,13 +460,13 @@
 				{#if g}
 					<span class="badge mono" data-testid="item-drag-label">
 						{#if g.mode === 'move'}
-							{formatTenths(start)}
+							{editor.formatTime(start)}
 						{:else if g.mode === 'fade-in'}
 							Fade in {g.fadeIn.toFixed(1)} s
 						{:else if g.mode === 'fade-out'}
 							Fade out {g.fadeOut.toFixed(1)} s
 						{:else}
-							{length.toFixed(1)} s
+							{editor.formatTime(length)}
 						{/if}
 					</span>
 				{/if}

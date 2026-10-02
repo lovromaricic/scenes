@@ -290,3 +290,22 @@ describe('EditorStore typing words', () => {
 	});
 });
 
+describe('EditorStore looping', () => {
+	it('repeats the range when one is set, else the whole video; kept by undo and redo', () => {
+		const store = setup();
+		expect(store.loopRange()).toBeNull();
+		store.toggleLoop();
+		expect(store.project.loop).toBe(true);
+		expect(store.loopRange()).toEqual({ start: 0, end: store.duration });
+		store.setRange({ start: 1, end: 2.5 });
+		expect(store.loopRange()).toEqual({ start: 1, end: 2.5 });
+		// Not an edit: undoing the range keeps looping on (and repeats the whole video again).
+		store.undo();
+		expect(store.project.loop).toBe(true);
+		expect(store.loopRange()).toEqual({ start: 0, end: store.duration });
+		store.setLoop(false);
+		store.redo();
+		expect(store.project.loop).toBeFalsy();
+	});
+});
+

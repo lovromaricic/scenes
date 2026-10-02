@@ -7,11 +7,11 @@
 	import Play from '@lucide/svelte/icons/play';
 	import Pause from '@lucide/svelte/icons/pause';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import Repeat from '@lucide/svelte/icons/repeat';
 	import X from '@lucide/svelte/icons/x';
 	import { onMount } from 'svelte';
 	import { IconButton } from '$lib/ui';
 	import { formatRatio } from '$lib/model/format';
-	import { formatClock } from '$lib/model/time';
 	import { useEditor } from '$lib/state/context';
 
 	let { onclose }: { onclose: () => void } = $props();
@@ -28,7 +28,7 @@
 	const ratio = $derived(formatRatio(editor.project.format));
 	// Fit the video inside the window.
 	const box = $derived(vw / vh > ratio ? { w: vh * ratio, h: vh } : { w: vw, h: vw / ratio });
-	const ended = $derived(!editor.playing && editor.time >= editor.duration - 0.05);
+	const ended = $derived(!editor.project.loop && !editor.playing && editor.time >= editor.duration - 0.05);
 
 	onMount(() => {
 		editor.player.attach(canvas);
@@ -88,7 +88,10 @@
 	function onkeydown(event: KeyboardEvent) {
 		event.stopPropagation();
 		poke();
-		if (event.key === ' ' || event.key === 'k') {
+		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'l') {
+			event.preventDefault();
+			editor.toggleLoop();
+		} else if (event.key === ' ' || event.key === 'k') {
 			event.preventDefault();
 			toggle();
 		} else if (event.key === 'Escape') {
@@ -143,6 +146,14 @@
 			size="lg"
 			onclick={toggle}
 		/>
+		<IconButton
+			label={editor.project.loop ? 'Loop: on' : 'Loop'}
+			icon={Repeat}
+			variant="on-ink"
+			class="loop"
+			aria-pressed={!!editor.project.loop}
+			onclick={() => editor.toggleLoop()}
+		/>
 		<div
 			class="bar"
 			role="slider"
@@ -150,18 +161,24 @@
 			aria-valuemin="0"
 			aria-valuemax={Math.round(editor.duration)}
 			aria-valuenow={Math.round(editor.time)}
-			aria-valuetext="{formatClock(editor.time)} of {formatClock(editor.duration)}"
+			aria-valuetext="{editor.formatTime(editor.time)} of {editor.formatTime(editor.duration)}"
 			tabindex="0"
 			onpointerdown={seekFromBar}
 		>
 			<span class="fill" style:width="{(editor.time / Math.max(0.001, editor.duration)) * 100}%"
 			></span>
 		</div>
-		<span class="clock mono">{formatClock(editor.time)} / {formatClock(editor.duration)}</span>
+		<span class="clock mono">{editor.formatTime(editor.time)} / {editor.formatTime(editor.duration)}</span>
 	</div>
 </div>
 
 <style>
+	.bottom :global(.loop[aria-pressed='true']) {
+		color: var(--color-accent);
+	}
+	.clock {
+		font-variant-numeric: tabular-nums;
+	}
 	.watch {
 		position: fixed;
 		inset: 0;

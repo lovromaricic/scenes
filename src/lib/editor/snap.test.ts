@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Snapper, formatTenths, toFrame } from './snap';
+import { Snapper, toFrame } from './snap';
 
 const px = (t: number) => t * 100; // 100 px a second
 
@@ -21,10 +21,8 @@ describe('snapping with hysteresis', () => {
 		expect(s.snap([2.0, 3.0], [2.05, 2.97], px, true)).toEqual({ shift: 0, target: null });
 	});
 
-	it('rounds to whole frames, and shows tenths', () => {
+	it('rounds to whole frames', () => {
 		expect(toFrame(1.01, 30)).toBeCloseTo(1, 6);
 		expect(toFrame(1.02, 30)).toBeCloseTo(31 / 30, 6);
-		expect(formatTenths(3.44)).toBe('0:03.4');
-		expect(formatTenths(75.06)).toBe('1:15.1');
 	});
 });

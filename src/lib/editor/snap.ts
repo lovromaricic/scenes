@@ -63,11 +63,3 @@ function nearest(values: number[], distance: (v: number) => number): { value: nu
 
 /** A time rounded to whole frames of `fps`. */
 export const toFrame = (t: number, fps: number) => Math.round(t * fps) / fps;
-
-/** "0:03.4": minutes, seconds and tenths (for the start while moving). */
-export function formatTenths(t: number): string {
-	const v = Math.max(0, Math.round(t * 10) / 10);
-	const m = Math.floor(v / 60);
-	const s = v - m * 60;
-	return `${m}:${s.toFixed(1).padStart(4, '0')}`;
-}

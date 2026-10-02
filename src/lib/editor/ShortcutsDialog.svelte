@@ -20,6 +20,7 @@
 				[['Space'], 'Play or pause'],
 				[['←', '→'], 'Back or forward one frame'],
 				[['Shift', '←'], 'Back one second (Shift + → forward)'],
+				[[mod, 'L'], 'Loop: repeat the range if one is set, else the whole video'],
 				[['Home'], 'Go to the start'],
 				[['End'], 'Go to the end']
 			]

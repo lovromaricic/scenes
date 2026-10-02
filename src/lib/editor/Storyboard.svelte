@@ -4,7 +4,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { trimEdge } from '$lib/model/edits';
-	import { formatClock, formatShort } from '$lib/model/time';
+	import { formatClock } from '$lib/model/time';
 	import { sceneDuration } from '$lib/model/timeline';
 	import type { Scene } from '$lib/model/types';
 	import { useEditor } from '$lib/state/context';
@@ -1111,7 +1111,7 @@
 										{/each}
 									{/if}
 									{#if isTrimmed}
-										<span class="trim-badge mono">{formatShort(item.duration)}</span>
+										<span class="trim-badge mono">{editor.formatTime(item.duration)}</span>
 									{/if}
 								</div>
 							{/each}

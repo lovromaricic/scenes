@@ -40,7 +40,7 @@ test.describe('Phase 1: design system and layout', () => {
 		}
 		// Stage
 		await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
-		await expect(page.getByText(/0:\d\d\s*of\s*0:\d\d/)).toBeVisible();
+		await expect(page.getByText(/0:\d\d\.\d\d\s*of\s*0:\d\d\.\d\d/)).toBeVisible();
 		// Play and time sit together, centred under the preview.
 		const preview = (await page.getByTestId('preview').boundingBox())!;
 		const play = (await page.getByRole('button', { name: 'Play', exact: true }).boundingBox())!;

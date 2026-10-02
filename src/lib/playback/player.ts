@@ -286,9 +286,27 @@ export class Player {
 		return this.duration;
 	}
 
+	/** Repeat playback (the range, or the whole video), or null to play to the end once. */
+	private loop: { start: number; end: number } | null = null;
+
+	/** What repeats while playing: a range (start–end), or null. Applied straight away if playing. */
+	setLoop(loop: { start: number; end: number } | null): void {
+		const next = loop && loop.end - loop.start > 0.05 ? { start: loop.start, end: Math.min(loop.end, this.duration) } : null;
+		if (JSON.stringify(next) === JSON.stringify(this.loop)) return;
+		this.loop = next;
+		this.disposeStandby();
+		if (this.playing) {
+			if (next && (this.time < next.start || this.time >= next.end)) this.setTime(next.start);
+			void this.startAudio();
+		}
+	}
+
 	async play(): Promise<void> {
 		if (this.playing || this.duration <= 0) return;
-		if (this.time >= this.duration - 0.01) this.setTime(0);
+		const loop = this.loop;
+		// Looping a range: from its start when the playhead is outside it.
+		if (loop && (this.time < loop.start || this.time >= loop.end - 0.01)) this.setTime(loop.start);
+		else if (this.time >= this.duration - 0.01) this.setTime(0);
 		this.setPlaying(true);
 		await this.startAudio();
 	}
@@ -299,7 +317,7 @@ export class Player {
 		// Give the decoder a moment to have the first frame ready, so playback starts cleanly.
 		await this.waitForFrame(this.time, 400);
 		if (token !== this.startToken || !this.playing) return;
-		await this.audio.play(this.audioClips(), this.time);
+		await this.audio.play(this.audioClips(), this.time, this.loop);
 	}
 
 	pause(): void {
@@ -308,6 +326,7 @@ export class Player {
 		// Before the sound has started (still waiting for the first frame) the clock is stale.
 		if (this.audio.isRunning) this.setTime(Math.min(this.audio.now(), this.duration));
 		this.audio.stop();
+		this.disposeStandby();
 		this.setPlaying(false);
 		this.dirty = true;
 	}
@@ -319,6 +338,7 @@ export class Player {
 
 	seek(time: number): void {
 		const t = Math.min(this.duration, Math.max(0, time));
+		this.disposeStandby();
 		this.setTime(t);
 		this.dirty = true;
 		if (this.playing) void this.startAudio();
@@ -388,12 +408,46 @@ export class Player {
 		if (scene.kind === 'card') return null;
 		let entry = this.sources.get(scene.id);
 		if (!entry) {
-			entry = { mediaId: scene.mediaId, source: null, pending: true };
-			this.sources.set(scene.id, entry);
+			entry = this.openSource(scene, this.sources);
+		}
+		return entry.source;
+	}
+
+	/**
+	 * Decoders opened ahead for the loop's start, for scenes and layers whose own decoder is still
+	 * busy near the loop's end (the same clip at both ends). They take over when playback wraps,
+	 * so the first frames there are ready: no pause or flash at the join.
+	 */
+	private standby = new Map<string, SourceEntry>();
+
+	private standbyFor(scene: Decodable): FrameSource | null {
+		if (scene.kind === 'card') return null;
+		return (this.standby.get(scene.id) ?? this.openSource(scene, this.standby)).source;
+	}
+
+	private disposeStandby() {
+		for (const entry of this.standby.values()) entry.source?.dispose();
+		this.standby.clear();
+	}
+
+	/** Playback went back to the loop's start: the standby decoders become the ones in use. */
+	private wrapped() {
+		for (const [id, entry] of this.standby) {
+			this.sources.get(id)?.source?.dispose();
+			this.sources.set(id, entry);
+		}
+		this.standby.clear();
+	}
+
+	/** Start opening a decoder for a scene or layer, kept in `store` under its id. */
+	private openSource(scene: Decodable & { kind: string }, store: Map<string, SourceEntry>): SourceEntry {
+		const entry: SourceEntry = { mediaId: scene.mediaId, source: null, pending: true };
+		store.set(scene.id, entry);
+		{
 			const created = entry;
 			getHandle(scene.mediaId)
 				.then((handle) => {
-					if (this.sources.get(scene.id) !== created) return;
+					if (store.get(scene.id) !== created) return;
 					const redraw = () => (this.dirty = true);
 					created.source =
 						handle.info.kind === 'photo'
@@ -407,7 +461,7 @@ export class Player {
 					created.pending = false;
 				});
 		}
-		return entry.source;
+		return entry;
 	}
 
 	private composition(t: number): Composition {
@@ -571,9 +625,21 @@ export class Player {
 	/** Keep decoders busy only for scenes and layers near the playhead; let the rest sleep. */
 	private manageSources(t: number) {
 		const ahead = this.playing ? PREFETCH : 0.6;
+		// Looping and nearly at the loop's end: get the loop's start ready, like a transition.
+		const loop = this.playing ? this.loop : null;
+		const atLoopStart = loop && loop.end - t < ahead ? loop.start : null;
+		const startsLoop = (p: { start: number; end: number }) =>
+			atLoopStart !== null && p.start <= atLoopStart + 0.5 && p.end > atLoopStart;
 		for (const p of this.placedOverlays) {
 			if (p.overlay.kind === 'card') continue;
-			const near = (t >= p.start && t < p.end) || (p.start >= t && p.start - t < ahead);
+			const inUse = (t >= p.start && t < p.end) || (p.start >= t && p.start - t < ahead);
+			if (atLoopStart !== null && startsLoop(p)) {
+				const at = p.overlay.sourceStart + Math.max(0, atLoopStart - p.start);
+				// Busy near the end: a second decoder; otherwise its own one, waiting there.
+				(inUse ? this.standbyFor(p.overlay) : this.sourceFor(p.overlay))?.want(at, true);
+				if (!inUse) continue;
+			}
+			const near = inUse;
 			if (near) {
 				const source = this.sourceFor(p.overlay);
 				if (source && !(t >= p.start && t < p.end)) source.want(p.overlay.sourceStart, this.playing);
@@ -595,6 +661,16 @@ export class Player {
 			if (shown.has(n.placed.scene.id)) continue;
 			this.sourceFor(n.placed.scene)?.want(n.firstSourceTime, this.playing);
 		}
+		if (atLoopStart !== null) {
+			for (const n of scenesNeeded(this.placed, atLoopStart, atLoopStart + 0.5, (p) => this.lookup.bounds(p.scene))) {
+				const id = n.placed.scene.id;
+				if (keep.has(id)) this.standbyFor(n.placed.scene)?.want(n.firstSourceTime, true);
+				else {
+					keep.add(id);
+					this.sourceFor(n.placed.scene)?.want(n.firstSourceTime, true);
+				}
+			}
+		}
 		for (const p of this.placed) {
 			if (!keep.has(p.scene.id) && p.scene.id !== this.peekTarget?.sceneId) this.sleep(p.scene.id);
 		}
@@ -613,8 +689,10 @@ export class Player {
 		// warming up (waiting for the first frame), time holds still.
 		if (this.playing && this.audio.isRunning) {
 			t = Math.min(this.audio.now(), this.duration);
+			// Back at the loop's start: the decoders prepared there take over.
+			if (this.loop && t < this.time - 0.05) this.wrapped();
 			if (t !== this.time) this.setTime(t);
-			if (t >= this.duration) {
+			if (t >= this.duration && !this.loop) {
 				this.pause();
 				this.setTime(this.duration);
 			}
@@ -758,6 +836,7 @@ export class Player {
 		this.pause();
 		cancelAnimationFrame(this.raf);
 		this.raf = 0;
+		this.disposeStandby();
 		this.compositor?.dispose();
 		this.compositor = null;
 		this.pasteboard?.compositor.dispose();

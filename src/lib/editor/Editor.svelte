@@ -207,6 +207,12 @@
 			if (done) event.preventDefault();
 			return;
 		}
+		// Ctrl/Cmd+L turns looping on or off (plain L stays free for playback keys).
+		if (mod && !event.altKey && !event.shiftKey && key === 'l' && !isTyping(event.target)) {
+			event.preventDefault();
+			editor.toggleLoop();
+			return;
+		}
 		// Alt/Option+X clears the range (by key position: Option+X types a symbol on a Mac).
 		if (event.altKey && !mod && event.code === 'KeyX' && !isTyping(event.target)) {
 			event.preventDefault();

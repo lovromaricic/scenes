@@ -2686,6 +2686,75 @@ or bottom handles, because the height always fits the lines.
   - `text-wysiwyg.test.ts` hides all the words' handles in its screenshots (it hid the turn
     handle already): they show when the words are selected, not while typing.
 
+## Playback: the clock and looping
+
+### The clock
+
+- **Hundredths:** "0:02.45 of 0:05.00" (`formatHundredths`); "1:02:03.45" from an hour on.
+  - Always rounded down (with a hair of float tolerance), so it reads steadily frame to frame
+    and never runs ahead.
+- **Frames on click:** clicking the clock switches to seconds and frames at the project's frame
+  rate (`formatFrames`): "0:02:14", "1:02:03:14".
+  - The choice is remembered on this device (`EditorStore.timeFormat`, localStorage
+    `scenes.timeFormat`).
+- **Steady width:** tabular digits (`font-variant-numeric: tabular-nums`, on the mono font), so
+  the clock never changes width while it runs.
+- **Where the format is used:**
+  - Watch's clock;
+  - the timeline's live labels: the start while moving, the length while trimming (they were
+    "0:03.4" and "3.6 s");
+  - a scene's trim badge.
+  - Fade labels stay in seconds ("Fade in 1.5 s").
+  - `formatTenths` is gone.
+
+### Looping
+
+- **The button:** right of Play, with the repeat icon, in accent when on. Ctrl/Cmd+L toggles it,
+  in the editor and in Watch (which has the button too). It's listed in the shortcuts.
+- **What repeats:** the range when one is set (I/O), otherwise the whole video
+  (`EditorStore.loopRange`). Pressing Play outside the range starts at the range's start.
+- **Saved per project** (`Project.loop`). It's not an undo step: undo and redo keep it as it is,
+  like collapsed tracks.
+- **Seamless sound** (`AudioEngine`):
+  - Playback is a series of passes on the audio clock: the rest of the first, then the loop
+    again and again, each starting exactly where the last one ends.
+  - Each pass is scheduled `LOOKAHEAD` (2 s) ahead, its clips cut at the loop's end.
+  - Each pass has its own gain with a 4 ms fade out and in at the join, so the jump back doesn't
+    click.
+  - `now()` wraps the clock into the loop, so the picture follows the sound exactly.
+  - Finished passes are disconnected.
+  - Live volume changes (`retune`) reach every scheduled pass.
+- **Seamless picture** (`Player`):
+  - Within 2 s of the loop's end, the scenes and layers needed at its start are prepared, like a
+    transition's incoming scene.
+  - A clip that's free has its own decoder sent there.
+  - A clip still in use near the end (the same clip at both ends, e.g. a one-scene video) gets a
+    second, standby decoder opened at the start. It takes over when the clock wraps
+    (`wrapped()`), so the first frames after the join are ready, with no pause or flash.
+  - Standby decoders are dropped on pause, seek, or a change of loop.
+- **At the end:** when looping, playback doesn't stop there, and Watch doesn't show "Watch again".
+
+### Tests
+
+- **Unit:**
+  - hundredths, frames (30, 24, 25, 120 fps), hours, rounding down, constant length;
+  - the loop range and its survival through undo and redo.
+- **E2E (`playback-loop.test.ts`):**
+  - The clock:
+    - "0:00.00 of 0:04.00", "0:02.45";
+    - frames on click ("0:02:13"), kept after a reload;
+    - every frame while playing well formed, with a width varying under half a pixel;
+    - the timeline's drag label in both formats.
+  - The whole video looping. Recorded every animation frame across the join: exactly one wrap
+    (end to start), never paused, the time advancing every frame (no step over 0.12 s), the
+    picture at most a few frames behind after the join, and sound buffers playing after it.
+  - A range with Ctrl/Cmd+L: play from outside starts at the range; several wraps; always inside
+    the range; off again.
+  - Per project: kept by undo and a reload. Listed in the shortcuts. Watch loops with no "Watch
+    again".
+- **Updated for the new format:** the clock in `phase1-layout` and `phase2-import-playback`, and
+  the live labels in `drag-smooth` and `sound-editing`.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

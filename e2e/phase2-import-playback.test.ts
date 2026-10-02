@@ -15,7 +15,7 @@ test.describe('Phase 2: import, preview and playback', () => {
 		await expect(cards.nth(1)).toHaveAccessibleName(/Scene 2, Green, 3s/);
 		await expect(cards.nth(2)).toHaveAccessibleName(/Scene 3, Blue, 3s/);
 		await expect(page.getByText('3 scenes · 10 sec')).toBeVisible();
-		await expect(page.getByTestId('clock')).toHaveText(/0:00\s*of\s*0:10/);
+		await expect(page.getByTestId('clock')).toHaveText(/0:00\.00\s*of\s*0:10\.00/);
 
 		// Each card has a generated thumbnail.
 		const thumbs = page.locator('.card .thumb');
@@ -76,7 +76,7 @@ test.describe('Phase 2: import, preview and playback', () => {
 		await page.getByRole('button', { name: 'Play', exact: true }).click();
 		await expect.poll(() => scenes(page, (s) => s.playing), { timeout: 6000 }).toBe(false);
 		expect(await scenes(page, (s) => s.time)).toBeCloseTo(3, 1);
-		await expect(page.getByTestId('clock')).toHaveText(/0:03\s*of\s*0:03/);
+		await expect(page.getByTestId('clock')).toHaveText(/0:03\.00\s*of\s*0:03\.00/);
 	});
 
 	test('drag and drop adds photos as 3-second scenes, and rejects other files kindly', async ({

@@ -13,13 +13,28 @@ import { scheduleClipGain } from './gain';
 
 const LOOKAHEAD = 2.0;
 const START_DELAY = 0.08;
+/** A very short fade at a loop's join, so the jump back doesn't click. */
+const LOOP_FADE = 0.004;
+
+/** A stretch of the timeline played from a moment on the audio clock (see `segment`). */
+interface Segment {
+	from: number;
+	to: number;
+	/** Audio-clock time at which `from` plays. */
+	ctxFrom: number;
+	index: number;
+}
 
 export class AudioEngine {
 	private ctx: AudioContext | null = null;
 	private master: GainNode | null = null;
 	private generation = 0;
 	private nodes = new Set<AudioScheduledSourceNode>();
-	private gains = new Map<string, { gain: GainNode; clip: AudioClip }>();
+	private gains = new Map<string, { gain: GainNode; clip: AudioClip; segment: Segment }>();
+	private segmentGains = new Map<number, GainNode>();
+	/** Repeat this part of the timeline (null: play to the end once). */
+	private loop: { start: number; end: number } | null = null;
+	private clips: AudioClip[] = [];
 	private muted = false;
 	private sinks = new Map<string, AudioBufferSink>();
 	private ctxStart = 0;
@@ -38,17 +53,76 @@ export class AudioEngine {
 		return this.ctx;
 	}
 
-	/** Start playing `clips` from timeline time `t0`. */
-	async play(clips: AudioClip[], t0: number): Promise<void> {
+	/**
+	 * Start playing `clips` from timeline time `t0`; with `loop`, that part of the timeline repeats
+	 * seamlessly: each pass is scheduled on the audio clock ahead of time, right after the one
+	 * before, with a few milliseconds' fade at the join.
+	 */
+	async play(clips: AudioClip[], t0: number, loop: { start: number; end: number } | null = null): Promise<void> {
 		const ctx = await this.ensureContext();
 		this.stop();
 		const gen = ++this.generation;
 		this.t0 = t0;
 		this.ctxStart = ctx.currentTime + START_DELAY;
+		this.loop = loop && loop.end - loop.start > 0.05 && t0 < loop.end ? { ...loop } : null;
+		this.clips = clips;
 		this.running = true;
-		for (const clip of clips) {
-			if (clip.end > t0 + 1e-3) void this.scheduleClip(clip, gen);
+		void this.scheduleSegments(gen);
+	}
+
+	/**
+	 * Pass `k` of the playback: the first from `t0` (to the loop's end, or the end of everything);
+	 * then, when looping, the loop again and again, each starting where the last one ends.
+	 */
+	private segment(k: number): Segment {
+		const loop = this.loop;
+		if (k === 0) return { from: this.t0, to: loop?.end ?? Infinity, ctxFrom: this.ctxStart, index: 0 };
+		const length = loop!.end - loop!.start;
+		return {
+			from: loop!.start,
+			to: loop!.end,
+			ctxFrom: this.ctxStart + (loop!.end - this.t0) + (k - 1) * length,
+			index: k
+		};
+	}
+
+	private async scheduleSegments(gen: number): Promise<void> {
+		for (let k = 0; ; k++) {
+			const segment = this.segment(k);
+			if (k > 0 && !(await this.waitUntilNear(segment.ctxFrom, gen))) return;
+			if (gen !== this.generation) return;
+			this.startSegment(segment, gen);
+			if (!this.loop) return;
 		}
+	}
+
+	private startSegment(segment: Segment, gen: number) {
+		const ctx = this.ctx!;
+		const out = ctx.createGain();
+		out.connect(this.master!);
+		if (this.loop) {
+			const end = segment.ctxFrom + (segment.to - segment.from);
+			if (segment.index > 0) {
+				out.gain.setValueAtTime(0, segment.ctxFrom);
+				out.gain.linearRampToValueAtTime(1, segment.ctxFrom + LOOP_FADE);
+			}
+			out.gain.setValueAtTime(1, Math.max(segment.ctxFrom + LOOP_FADE, end - LOOP_FADE));
+			out.gain.linearRampToValueAtTime(0, end);
+		}
+		this.segmentGains.set(segment.index, out);
+		// Passes that have finished playing by now: let them go.
+		for (const [k, gain] of this.segmentGains)
+			if (k < segment.index - 1) {
+				gain.disconnect();
+				this.segmentGains.delete(k);
+				for (const [key, entry] of this.gains)
+					if (entry.segment.index === k) {
+						entry.gain.disconnect();
+						this.gains.delete(key);
+					}
+			}
+		for (const clip of this.clips)
+			if (clip.end > segment.from + 1e-3 && clip.start < segment.to) void this.scheduleClip(clip, gen, segment, out);
 	}
 
 	/** Whether sound is playing (the clock is only meaningful while it is). */
@@ -56,16 +130,22 @@ export class AudioEngine {
 		return this.running;
 	}
 
-	/** Current timeline time according to what is audible right now. */
+	/** Current timeline time according to what is audible right now (back at the loop's start after its end). */
 	now(): number {
 		if (!this.ctx || !this.running) return this.t0;
 		const latency = this.ctx.outputLatency || this.ctx.baseLatency || 0;
-		return this.t0 + Math.max(0, this.ctx.currentTime - latency - this.ctxStart);
+		const elapsed = Math.max(0, this.ctx.currentTime - latency - this.ctxStart);
+		const loop = this.loop;
+		if (!loop) return this.t0 + elapsed;
+		const first = loop.end - this.t0;
+		if (elapsed < first) return this.t0 + elapsed;
+		return loop.start + ((elapsed - first) % (loop.end - loop.start));
 	}
 
 	stop(): void {
 		this.generation++;
 		this.running = false;
+		this.loop = null;
 		for (const node of this.nodes) {
 			try {
 				node.stop();
@@ -77,6 +157,8 @@ export class AudioEngine {
 		this.nodes.clear();
 		for (const { gain } of this.gains.values()) gain.disconnect();
 		this.gains.clear();
+		for (const gain of this.segmentGains.values()) gain.disconnect();
+		this.segmentGains.clear();
 	}
 
 	/** Silence everything (e.g. while recording a voiceover, to avoid echo). */
@@ -93,12 +175,16 @@ export class AudioEngine {
 	retune(clips: AudioClip[]): void {
 		if (!this.ctx || !this.running) return;
 		const now = this.now();
-		for (const clip of clips) {
-			const entry = this.gains.get(clip.id);
-			if (!entry) continue;
+		const byId = new Map(clips.map((c) => [c.id, c]));
+		for (const entry of this.gains.values()) {
+			const clip = byId.get(entry.clip.id);
+			if (!clip) continue;
 			entry.clip = clip;
 			entry.gain.gain.cancelScheduledValues(this.ctx.currentTime);
-			this.shapeGain(entry.gain, clip, Math.max(now, clip.start));
+			// From now in the pass that's playing; from its start in one that's still to come.
+			const seg = entry.segment;
+			const playing = this.ctxTime(seg.from, seg) <= this.ctx.currentTime;
+			this.shapeGain(entry.gain, clip, Math.max(clip.start, seg.from, playing ? now : seg.from), seg);
 		}
 	}
 
@@ -112,8 +198,9 @@ export class AudioEngine {
 		this.sinks.delete(mediaId);
 	}
 
-	private ctxTime(timeline: number): number {
-		return this.ctxStart + (timeline - this.t0);
+	/** When timeline time `timeline` plays on the audio clock, in a pass. */
+	private ctxTime(timeline: number, segment: Segment): number {
+		return segment.ctxFrom + (timeline - segment.from);
 	}
 
 	private async sinkFor(mediaId: string): Promise<AudioBufferSink | null> {
@@ -135,10 +222,11 @@ export class AudioEngine {
 		return gen === this.generation;
 	}
 
-	private async scheduleClip(clip: AudioClip, gen: number): Promise<void> {
+	private async scheduleClip(clip: AudioClip, gen: number, segment: Segment, out: GainNode): Promise<void> {
 		const ctx = this.ctx!;
-		const from = Math.max(this.t0, clip.start);
-		if (!(await this.waitUntilNear(this.ctxTime(from), gen))) return;
+		const from = Math.max(segment.from, clip.start);
+		const to = Math.min(segment.to, clip.end);
+		if (!(await this.waitUntilNear(this.ctxTime(from, segment), gen))) return;
 
 		let sink: AudioBufferSink | null;
 		try {
@@ -149,19 +237,19 @@ export class AudioEngine {
 		if (!sink || gen !== this.generation) return;
 
 		const gain = ctx.createGain();
-		gain.connect(this.master!);
-		this.gains.set(clip.id, { gain, clip });
-		this.shapeGain(gain, clip, from);
+		gain.connect(out);
+		this.gains.set(`${clip.id}@${segment.index}`, { gain, clip, segment });
+		this.shapeGain(gain, clip, from, segment);
 
 		const srcFrom = clip.sourceStart + (from - clip.start) * clip.speed;
-		const srcTo = clip.sourceStart + (clip.end - clip.start) * clip.speed;
-		const clipEnd = this.ctxTime(clip.end);
+		const srcTo = clip.sourceStart + (to - clip.start) * clip.speed;
+		const clipEnd = this.ctxTime(to, segment);
 
 		try {
 			for await (const wrapped of sink.buffers(srcFrom, srcTo)) {
 				if (gen !== this.generation) break;
-				const place = bufferPlacement(clip, wrapped.timestamp, this.t0);
-				let when = this.ctxTime(place.timelineStart);
+				const place = bufferPlacement(clip, wrapped.timestamp, segment.from);
+				let when = this.ctxTime(place.timelineStart, segment);
 				let offset = place.offset;
 				const now = ctx.currentTime;
 				if (when < now) {
@@ -188,9 +276,9 @@ export class AudioEngine {
 		}
 	}
 
-	private shapeGain(gain: GainNode, clip: AudioClip, from: number) {
+	private shapeGain(gain: GainNode, clip: AudioClip, from: number, segment: Segment) {
 		scheduleClipGain(gain.gain, clip, from, (t) =>
-			Math.max(this.ctx!.currentTime, this.ctxTime(t))
+			Math.max(this.ctx!.currentTime, this.ctxTime(t, segment))
 		);
 	}
 }
