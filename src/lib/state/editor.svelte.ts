@@ -563,10 +563,15 @@ export class EditorStore {
 		if (blob) await putProjectThumbnail(project.id, blob, key);
 	}
 
-	/** Stop saving: this project is about to be replaced by the one in a file. */
-	freeze(): void {
+	/**
+	 * Stop saving: this project is about to be replaced by the one in a file. A save still
+	 * waiting is dropped (it would write the old project over the new one); resolves once one
+	 * already under way has finished.
+	 */
+	freeze(): Promise<void> {
 		this.frozen = true;
 		clearTimeout(this.thumbTimer);
+		return this.autosaver.cancel();
 	}
 
 	/**

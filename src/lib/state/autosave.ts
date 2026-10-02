@@ -82,6 +82,18 @@ export class Autosaver {
 		this.timer = setTimeout(() => void this.flush(), wait);
 	}
 
+	/**
+	 * Drop whatever is waiting to be saved: nothing more is written. Resolves once a save that
+	 * had already started has finished (so nothing lands after whatever comes next).
+	 */
+	async cancel(): Promise<void> {
+		clearTimeout(this.timer);
+		this.timer = undefined;
+		this.firstAt = null;
+		this.pending = null;
+		await this.inFlight;
+	}
+
 	/** Save now if anything is waiting. Resolves when everything scheduled so far is stored. */
 	async flush(): Promise<void> {
 		clearTimeout(this.timer);

@@ -36,6 +36,30 @@ describe('Autosaver', () => {
 		vi.useRealTimers();
 	});
 
+	it('cancel drops the waiting save, and waits for one already under way', async () => {
+		vi.useFakeTimers();
+		let finish = () => {};
+		const save = vi.fn(() => new Promise<void>((r) => (finish = r)));
+		const saver = new Autosaver(() => {}, 500, save);
+		const p = newProject();
+		// One save under way, another waiting.
+		saver.schedule({ ...p, title: 'first' });
+		await vi.advanceTimersByTimeAsync(500);
+		expect(save).toHaveBeenCalledTimes(1);
+		saver.schedule({ ...p, title: 'old' });
+		let cancelled = false;
+		const cancelling = saver.cancel().then(() => (cancelled = true));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(cancelled).toBe(false); // the first save hasn't finished yet
+		finish();
+		await cancelling;
+		// The waiting one is never written.
+		await vi.advanceTimersByTimeAsync(5000);
+		await saver.flush();
+		expect(save).toHaveBeenCalledTimes(1);
+		vi.useRealTimers();
+	});
+
 	it('flushes immediately on demand and reports errors', async () => {
 		const statuses: string[] = [];
 		const saver = new Autosaver(

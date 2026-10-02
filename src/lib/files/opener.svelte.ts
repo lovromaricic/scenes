@@ -21,8 +21,11 @@ class ProjectOpener {
 	/** Why the last file couldn't be opened. */
 	error = $state<{ name: string; message: string } | null>(null);
 
-	/** Called before a project in the app is replaced, e.g. so an open editor stops saving it. */
-	beforeReplace: ((projectId: string) => void) | null = null;
+	/**
+	 * Called before a project in the app is replaced, e.g. so an open editor stops saving it (the
+	 * replacing waits for it).
+	 */
+	beforeReplace: ((projectId: string) => void | Promise<void>) | null = null;
 
 	get busy() {
 		return !!this.progress || !!this.conflict;
@@ -90,7 +93,7 @@ class ProjectOpener {
 				this.conflict = null;
 				if (choice === 'cancel') return;
 				mode = choice;
-				if (mode === 'replace') this.beforeReplace?.(id);
+				if (mode === 'replace') await this.beforeReplace?.(id);
 			}
 			const stored = await storeOpenedFile(opened, {
 				mode,

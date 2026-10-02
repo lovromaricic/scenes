@@ -244,8 +244,32 @@ test.describe('Project files', () => {
 		await page.getByRole('button', { name: 'Summer trip, rename' }).click();
 		await page.getByRole('textbox', { name: 'Video title' }).fill('Changed');
 		await page.keyboard.press('Enter');
+		// Every project written to storage from here on (its title and when).
+		await page.evaluate(() => {
+			const w = window as unknown as { __writes: { title: string; at: number }[] };
+			w.__writes = [];
+			const put = IDBObjectStore.prototype.put;
+			IDBObjectStore.prototype.put = function (value: unknown, key?: IDBValidKey) {
+				if (this.name === 'projects') w.__writes.push({ title: (value as { title: string }).title, at: performance.now() });
+				return put.call(this, value, key);
+			};
+		});
 		await page.keyboard.press(`${mod}+o`);
+		const replacedAt = await page.evaluate(() => performance.now());
 		await conflict.getByRole('button', { name: 'Replace the one in the app' }).click();
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Summer trip');
+		// The rename's autosave was still waiting (half a second) when it was replaced: it must not
+		// be written afterwards and bring "Changed" back, on screen or in storage.
+		await page.waitForTimeout(1500);
+		const writes = (await page.evaluate(() => (window as unknown as { __writes: { title: string; at: number }[] }).__writes))
+			.filter((w) => w.at > replacedAt)
+			.map((w) => w.title);
+		// (The rename may be saved while the question is open: that's before the replace.)
+		const replaced = writes.indexOf('Summer trip');
+		expect(replaced).toBeGreaterThanOrEqual(0);
+		expect(writes.slice(replaced)).not.toContain('Changed');
+		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Summer trip');
+		await page.reload();
 		await expect(page.getByRole('heading', { level: 1 })).toHaveText('Summer trip');
 		await page.getByRole('link', { name: 'Projects' }).click();
 		await expect(page.getByRole('article')).toHaveCount(2);

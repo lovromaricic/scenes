@@ -79,7 +79,7 @@
 
 	onMount(() => {
 		// Opening a file that replaces this very project: stop saving it, or it would win.
-		const beforeReplace = (id: string) => id === editor.projectId && editor.freeze();
+		const beforeReplace = (id: string) => (id === editor.projectId ? editor.freeze() : undefined);
 		projectOpener.beforeReplace = beforeReplace;
 		// Handy for tests and debugging in the console.
 		(window as unknown as { __scenes: unknown }).__scenes = editor;

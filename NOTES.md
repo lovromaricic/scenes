@@ -3573,6 +3573,33 @@ PNG layers.
   With the old code it now fails every time ("47%"); with the fix it passed 60 of 60 runs
   (`--repeat-each=10`) and two full runs.
 
+## Fix: replacing a project from its file could bring back the old version
+
+- **What failed:** `project-files.test.ts` › "save to a file, delete from the app, open it
+  again…" sometimes failed in full runs. After renaming the project to "Changed" and replacing it
+  with the one in the file, the editor showed "Changed" instead of "Summer trip".
+- **The cause was a real bug.** Every change is saved half a second later (the autosave). When a
+  project is replaced from a file, its open editor is frozen so it stops saving. But `freeze()`
+  only stopped new saves: a save already waiting still went ahead. In the test, Replace is
+  clicked 150–360 ms after the rename, so the rename's save was still waiting:
+  1. the replace stored "Summer trip";
+  2. the old editor's waiting save then wrote "Changed" over it;
+  3. the new editor usually saved "Summer trip" again soon after, so it mostly looked fine. When
+     it read the project in between, it showed "Changed".
+  A person renaming and quickly replacing could lose the replace the same way.
+- **The fix:**
+  - `Autosaver.cancel()` drops the waiting save, and waits for one that had already started;
+  - `freeze()` calls it;
+  - the file opener waits for the freeze (`beforeReplace` may return a promise) before storing
+    the file.
+  So nothing from the old editor is written after the replace.
+- **Tests:**
+  - **Project files:** the test now records every project written to storage. After Replace,
+    nothing may write "Changed" after the replace's own write. It also checks "Summer trip"
+    after 1.5 s and after a reload. With the old code this fails every time; with the fix it
+    passed 10 of 10 (`--repeat-each=10`) and two full runs.
+  - **Unit:** `Autosaver.cancel()` drops the waiting save and waits for the one under way.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
