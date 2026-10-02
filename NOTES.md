@@ -2955,6 +2955,46 @@ the kind, for tests.
   card against it (white inside, a darker border, the gray outside).
 - `media-labels.test.ts` has the new hint text.
 
+## Fix: the flaky storyboard auto-scroll test
+
+`storyboard-layout.test.ts` › "dragging near the top or bottom edge scrolls…" failed now and then
+in full runs only. The errors were `Cannot read properties of undefined (reading 'start')`, or
+the card on the wrong track.
+
+**Cause (in the test, not the app).** The test held a dragged card at the tracks' bottom edge
+until Overlay 1 was just in view, then dropped it on the lane's centre. How far auto-scroll had
+gone by then depends on timing:
+- On a slow run it stopped as soon as Overlay 1 appeared, with the lane straddling the bottom
+  edge (lane 858–920 px against tracks ending at 884 px).
+- Its centre was then below the visible tracks, in the auto-scroll zone. So dropping there, or
+  the later sideways drag along it, kept scrolling under the pointer.
+- The card then landed on another track, or on Scenes, where it becomes a scene. That's why
+  `overlays[0]` was undefined.
+- The app behaves as intended (holding in the edge zone scrolls).
+
+**Reproduced deterministically:** stopping the hold the moment Overlay 1 shows (an in-page
+animation-frame loop) failed 3 out of 3 with the same error. CPU throttling alone (6× and 20×)
+didn't, because the hold then still ran on long enough.
+
+**Fix (the test):**
+- After moving away from the edge, it waits until the tracks haven't scrolled for five frames
+  (`scrollSettled`).
+- Still dragging, it brings Overlay 1 to the middle of the tracks, and checks that it's at least
+  60 px from both edges.
+- Then it drops, and checks the card by its id (`layerOf`): its track, and its start after the
+  sideways drag. A wrong drop now fails clearly ("not a layer any more") instead of with a
+  TypeError.
+- Everything it checked is still checked: the edge scrolls, Overlay 1 comes into view, the card
+  follows the pointer, the drop onto a track after scrolling, a sideways drag while scrolled, and
+  scrolling back up at the top edge.
+
+**Confirmed:**
+- the early-stop reproduction now passes 4 out of 4, also at 20× CPU throttling;
+- the test passes 4 out of 4 on its own;
+- two full suites: it passed in both. The second passed completely. The first had one unrelated
+  failure: `phase5-sound` › "a recorded voiceover plays back…", a separate intermittent test,
+  noted under Known issues.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become
@@ -2970,6 +3010,9 @@ the kind, for tests.
   4× too (now about 1.4× the frame's resolution at most for 2000 px words).
 - Pasteboard: white words without a shadow, faded to 30%, are nearly invisible on the white
   stage outside the frame (a tinted pasteboard, or an outline for faded parts, would help).
+- Flaky test: `phase5-sound.test.ts` › "a recorded voiceover plays back where it was recorded"
+  fails now and then in full runs only ("Get ready to speak…" not visible). It hasn't been looked
+  into yet.
 - Shadow ideas: a shadow for the box itself (not only the letters), several shadows, an inner
   shadow.
 - Pasteboard ideas: guides at the frame's edges while snapping words, a "show everything" zoom

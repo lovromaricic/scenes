@@ -18,6 +18,28 @@ const scroller = (page: Page) => page.locator('.storyboard .tracks');
 const scrollState = (page: Page) =>
 	scroller(page).evaluate((el) => ({ top: el.scrollTop, left: el.scrollLeft, height: el.scrollHeight, client: el.clientHeight }));
 const lane = (page: Page, name: string) => page.getByRole('group', { name, exact: true });
+/** A layer's track (by name) and start, or a note that it's no longer a layer. */
+const layerOf = (page: Page, id: string) =>
+	page.evaluate((id) => {
+		const s = (window as unknown as { __scenes: Api }).__scenes;
+		const o = s.project.overlays.find((x) => x.id === id);
+		return o
+			? { track: s.project.tracks.find((t) => t.id === o.trackId)!.name, start: Math.round(o.start * 10) / 10 }
+			: { track: 'not a layer any more', start: -1 };
+	}, id);
+/** Wait until the tracks haven't scrolled for five animation frames in a row. */
+const scrollSettled = (page: Page) =>
+	scroller(page).evaluate(async (el) => {
+		let last = el.scrollTop;
+		for (let still = 0; still < 5; ) {
+			await new Promise((r) => requestAnimationFrame(r));
+			if (el.scrollTop === last) still++;
+			else {
+				last = el.scrollTop;
+				still = 0;
+			}
+		}
+	});
 const divider = (page: Page) => page.getByRole('separator', { name: 'Resize the storyboard' });
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -239,15 +261,26 @@ test.describe('Storyboard size and scrolling', () => {
 		// The dragged card stays under the pointer.
 		const moving = await box(page.locator(`[data-item-id="${card}"]`));
 		expect(Math.abs(moving.y + moving.height / 2 - (view.y + view.height - 6))).toBeLessThan(40);
-		// Drop it on Overlay 1: first away from the edges (the scrolling stops), then onto it.
+		// Drop it on Overlay 1: first away from the edges (the scrolling stops). How far it
+		// scrolled depends on timing: Overlay 1 may only just show at the bottom, inside the
+		// auto-scroll zone, where dropping (or dragging along it later) would scroll on under the
+		// pointer. So, still dragging, bring Overlay 1 to the middle, clear of both edges.
 		await page.mouse.move(b.x + 20, view.y + view.height / 2, { steps: 2 });
-		const settledTop = (await scrollState(page)).top;
-		await expect.poll(async () => (await scrollState(page)).top).toBe(settledTop);
+		await scrollSettled(page);
+		await scroller(page).evaluate((el) => {
+			const row = el.querySelector('[role="group"][aria-label="Overlay 1"]')!.getBoundingClientRect();
+			const r = el.getBoundingClientRect();
+			el.scrollTop += row.top + row.height / 2 - (r.top + r.height / 2);
+		});
+		await scrollSettled(page);
 		const target = await box(lane(page, 'Overlay 1'));
-		await page.mouse.move(b.x + 20, target.y + target.height / 2);
+		expect(target.y).toBeGreaterThan(view.y + 60);
+		expect(target.y + target.height).toBeLessThan(view.y + view.height - 60);
+		await page.mouse.move(b.x + 20, target.y + target.height / 2, { steps: 2 });
 		await page.mouse.up();
 		await page.keyboard.up('Alt');
-		expect(await api(page, (s) => s.project.tracks.find((t) => t.id === s.project.overlays[0].trackId)!.name)).toBe('Overlay 1');
+		// (By its id: had it landed on Scenes, it would be a scene now, not a layer.)
+		expect(await layerOf(page, card)).toEqual({ track: 'Overlay 1', start: 0 });
 
 		// Scrolled down, a plain drag in time works as before.
 		const now = await box(item);
@@ -258,7 +291,9 @@ test.describe('Storyboard size and scrolling', () => {
 		await page.mouse.move(now.x + 20 + pps, now.y + now.height / 2, { steps: 6 });
 		await page.mouse.up();
 		await page.keyboard.up('Alt');
-		expect(await api(page, (s) => Math.round(s.project.overlays[0].start * 10) / 10)).toBeCloseTo(1, 0);
+		const moved = await layerOf(page, card);
+		expect(moved.track).toBe('Overlay 1');
+		expect(moved.start).toBeCloseTo(1, 0);
 
 		// And back up: hold at the top edge.
 		const up = await box(item);
