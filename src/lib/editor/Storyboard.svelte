@@ -26,6 +26,7 @@
 	import Maximize from '@lucide/svelte/icons/maximize-2';
 	import MoveHorizontal from '@lucide/svelte/icons/move-horizontal';
 	import Pencil from '@lucide/svelte/icons/pencil';
+	import { itemMenu } from './itemMenu';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { ConfirmDialog, Menu, type MenuItem } from '$lib/ui';
@@ -575,19 +576,15 @@
 	let rulerMenu = $state<{ x: number; y: number; t: number } | null>(null);
 	let rulerMenuAnchor = $state<HTMLElement>();
 	// ─── Right-click on a scene ──────────────────────────────────────────────────────────────
-	let sceneMenu = $state<{ id: string; x: number; y: number } | null>(null);
+	let sceneMenu = $state<{ items: MenuItem[]; x: number; y: number } | null>(null);
 	let sceneMenuAnchor = $state<HTMLSpanElement>();
+	/** Right-click a scene: select it, then its menu (the same as items', see itemMenu.ts). */
 	function onSceneContextMenu(event: MouseEvent, id: string) {
 		event.preventDefault();
 		editor.select(id);
-		sceneMenu = { id, x: event.clientX, y: event.clientY };
+		const t = Math.min(duration, Math.max(0, map.t(contentX(event.clientX))));
+		sceneMenu = { items: itemMenu(editor, id, t), x: event.clientX, y: event.clientY };
 	}
-	const sceneMenuItems = $derived.by<MenuItem[]>(() => {
-		if (!sceneMenu) return [];
-		// The scene, kept here: the menu closes (and forgets it) before an item runs.
-		const id = sceneMenu.id;
-		return [{ label: 'Rename', icon: Pencil, onselect: () => (editor.renamingId = id) }];
-	});
 
 	function onRulerContextMenu(event: MouseEvent) {
 		event.preventDefault();
@@ -1043,7 +1040,7 @@
 		aria-hidden="true"
 	></span>
 	{#if sceneMenuAnchor}
-		<Menu label="Scene" items={sceneMenuItems} anchor={sceneMenuAnchor} onclose={() => (sceneMenu = null)} />
+		<Menu label="Scene" items={sceneMenu.items} anchor={sceneMenuAnchor} onclose={() => (sceneMenu = null)} />
 	{/if}
 {/if}
 {#if rulerMenu}

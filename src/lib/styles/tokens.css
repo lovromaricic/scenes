@@ -12,6 +12,8 @@
 	--color-ink: #141417;
 	--color-muted: #6b6b72;
 	--color-accent: #d63f1f;
+	/* Actions that remove something (Delete in menus). */
+	--color-danger: #c62f22;
 
 	/* Derived tints, all mixed from the palette above */
 	--color-ink-hover: color-mix(in srgb, var(--color-ink) 86%, var(--color-bg));

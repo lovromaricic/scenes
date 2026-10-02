@@ -13,7 +13,7 @@
 	import Music from '@lucide/svelte/icons/music';
 	import Mic from '@lucide/svelte/icons/mic';
 	import TypeIcon from '@lucide/svelte/icons/type';
-	import Pencil from '@lucide/svelte/icons/pencil';
+	import { itemMenu as itemMenu_ } from './itemMenu';
 	import NameEditor from './NameEditor.svelte';
 	import { displayName } from '$lib/model/items';
 	import { onDestroy } from 'svelte';
@@ -109,22 +109,15 @@
 	const visibleEnd = (_e: Entry, start: number, duration: number) => start + duration;
 
 	// ─── Right-click on an item ─────────────────────────────────────────────────────────────
-	let itemMenu = $state<{ id: string; x: number; y: number } | null>(null);
+	let itemMenu = $state<{ items: MenuItem[]; x: number; y: number } | null>(null);
 	let itemMenuAnchor = $state<HTMLElement>();
 
+	/** Right-click: select it (unless it's part of the selection), then its menu (see itemMenu.ts). */
 	function onitemmenu(event: MouseEvent, id: string) {
 		event.preventDefault();
-		if (track.locked) return;
-		if (!editor.selectedIds.includes(id)) editor.select(id);
-		itemMenu = { id, x: event.clientX, y: event.clientY };
-	}
-
-	/** The menu's items (they keep the item: the menu closes before an item runs). */
-	function itemMenuItems(id: string): MenuItem[] {
-		return [
-			{ label: 'Rename', icon: Pencil, onselect: () => (editor.renamingId = id) },
-			{ label: 'Extend to end of video', onselect: () => editor.extendToEnd(id) }
-		];
+		if (!track.locked && !editor.selectedIds.includes(id)) editor.select(id);
+		const t = map.t(event.clientX - lane.getBoundingClientRect().left);
+		itemMenu = { items: itemMenu_(editor, id, t), x: event.clientX, y: event.clientY };
 	}
 
 	/**
@@ -557,7 +550,7 @@
 			aria-hidden="true"
 		></span>
 		{#if itemMenuAnchor}
-			<Menu label="Item" items={itemMenuItems(itemMenu.id)} anchor={itemMenuAnchor} onclose={() => (itemMenu = null)} />
+			<Menu label="Item" items={itemMenu.items} anchor={itemMenuAnchor} onclose={() => (itemMenu = null)} />
 		{/if}
 	</div>
 {/if}

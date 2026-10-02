@@ -31,5 +31,9 @@ export interface MenuItem {
 	/** Draw a line above this item, to group it with the ones after it. */
 	separator?: boolean;
 	disabled?: boolean;
+	/** Why it can't be chosen, shown under it while it's disabled. */
+	hint?: string;
+	/** Removes something (shown in red). */
+	danger?: boolean;
 	onselect: () => void;
 }

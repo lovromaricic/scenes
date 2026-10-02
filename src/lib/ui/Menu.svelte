@@ -1,7 +1,8 @@
 <!--
 	@component
-	A small drop-down menu under (or above) an anchor button. Arrow keys move, Enter picks,
-	Esc or a click outside closes it and returns focus to the anchor.
+	A small drop-down menu under (or above) an anchor button, or at a point (an anchor of 1×1
+	pixel: a right-click), always inside the window. Arrow keys move, Enter picks, Esc or a click
+	outside closes it and returns focus to the anchor.
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
@@ -25,6 +26,15 @@
 		const a = anchor.getBoundingClientRect();
 		const m = menu.getBoundingClientRect();
 		const margin = 8;
+		if (a.width <= 1 && a.height <= 1) {
+			// At the pointer: down and to the right of it, or flipped where there isn't room.
+			let left = a.left + m.width > innerWidth - margin ? a.left - m.width : a.left;
+			let top = a.top + m.height > innerHeight - margin ? a.top - m.height : a.top;
+			left = Math.min(Math.max(margin, left), innerWidth - m.width - margin);
+			top = Math.min(Math.max(margin, top), innerHeight - m.height - margin);
+			pos = { left, top };
+			return;
+		}
 		let left = align === 'end' ? a.right - m.width : a.left;
 		left = Math.min(Math.max(margin, left), innerWidth - m.width - margin);
 		// Below the anchor, or above it when there isn't room.
@@ -88,14 +98,20 @@
 		<button
 			type="button"
 			role="menuitem"
+			class:danger={item.danger}
+			class:hinted={item.disabled && !!item.hint}
 			disabled={item.disabled}
+			title={item.disabled ? item.hint : undefined}
 			onclick={() => {
 				close(false);
 				item.onselect();
 			}}
 		>
 			{#if item.icon}<item.icon size={15} strokeWidth={1.8} aria-hidden="true" />{/if}
-			<span class="label">{item.label}</span>
+			<span class="label"
+				><span class="text">{item.label}</span
+				>{#if item.disabled && item.hint}<span class="hint">{item.hint}</span>{/if}</span
+			>
 			{#if item.shortcut}<kbd class="mono" aria-hidden="true">{item.shortcut}</kbd>{/if}
 		</button>
 	{/each}
@@ -140,9 +156,34 @@
 		color: var(--color-muted);
 		opacity: 0.6;
 	}
+	button.danger:not(:disabled) {
+		color: var(--color-danger);
+	}
+	/* Disabled with a reason: the reason under it, readable. */
+	button.hinted {
+		height: auto;
+		min-height: 34px;
+		padding-block: 6px;
+		opacity: 1;
+	}
+	button.hinted .text,
+	button.hinted kbd {
+		opacity: 0.6;
+	}
 	.label {
 		flex: 1;
 	}
+	.text,
+	.hint {
+		display: block;
+	}
+	.hint {
+		margin-top: 2px;
+		color: var(--color-muted);
+		font-size: var(--text-xs);
+		white-space: normal;
+	}
+
 	kbd {
 		margin-left: var(--space-4);
 		color: var(--color-muted);

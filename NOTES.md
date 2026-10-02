@@ -3242,6 +3242,52 @@ order.
   - the earlier tests now expect the name as the heading and the position in the line
     underneath.
 
+## One right-click menu for everything on the storyboard, with Delete
+
+- **One menu** (`editor/itemMenu.ts`) for scenes and every item on overlay and audio tracks.
+  It shows only what applies, in this order, each with its shortcut if it has one:
+  - Rename;
+  - Copy (⌘C) and Cut (⌘X), for items on tracks (scenes aren't copied that way);
+  - Paste (⌘V), once something is copied;
+  - Duplicate;
+  - Split here (S);
+  - Extend to end of video (items on tracks);
+  - then a divider and **Delete** (⌫, or Delete on Windows and Linux), in red (a new
+    `--color-danger` token, kept apart from the accent).
+- **Several selected items:** if the right-clicked item is one of them, the menu applies to all
+  ("Duplicate 3 items", "Delete 3 items"). The options for one item only (Rename, Split here,
+  Extend) aren't shown. Right-clicking anything else selects just that first.
+- **Delete** (`EditorStore.deleteItems`): scenes and items go together, in one undo step.
+  - Scenes close their gap, as the Scenes track always does, and the other tracks follow the
+    Ripple setting. Items on other tracks leave a gap.
+  - `deletable()` decides what can go. The last scene stays: Delete is disabled with "Your
+    video needs at least one scene." The Delete key now keeps it too, and says the same in a
+    bubble.
+  - Items on locked tracks can't be selected, so their menu only has Delete, disabled, with
+    "This track is locked."
+- **Duplicate** for items (`duplicateItems`): copies go right after the originals, on their
+  own track (or a new track above where they'd overlap). It shares `placeCopies()` with
+  Paste. Scenes use `duplicateScene` as before.
+- **Split here** moves the playhead to where you right-clicked, then splits there (as S does).
+- **The menu** (`ui/Menu.svelte`):
+  - at a right-click, it opens with its corner at the pointer, flipped up or left when there
+    isn't room, and always inside the window;
+  - disabled options can show a hint under them (`MenuItem.hint`); `danger` makes an option
+    red;
+  - Esc, clicking elsewhere or choosing an option closes it.
+  - "Rename" no longer has an icon, so every option lines up.
+- **Tests** (`context-menu.test.ts`):
+  - the options for a scene, a layer, words (with Paste after a Copy) and a song; Delete last,
+    red, with its shortcut and a divider; the menu at the pointer and inside the window near
+    the bottom-right corner; Esc, clicking elsewhere and choosing close it;
+  - deleting a scene (the gap closes), a layer, words and a song from the menu; one undo each
+    brings everything back, and the words didn't move;
+  - three selected items: the options for several, "Delete 3 items", one undo; right-clicking
+    an unselected item selects just it;
+  - the last scene and a locked track: Delete disabled with why; the Delete key keeps the last
+    scene;
+  - Duplicate (right after), Split here (where right-clicked), duplicating a scene.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

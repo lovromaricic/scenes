@@ -1177,10 +1177,54 @@ export class EditorStore {
 			this.extraSelected = [];
 			return;
 		}
-		if (this.project.scenes.some((s) => s.id === id)) this.deleteScene(id);
-		else if (this.project.texts.some((t) => t.id === id)) this.deleteText(id);
+		if (this.project.scenes.some((s) => s.id === id)) {
+			// The video keeps at least one scene (as in the right-click menu).
+			const reason = this.deletable([id]).reason;
+			if (reason) messages.show(reason, { item: id });
+			else this.deleteScene(id);
+		} else if (this.project.texts.some((t) => t.id === id)) this.deleteText(id);
 		else if (this.project.sounds.some((s) => s.id === id)) this.deleteSound(id);
 		else if (this.project.overlays.some((o) => o.id === id)) this.deleteOverlay(id);
+	}
+
+	/**
+	 * What deleting `ids` (scenes and items on tracks) would remove: the ones that can go, or why
+	 * none can (the video keeps at least one scene; locked tracks keep their items).
+	 */
+	deletable(ids: string[]): { ids: string[]; reason?: string } {
+		const p = this.project;
+		const scenes = ids.filter((id) => p.scenes.some((s) => s.id === id));
+		const items = ids.filter((id) => itemKind(p, id));
+		const free = items.filter((id) => !this.trackOfItem(id)?.locked);
+		// The last scene stays (with others in the selection, they still go).
+		const keepScenes = scenes.length >= p.scenes.length;
+		const out = [...(keepScenes ? [] : scenes), ...free];
+		if (out.length) return { ids: out };
+		if (keepScenes && scenes.length) return { ids: [], reason: 'Your video needs at least one scene.' };
+		if (items.length) return { ids: [], reason: 'This track is locked.' };
+		return { ids: [] };
+	}
+
+	/**
+	 * Delete scenes and items on tracks together, as one step. Scenes close their gap (as the
+	 * Scenes track always does, the other tracks following the Ripple setting); items leave one.
+	 */
+	deleteItems(ids: string[]): void {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local lookup inside this method, not reactive state
+		const gone = new Set(this.deletable(ids).ids);
+		if (!gone.size) return;
+		if (this.editingTextId && gone.has(this.editingTextId)) this.stopEditingText();
+		const scenes = this.project.scenes;
+		const first = scenes.findIndex((s) => gone.has(s.id));
+		const left = scenes.filter((s) => !gone.has(s.id));
+		// A scene deleted: the one now in its place is selected (as with Delete).
+		const select = first >= 0 ? (left[Math.min(first, left.length - 1)]?.id ?? null) : null;
+		const label =
+			gone.size > 1 ? `Delete ${gone.size} items` : first >= 0 ? 'Delete scene' : 'Delete';
+		this.edit(label, (p) => removeItems({ ...p, scenes: p.scenes.filter((s) => !gone.has(s.id)) }, gone), {
+			select
+		});
+		this.extraSelected = [];
 	}
 
 	// ─── Copy, cut and paste ───────────────────────────────────────────────────────────────
@@ -1234,8 +1278,27 @@ export class EditorStore {
 		if (this.keyframeClipboard) return this.pasteKeyframes();
 		const items = this.clipboard?.items;
 		if (!items?.length || !this.project.scenes.length) return false;
-		const shift = this.time - items[0].item.start;
 		const active = this.activeTrackId ? this.track(this.activeTrackId) : undefined;
+		return this.placeCopies(items, this.time - items[0].item.start, items.length > 1 ? `Paste ${items.length} items` : 'Paste', active, 'pasted');
+	}
+
+	/**
+	 * Copies of the selected items on tracks (or of `ids`), right after them on their own tracks
+	 * (on a new track above where they'd overlap), keeping their spacing. Selected. One step.
+	 */
+	duplicateItems(ids: string[] = this.selectedIds): boolean {
+		const items = ids
+			.map((id) => ({ item: getItem(this.project, id), type: itemKind(this.project, id) }))
+			.filter((c): c is Clipped => !!c.item && !!c.type && !this.trackOfItem(c.item.id)?.locked)
+			.map((c) => ({ type: c.type, item: structuredClone($state.snapshot(c.item) as AnyItem) }))
+			.sort((a, b) => a.item.start - b.item.start);
+		if (!items.length) return false;
+		const end = Math.max(...items.map((c) => c.item.start + c.item.duration));
+		return this.placeCopies(items, end - items[0].item.start, items.length > 1 ? `Duplicate ${items.length} items` : 'Duplicate', undefined, 'duplicated');
+	}
+
+	/** Add copies of `items`, `shift` seconds later, on `active` if it takes them, else their own track. */
+	private placeCopies(items: Clipped[], shift: number, label: string, active: Track | undefined, verb: string): boolean {
 		const copies = items.map((c) => ({
 			type: c.type,
 			item: { ...structuredClone(c.item), id: newId(), start: Math.max(0, c.item.start + shift) }
@@ -1243,7 +1306,7 @@ export class EditorStore {
 		const ids: string[] = [];
 		let skippedVideo = false;
 		this.edit(
-			copies.length > 1 ? `Paste ${copies.length} items` : 'Paste',
+			label,
 			(p) => {
 				let next = p;
 				for (const { type, item } of copies) {
@@ -1275,7 +1338,7 @@ export class EditorStore {
 			{ select: null }
 		);
 		if (skippedVideo)
-			messages.show(`Only ${MAX_VIDEO_OVERLAYS} videos can play over the scenes at once, so one video wasn’t pasted.`, { tone: 'error' });
+			messages.show(`Only ${MAX_VIDEO_OVERLAYS} videos can play over the scenes at once, so one video wasn’t ${verb}.`, { tone: 'error' });
 		this.selectItems(ids);
 		return ids.length > 0;
 	}
