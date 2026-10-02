@@ -3674,6 +3674,39 @@ PNG layers.
     passed 10 of 10 (`--repeat-each=10`) and two full runs.
   - **Unit:** `Autosaver.cancel()` drops the waiting save and waits for the one under way.
 
+## Fix: tall words were cut off at the top
+
+- **What happened:** in the demo, "100%" (Anton, Outlined, 520 px) had the tops of all its
+  characters cut off in a straight line, though it was well inside the frame.
+- **The cause:** each text item is drawn once into its own picture (a "sprite"), which the
+  compositor places on the video in the preview, the home picture and the saved file. The
+  sprite was the text's box (line height × lines, plus any box padding) with a margin for the
+  outline and shadow only. Each line is drawn centred on its line (`textBaseline: 'middle'`), so
+  anything reaching more than half a line above or below that middle fell outside the picture
+  and was cut off in a straight line. Anton's capitals and digits at Outlined's tight line height
+  (1.0) do that. So can accents on capitals, script fonts' tall loops and descenders, and italic
+  overhangs at the sides.
+- **The fix** (`render/text.ts`, `layoutText` and `drawTextSprite`):
+  - Each line's real drawn bounds are measured (`actualBoundingBoxAscent`, `Descent`, `Left`
+    and `Right`, where the line is drawn), and how far the letters reach past the box sets the
+    sprite's margins, separately left/right (`bleedX`) and top/bottom (`bleedY`).
+  - The outline (half its width outside the letters) and the shadow (blur and offset) are added
+    on top, as before. Box and Highlighter padding are inside the box already.
+  - Only the drawing area grows: the box, line spacing, centring, the caret and the selection
+    handles keep the normal metrics, so nothing moves. The sprite stays centred on the words, so
+    it's placed the same way.
+  - The preview, the home picture and the saved file all use this one drawing, so the fix
+    covers all three.
+- **Test** (`text-clipping.test.ts`):
+  - setup: Anton ("100%" outlined; accents with a shadow), Instrument Serif italic (shadow) and
+    Caveat (boxed; highlighter), at 520 and 2000 px in a 1080p video;
+  - check: every sprite the player draws must have fully transparent outer pixels, since a
+    cut-off letter leaves ink on the edge; screenshots of each are saved.
+  - With the old code it fails at once ("100%": solid ink on the sprite's edge, at both
+    sizes).
+- **The demo** is regenerated: "100%" is whole. So are the Demo card's picture and the README
+  screenshots (`npm run screenshots`), since the card shows it.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

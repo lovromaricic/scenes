@@ -48,7 +48,13 @@ export interface TextLayout {
 	/** Centre in frame pixels. */
 	cx: number;
 	cy: number;
-	/** Extra room around the box for shadows and outlines, in pixels. */
+	/**
+	 * Extra room around the box for everything drawn outside it, in pixels, on each side: letters
+	 * that reach past their line (tall capitals, accents, italic or script overhangs), the outline
+	 * and the shadow. `bleedX` left and right, `bleedY` above and below; `bleed` the larger.
+	 */
+	bleedX: number;
+	bleedY: number;
 	bleed: number;
 }
 
@@ -159,10 +165,28 @@ export function layoutText(item: LayoutInput, frameW: number, frameH: number): T
 	const padX = (spec.box?.padX ?? spec.band?.padX ?? 0) * fontSize;
 	const padY = (spec.box?.padY ?? 0) * fontSize;
 	const strokeW = (spec.stroke?.width ?? 0) * fontSize;
-	const bleed = Math.ceil(
-		// The outline reaches half its width past the letters; the shadow its blur and offset.
-		Math.max(strokeW, shadowReach(spec.shadow, fontSize) + strokeW / 2) + 2
-	);
+	// The outline reaches half its width past the letters; the shadow its blur and offset.
+	const around = Math.max(strokeW, shadowReach(spec.shadow, fontSize) + strokeW / 2) + 2;
+	// How far the letters themselves reach past the box: their real drawn bounds (not the font
+	// size or line height), where each line is drawn. Tall capitals (Anton at a tight line
+	// height), accents and italic or script overhangs can go past it. Only the drawing area
+	// grows: the box, line spacing and centring keep the normal metrics.
+	const boxW = textWidth + padX * 2;
+	const boxH = lineHeight * shown + padY * 2;
+	ctx.textBaseline = 'middle';
+	let overX = 0;
+	let overY = 0;
+	rows.forEach((r, i) => {
+		if (!r.text.trim()) return;
+		const m = ctx.measureText(r.text.trimEnd());
+		const left = padX + (textWidth - r.width) / 2;
+		const middle = padY + lineHeight * (i + 0.5);
+		overX = Math.max(overX, m.actualBoundingBoxLeft - left, left + m.actualBoundingBoxRight - boxW);
+		overY = Math.max(overY, m.actualBoundingBoxAscent - middle, middle + m.actualBoundingBoxDescent - boxH);
+	});
+	ctx.textBaseline = 'alphabetic';
+	const bleedX = Math.ceil(overX + around);
+	const bleedY = Math.ceil(overY + around);
 	return {
 		lines: rows.map((r) => r.text),
 		rows,
@@ -180,7 +204,9 @@ export function layoutText(item: LayoutInput, frameW: number, frameH: number): T
 		height: lineHeight * shown + padY * 2,
 		cx: item.x * frameW,
 		cy: item.y * frameH,
-		bleed
+		bleedX,
+		bleedY,
+		bleed: Math.max(bleedX, bleedY)
 	};
 }
 
@@ -207,10 +233,10 @@ export interface TextSprite {
 export function drawTextSprite(item: TextItem, frameW: number, frameH: number): TextSprite {
 	const layout = layoutText(item, frameW, frameH);
 	const spec = resolveTextStyle(item);
-	const { fontSize, lineHeight, bleed } = layout;
+	const { fontSize, lineHeight, bleedX, bleedY } = layout;
 	const canvas = new OffscreenCanvas(
-		Math.max(1, Math.ceil(layout.width + bleed * 2)),
-		Math.max(1, Math.ceil(layout.height + bleed * 2))
+		Math.max(1, Math.ceil(layout.width + bleedX * 2)),
+		Math.max(1, Math.ceil(layout.height + bleedY * 2))
 	);
 	const ctx = canvas.getContext('2d')!;
 	ctx.font = fontString(spec.font, fontSize);
@@ -220,12 +246,12 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
 
 	const centerX = canvas.width / 2;
 	const padY = (spec.box?.padY ?? 0) * fontSize;
-	const top = bleed + padY;
+	const top = bleedY + padY;
 
 	if (spec.box) {
 		ctx.fillStyle = paintCss(spec.box);
 		ctx.beginPath();
-		ctx.roundRect(bleed, bleed, layout.width, layout.height, spec.box.radius * fontSize);
+		ctx.roundRect(bleedX, bleedY, layout.width, layout.height, spec.box.radius * fontSize);
 		ctx.fill();
 	}
 
@@ -269,7 +295,7 @@ export function drawTextSprite(item: TextItem, frameW: number, frameH: number): 
 		// Only the shadow: the letters are drawn far off the canvas and their shadow brought back
 		// by the offset, so it keeps its own opacity whatever the letters' is.
 		const off = shadowOffset(shadow, fontSize);
-		const away = canvas.width + bleed * 4 + 100;
+		const away = canvas.width + bleedX * 4 + 100;
 		ctx.save();
 		ctx.shadowColor = paintCss(shadow);
 		ctx.shadowBlur = shadow.blur * fontSize;
@@ -336,7 +362,7 @@ export class TextSpriteCache {
 		let factor = this.factors.get(fk);
 		if (factor === undefined) {
 			const l = layoutText(item, frameW, frameH);
-			factor = spriteFactor(l.width + l.bleed * 2, l.height + l.bleed * 2, want, maxTexture);
+			factor = spriteFactor(l.width + l.bleedX * 2, l.height + l.bleedY * 2, want, maxTexture);
 			if (this.factors.size > 256) this.factors.clear();
 			this.factors.set(fk, factor);
 		}
