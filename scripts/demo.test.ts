@@ -51,14 +51,39 @@ describe('the Casa Rossa demo file', () => {
 		expect(pan[0]).toBeGreaterThan(0);
 		expect(pan[1]).toBeLessThan(0);
 		expect(hands).toMatchObject({ sourceStart: 4, speed: 2, volume: 0, mood: 'golden' });
+		// Framed into the right half of the split screen, still covering the whole frame.
+		expect(hands.frame).toMatchObject({ mode: 'custom', zoom: 1.5, x: 0.25, y: 0 });
+	});
+
+	it('a true split screen: the kitchen fills the left half exactly, with a white line between', () => {
+		const p = project();
+		const track = (name: string) => p.tracks.find((t) => t.name === name)!.id;
+		const [left] = p.overlays.filter((o) => o.trackId === track('Split screen'));
+		expect(left).toMatchObject({ kind: 'video', start: 16.8, sourceStart: 3, sound: { on: false } });
+		expect(left.box).toEqual({ x: 0, y: 0, w: 0.5, h: 1 });
+		expect(left.style).toMatchObject({ radius: 0, borderWidth: 0 });
+		expect(left.keyframes!.map((k) => [Math.round((16.8 + k.time) * 100) / 100, k.values.x])).toEqual([
+			[16.8, -0.25],
+			[17.15, 0.25]
+		]);
+		const [line] = p.overlays.filter((o) => o.trackId === track('Divider'));
+		expect(line).toMatchObject({ kind: 'card', start: 17, card: { background: '#ffffff' }, scaleLinked: false });
+		expect(line.box.w * 1920).toBeCloseTo(6, 3);
+		expect(line.box.h).toBe(1);
+		expect(line.keyframes!.map((k) => [k.values.scaleX, k.values.scaleY])).toEqual([
+			[1, 0.01],
+			[1, 1]
+		]);
+		// The line is above the left half.
+		expect(p.tracks.findIndex((t) => t.name === 'Divider')).toBeLessThan(p.tracks.findIndex((t) => t.name === 'Split screen'));
 	});
 
 	it('named tracks, layers, words in the right fonts, and the music', () => {
 		const p = project();
 		const names = p.tracks.map((t) => t.name);
-		for (const name of ['Headlines', 'Captions', 'Picture-in-picture', 'Badge', 'Shapes', 'Tomato · large', 'Tomato · medium', 'Tomato · small', 'Voiceover', 'Music'])
+		for (const name of ['Headlines', 'Captions', 'Picture-in-picture', 'Badge', 'Shapes', 'Tomato · large', 'Tomato · medium', 'Tomato · small', 'Split screen', 'Divider', 'Voiceover', 'Music'])
 			expect(names).toContain(name);
-		expect(p.overlays).toHaveLength(7);
+		expect(p.overlays).toHaveLength(8);
 		// Every video layer muted.
 		expect(p.overlays.filter((o) => o.kind === 'video').every((o) => !o.sound.on)).toBe(true);
 		// Each tomato on its own track.

@@ -3400,14 +3400,32 @@ PNG layers.
 - **Scale 0%:** scale goes down to 1% (`MIN_SCALE`), so the bar, badge and tomatoes start at 1%.
 - **Picture-in-picture:** it slides in already at 95% (the 9.1 s keyframe is 95% too), then
   grows to 100% by 12.8 s.
-- **Split screen, "filled and cropped":** layers always fill their box (cover), so the 880 ×
-  1000 box crops it with no crop setting needed.
+- **Split screen, "filled and cropped":** layers always fill their box (cover), so the 960 ×
+  1080 box crops it with no crop setting needed.
 - **Muted clips:** scene clips have volume 0. Video layers have their sound off, which is the
   default.
 - **Transparent PNG layers** were drawn on a solid (black) rectangle (the overlay shader ignored
   the picture's alpha). This fix from the first version of the demo is kept, as agreed. A layer's
   drop shadow is still the box's shape, not the picture's. (The first version's other editor
   changes, an optional length for `setTransition` and a shorter Your media hint, were undone.)
+
+### The split screen ("Speed and looks", 16.8–18.8)
+- **Left half:** the kitchen clip (from 3.0 s) as a layer filling exactly the left half: 960 ×
+  1080 at (480, 540), no rounded corners, no border, sound off. It slides in from x = −480 at
+  16.8 to x = 480 at 17.15 (Ease out), on "Split screen".
+- **Right half:** the scene itself (the hands, 2×, Golden), in Custom framing at 150% zoom,
+  moved right by a quarter of the frame (x = 0.25). That puts the clip's middle, where the
+  knife and hands are throughout, at x = 1440. At 150% the moved picture still covers the
+  whole frame, so no bars or background show anywhere, even before the left half has slid in.
+- **Divider:** a white card, 6 × 1080 at (960, 540), on its own "Divider" track above the left
+  half. Width and height are unlinked; its height grows from 1% (the smallest scale) to 100%
+  over 17.0–17.3 (Ease out).
+- **Words:** "Ready in", "10" and "MINUTES" are centred on x = 1440, as before (no size
+  changes needed). The "10 MINUTES" group spans about x = 1138–1742: clear of the divider at
+  960, and about 120 px from the right edge.
+- **The 4 → 5 zoom transition** was checked frame by frame (16.60–16.92). The hands come in
+  zoomed, but always covering the whole frame, and no edges or background show around either
+  half. So the zoom transition stays.
 
 ### Text and voice timing
 - **How it was checked:** each voice line's speech was located with ffmpeg's silence detection
@@ -3426,12 +3444,18 @@ PNG layers.
   5–6 dB above the music: clearly audible, though a deeper dip (for example 25%) would make it
   stand out more.
 
-### Review (stills at 0.8, 2.0, 3.2, 5.0, 7.0, 10.0, 12.0, 15.0, 17.0, 18.5, 20.0, 21.5 s, from the exported MP4)
+### Review (stills at 0.8, 2.0, 3.2, 5.0, 7.0, 10.0, 12.0, 15.0, 17.0, 17.5, 18.5, 20.0, 21.5 s, from the exported MP4)
 - **"SINCE 1962"** would sit on the kitchen's bright window at the top left, where it's hard to
   read (seen in the first version). It's at the top right instead, over the dark cabinets
   (right edge at x = 1800, y = 110), with a soft shadow.
 - **"10" and "MINUTES"** at (1300, 590) and (1560, 610) overlap. They're one group centred at
-  x = 1420 with a 36 px gap, and "MINUTES" is at y = 625 so its bottom lines up with "10"'s.
+  x = 1440 (the right half's middle) with a 36 px gap, and "MINUTES" is at y = 625 so its
+  bottom lines up with "10"'s.
+- **The split screen:**
+  - 17.0: the kitchen is sliding in, the divider is just starting, and the hands fill the rest
+    with no edges;
+  - 17.5: a true split, with the white line in the middle and "Ready in" centred on the right;
+  - 18.5: "10 MINUTES" is inside the right half.
 - Everything else reads cleanly: nothing overlaps awkwardly or sits too close to the edges. Each
   text shows at its moment: "Ready in" is popping in at 17.0, and "Taste the sun." isn't in yet
   at 20.0 (it's at 20.45).
@@ -3446,7 +3470,10 @@ PNG layers.
   - the eleven files;
   - format, scene changes at 3.8, 8.9, 13.4, 16.8, 18.8 and 22.0, and transitions with their
     lengths;
-  - the clips: muted, framed and keyframed, the hands clip from 4.0 s at 2× in Golden;
+  - the clips: muted, framed and keyframed; the hands clip from 4.0 s at 2× in Golden, framed
+    into the right half;
+  - the split screen: the left half's box, its slide in, and the divider (its size,
+    unlinked height keyframes, and track above the left half);
   - the named tracks, layers and fonts;
   - the music's volume points, and the six voice lines at their times on "Voiceover".
   `vite.config.ts` includes `scripts/**` tests.

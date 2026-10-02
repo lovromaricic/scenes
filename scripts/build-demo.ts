@@ -29,7 +29,7 @@ const OUT = path.join(ROOT, 'static', 'demo');
 const REVIEW = path.join(ROOT, 'demo-review');
 const PORT = 4319;
 const LENGTH = 22;
-const STILLS = [0.8, 2.0, 3.2, 5.0, 7.0, 10.0, 12.0, 15.0, 17.0, 18.5, 20.0, 21.5];
+const STILLS = [0.8, 2.0, 3.2, 5.0, 7.0, 10.0, 12.0, 15.0, 17.0, 17.5, 18.5, 20.0, 21.5];
 const CARD_PICTURE_AT = 14.45;
 const MUSIC = 'the_mountain-italian-485568.mp3';
 /** The voiceover, one file per line, and where each starts. */
@@ -140,6 +140,7 @@ async function buildPicture(): Promise<void> {
 		'Labels',
 		'Shapes',
 		'Picture-in-picture',
+		'Divider',
 		'Split screen',
 		'Tomato · small',
 		'Tomato · medium',
@@ -175,6 +176,10 @@ async function buildPicture(): Promise<void> {
 	[red, kitchen, terrace, ink, hands, white].forEach((id: string, i: number) => s.setSceneLength(id, lengths[i]));
 	for (const id of [kitchen, hands]) s.setSceneVolume(id, 0);
 	s.setSceneMood(hands, 'golden');
+	// The hands in the right half of the split screen (x = 1440): 150%, moved right by a quarter
+	// of the frame. At 150% the picture still covers the whole frame, so no edge ever shows, even
+	// before the left half has slid in.
+	s.setSceneFrame(hands, { mode: 'custom', bars: 'black', zoom: 1.5, x: 0.25, y: 0 });
 
 	// Kitchen: a slow push in (100% → 115%).
 	s.setSceneFrame(kitchen, { mode: 'custom', bars: 'black', zoom: 1, x: 0, y: 0 });
@@ -353,22 +358,33 @@ async function buildPicture(): Promise<void> {
 	s.rename(badge, 'Badge');
 	spin(await words({ track: 'Badge text', words: 'NEW', start: 14.3, end: changes[3], x: 1660, y: 210, font: F.anton, px: 64, color: WHITE }));
 
-	// Speed and looks: the kitchen as a split-screen panel, and "Ready in 10 MINUTES".
-	const split = s.addOverlayFromMedia(media('demo_video1.mp4'), 16.85, tracks['Split screen']);
-	s.setOverlayTiming(split, 16.85, changes[4] - 16.85, 3.0);
-	s.setOverlayBox(split, box(480, 540, 880, 1000));
-	s.setOverlayStyle(split, { radius: 24 / 440, borderColor: WHITE, borderWidth: 0, shadow: 'off', opacity: 1 });
-	animate(split, 16.85, [
-		[16.85, { x: -440, y: 540 }, E.out],
-		[17.2, { x: 480, y: 540 }]
+	// Speed and looks: a split screen. The kitchen fills the left half (sliding in), the hands
+	// (the scene, framed above) the right half, and a white line between them.
+	const split = s.addOverlayFromMedia(media('demo_video1.mp4'), changes[3], tracks['Split screen']);
+	s.setOverlayTiming(split, changes[3], changes[4] - changes[3], 3.0);
+	s.setOverlayBox(split, box(480, 540, 960, 1080));
+	animate(split, changes[3], [
+		[16.8, { x: -480, y: 540 }, E.out],
+		[17.15, { x: 480, y: 540 }]
 	]);
-	s.rename(split, 'Kitchen (split screen)');
-	await words({ track: 'Headlines', words: 'Ready in', start: 16.95, end: changes[4], x: 1420, y: 400, style: 'boxed', font: F.geist(600), px: 72, animation: 'pop' });
-	// "10" and "MINUTES" side by side, centred together in the right half (see NOTES).
+	s.rename(split, 'Kitchen (left half)');
+	const divider = s.addCardOverlay(17.0, tracks['Divider']);
+	s.setOverlayCard(divider, { background: WHITE, rect: null });
+	s.setOverlayBox(divider, box(960, 540, 6, 1080));
+	s.setOverlayTiming(divider, 17.0, changes[4] - 17.0);
+	s.setScaleLinked(divider, false);
+	animate(divider, 17.0, [
+		[17.0, { x: 960, y: 540, scale: 0, scaleX: 1 }, E.out],
+		[17.3, { x: 960, y: 540 }]
+	]);
+	s.rename(divider, 'Divider');
+	// The words in the right half, centred on x = 1440.
+	await words({ track: 'Headlines', words: 'Ready in', start: 16.95, end: changes[4], x: 1440, y: 400, style: 'boxed', font: F.geist(600), px: 72, animation: 'pop' });
+	// "10" and "MINUTES" side by side, centred together on the right half (see NOTES).
 	const gap = 36;
 	const wTen = await measure('10', F.anton, 220);
 	const wMin = await measure('MINUTES', F.anton, 120);
-	const left = 1420 - (wTen + gap + wMin) / 2;
+	const left = 1440 - (wTen + gap + wMin) / 2;
 	const pop = (id: string, start: number, x: number, y: number) =>
 		animate(id, start, [
 			[start, { x, y, scale: 0.3, opacity: 0 }, E.overshoot],

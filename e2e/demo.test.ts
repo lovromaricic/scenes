@@ -72,7 +72,7 @@ test.describe('The demo', () => {
 		expect(summary.format).toEqual({ preset: 'landscape', width: 1920, height: 1080, fps: 24 });
 		expect(summary.scenes).toEqual(['card', 'video', 'photo', 'card', 'video', 'card']);
 		expect(summary.transitions).toEqual(['slide', 'crossfade', 'cut', 'zoom', 'crossfade', 'cut']);
-		expect(summary.overlays).toBe(7);
+		expect(summary.overlays).toBe(8);
 		expect(summary.texts).toBe(17);
 		// The music, and the voiceover's six lines where they're said.
 		expect(summary.sounds).toEqual([
