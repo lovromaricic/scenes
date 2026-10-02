@@ -29,7 +29,7 @@ const OUT = path.join(ROOT, 'static', 'demo');
 const REVIEW = path.join(ROOT, 'demo-review');
 const PORT = 4319;
 const LENGTH = 22;
-const STILLS = [0.8, 2.0, 3.2, 5.0, 7.0, 10.0, 12.0, 15.0, 17.0, 17.5, 18.5, 20.0, 21.5];
+const STILLS = [0.8, 2.0, 3.2, 5.0, 7.0, 9.5, 10.0, 11.5, 12.0, 13.0, 15.0, 17.0, 17.5, 18.5, 19.5, 20.0, 21.5];
 const CARD_PICTURE_AT = 14.45;
 const MUSIC = 'the_mountain-italian-485568.mp3';
 /** The voiceover, one file per line, and where each starts. */
@@ -85,7 +85,6 @@ async function buildPicture(): Promise<void> {
 	const RED = '#d63f1f';
 	const INK = '#141417';
 	const WHITE = '#ffffff';
-	const MUTED = '#6b6b72';
 	const F = {
 		anton: { family: 'Anton', source: 'builtin', weight: 400, italic: false, id: 'anton' },
 		serif: { family: 'Instrument Serif', source: 'builtin', weight: 400, italic: true, id: 'instrument-serif' },
@@ -139,42 +138,41 @@ async function buildPicture(): Promise<void> {
 		'Captions',
 		'Labels',
 		'Shapes',
-		'Picture-in-picture',
 		'Divider',
 		'Split screen',
 		'Tomato · small',
 		'Tomato · medium',
 		'Tomato · large',
-		'Background text'
+		'Background text',
+		'Shade'
 	];
 	const tracks: Record<string, string> = {};
 	for (const name of [...trackNames].reverse()) tracks[name] = s.addTrack('overlay', 0, name);
 
 	// ── Scenes ──
-	// Imported: kitchen, terrace, hands, tomato. The tomato is only a layer; three cards go in.
+	// Imported: kitchen, field, hands, terrace, tomato. The tomato is only a layer; two cards go in.
 	const sceneIds = () => s.project.scenes.map((x: { id: string }) => x.id);
-	s.deleteScene(sceneIds()[3]);
+	s.deleteScene(sceneIds()[4]);
 	s.addCard(0);
 	s.addCard(3);
-	s.addCard(5);
-	const [red, kitchen, terrace, ink, hands, white] = sceneIds();
+	const [red, kitchen, field, ink, hands, terrace] = sceneIds();
 	s.setCard(red, { background: RED, rect: null });
 	s.setCard(ink, { background: INK, rect: null });
-	s.setCard(white, { background: WHITE, rect: null });
 	s.rename(red, 'Fresh, simple, Italian');
 	s.rename(kitchen, 'Kitchen');
-	s.rename(terrace, 'Terrace');
+	s.rename(field, 'Tomato field');
 	s.rename(ink, 'Tomatoes');
 	s.rename(hands, 'Ready in 10');
-	s.rename(white, 'Casa Rossa');
+	s.rename(terrace, 'Casa Rossa');
 
 	const changes = [3.8, 8.9, 13.4, 16.8, 18.8];
 	const lengths = [3.8, 8.9 - 3.8, 13.4 - 8.9, 16.8 - 13.4, 18.8 - 16.8, LENGTH - 18.8];
-	// The hands clip: from 4.0 s, twice as fast.
+	// The field clip from 1.0 s; the hands clip from 4.0 s, twice as fast.
+	s.trimScene(field, 'start', 1.0);
 	s.trimScene(hands, 'start', 4.0);
 	s.setSceneSpeed(hands, 2);
-	[red, kitchen, terrace, ink, hands, white].forEach((id: string, i: number) => s.setSceneLength(id, lengths[i]));
-	for (const id of [kitchen, hands]) s.setSceneVolume(id, 0);
+	[red, kitchen, field, ink, hands, terrace].forEach((id: string, i: number) => s.setSceneLength(id, lengths[i]));
+	for (const id of [kitchen, field, hands]) s.setSceneVolume(id, 0);
 	s.setSceneMood(hands, 'golden');
 	// The hands in the right half of the split screen (x = 1440): 150%, moved right by a quarter
 	// of the frame. At 150% the picture still covers the whole frame, so no edge ever shows, even
@@ -187,12 +185,18 @@ async function buildPicture(): Promise<void> {
 		{ id: newId(), time: 0, values: { x: 0, y: 0, zoom: 1 }, easing: E.inOut },
 		{ id: newId(), time: lengths[1], values: { x: 0, y: 0, zoom: 1.15 }, easing: E.inOut }
 	]);
-	// Terrace: 112%, panning from the picture's left side to its right side.
-	const pan = (1.12 - 1) / 2;
-	s.setSceneFrame(terrace, { mode: 'custom', bars: 'black', zoom: 1.12, x: pan, y: 0 });
-	s.updateKeyframes(terrace, 'Pan', () => [
-		{ id: newId(), time: 0, values: { x: pan, y: 0, zoom: 1.12 }, easing: E.linear },
-		{ id: newId(), time: lengths[2], values: { x: -pan, y: 0, zoom: 1.12 }, easing: E.linear }
+	// Field: a slow zoom (100% → 110%). A video's keyframes are in its own (source) seconds: from
+	// 1.0 s, where it starts.
+	s.setSceneFrame(field, { mode: 'custom', bars: 'black', zoom: 1, x: 0, y: 0 });
+	s.updateKeyframes(field, 'Zoom in', () => [
+		{ id: newId(), time: 1.0, values: { x: 0, y: 0, zoom: 1 }, easing: E.inOut },
+		{ id: newId(), time: 1.0 + lengths[2], values: { x: 0, y: 0, zoom: 1.1 }, easing: E.inOut }
+	]);
+	// Outro: the terrace, slowly closer (105% → 112%).
+	s.setSceneFrame(terrace, { mode: 'custom', bars: 'black', zoom: 1.05, x: 0, y: 0 });
+	s.updateKeyframes(terrace, 'Zoom in', () => [
+		{ id: newId(), time: 0, values: { x: 0, y: 0, zoom: 1.05 }, easing: E.out },
+		{ id: newId(), time: lengths[5], values: { x: 0, y: 0, zoom: 1.12 }, easing: E.out }
 	]);
 
 	// Transitions. setTransition always uses each kind's usual length (slide 0.6, crossfade 0.8,
@@ -200,7 +204,7 @@ async function buildPicture(): Promise<void> {
 	const transitions: [string, string, number][] = [
 		[red, 'slide', 0.4],
 		[kitchen, 'crossfade', 0.5],
-		[terrace, 'cut', 0],
+		[field, 'cut', 0],
 		[ink, 'zoom', 0.4],
 		[hands, 'crossfade', 0.5]
 	];
@@ -292,21 +296,10 @@ async function buildPicture(): Promise<void> {
 	await words({ track: 'Labels', words: spaced('SINCE 1962'), start: 3.95, end: changes[1], x: 1800, y: 110, right: true, font: F.geist(600), px: 34, color: WHITE, shadow: SOFT, animation: 'fade' });
 	await words({ track: 'Captions', words: 'From our garden to your table.', start: 6.25, end: changes[1], x: 120, y: 900, left: true, font: F.serif, px: 96, color: WHITE, shadow: SOFT, animation: 'slide-up' });
 
-	// Terrace: the hands clip, in a framed picture-in-picture, sliding in and out.
-	const pip = s.addOverlayFromMedia(media('demo_video2.mp4'), 9.1, tracks['Picture-in-picture']);
-	s.setOverlayTiming(pip, 9.1, 13.3 - 9.1, 0);
-	s.setOverlayBox(pip, box(1460, 740, 730, 410));
-	s.setOverlayStyle(pip, { radius: 24 / 205, borderColor: WHITE, borderWidth: 6, shadow: 'strong', opacity: 1 });
-	animate(pip, 9.1, [
-		[9.1, { x: 2400, y: 740, scale: 0.95 }, E.out],
-		[9.6, { x: 1460, y: 740, scale: 0.95 }, E.inOut],
-		[12.8, { x: 1460, y: 740 }],
-		[12.95, { x: 1460, y: 740 }, E.in],
-		[13.3, { x: 2400, y: 740 }]
-	]);
-	s.rename(pip, 'Hands (picture-in-picture)');
-	await words({ track: 'Headlines', words: 'Sun-ripened tomatoes', start: 9.1, end: changes[2], x: 120, y: 760, left: true, style: 'highlight', font: F.geist(600), px: 72, animation: 'pop' });
-	await words({ track: 'Captions', words: 'Hand-cut. Every time.', start: 11.0, end: changes[2], x: 120, y: 870, left: true, font: F.serif, px: 56, color: WHITE, shadow: SOFT, animation: 'fade' });
+	// Tomato field. The words high on the left, over the leaves: lower down they'd cover the
+	// tomatoes and the farmer's hands.
+	await words({ track: 'Headlines', words: 'Sun-ripened tomatoes', start: 9.1, end: changes[2], x: 120, y: 290, left: true, style: 'highlight', font: F.geist(600), px: 72, animation: 'pop' });
+	await words({ track: 'Captions', words: 'Hand-cut. Every time.', start: 11.0, end: changes[2], x: 120, y: 395, left: true, font: F.serif, px: 56, color: WHITE, shadow: SOFT, animation: 'fade' });
 
 	// Tomatoes: a big outlined "100%" behind, three tomatoes bouncing in and floating.
 	const hundred = await words({ track: 'Background text', words: '100%', start: 13.55, end: changes[3], x: 960, y: 480, style: 'outline', font: F.anton, px: 520 });
@@ -396,14 +389,25 @@ async function buildPicture(): Promise<void> {
 	// Its bottom on the same line as "10"'s.
 	pop(await words({ track: 'Captions', words: 'MINUTES', start: 18.15, end: changes[4], x: minX, y: 625, font: F.anton, px: 120, color: WHITE, shadow: SOFT }), 18.15, minX, 625);
 
-	// Outro.
-	const name = await words({ track: 'Headlines', words: 'Casa Rossa', start: 18.93, end: LENGTH, x: 960, y: 470, font: F.serif, px: 200, color: INK });
+	// Outro, over the terrace: a black shade at 35% between the picture and the words (fading in
+	// with the crossfade's second half), and the words in white.
+	const shade = s.addCardOverlay(changes[4], tracks['Shade']);
+	s.setOverlayCard(shade, { background: '#000000', rect: null });
+	s.setOverlayBox(shade, box(960, 540, W, H));
+	s.setOverlayTiming(shade, changes[4], LENGTH - changes[4]);
+	animate(shade, changes[4], [
+		[changes[4], { x: 960, y: 540, opacity: 0 }, E.out],
+		[changes[4] + 0.25, { x: 960, y: 540, opacity: 0.35 }]
+	]);
+	s.rename(shade, 'Shade');
+	const name = await words({ track: 'Headlines', words: 'Casa Rossa', start: 18.93, end: LENGTH, x: 960, y: 470, font: F.serif, px: 200, color: WHITE, shadow: SOFT });
 	animate(name, 18.93, [
 		[18.93, { x: 960, y: 470, scale: 0.8, opacity: 0 }, E.overshoot],
 		[19.35, { x: 960, y: 470 }]
 	]);
-	await words({ track: 'Captions', words: 'Taste the sun.', start: 20.45, end: LENGTH, x: 960, y: 640, font: F.geist(600), px: 56, color: RED, animation: 'fade' });
-	await words({ track: 'Labels', words: spaced('Tomato sauce · Available now'), start: 20.9, end: LENGTH, x: 960, y: 980, font: F.geist(400), px: 28, color: MUTED, animation: 'fade' });
+	await words({ track: 'Captions', words: 'Taste the sun.', start: 20.45, end: LENGTH, x: 960, y: 640, font: F.geist(600), px: 56, color: WHITE, animation: 'fade' });
+	const tagline = await words({ track: 'Labels', words: spaced('Tomato sauce · Available now'), start: 20.9, end: LENGTH, x: 960, y: 980, font: F.geist(400), px: 28, animation: 'fade' });
+	s.setTextColors(tagline, { fill: { color: WHITE, opacity: 0.8 } });
 
 	// The music: from the start of the file, 22 s.
 	const music = s.project.sounds[0];
@@ -475,8 +479,8 @@ async function main() {
 		await page.waitForFunction(() => !!(window as unknown as { __scenes?: unknown }).__scenes);
 		await page.evaluate(() => (window as unknown as { __scenes: Editor }).__scenes.setFormat({ preset: 'landscape', width: 1920, height: 1080, fps: 24 }));
 		console.log('Importing…');
-		await chooseFiles(page, 'Choose photos & videos', ['demo_video1.mp4', 'demo_image1.jpeg', 'demo_video2.mp4', 'tomato_transparent.png']);
-		await page.getByRole('button', { name: /^Scene 4, / }).waitFor({ timeout: 120_000 });
+		await chooseFiles(page, 'Choose photos & videos', ['demo_video1.mp4', 'demo_video3.mp4', 'demo_video2.mp4', 'demo_image1.jpeg', 'tomato_transparent.png']);
+		await page.getByRole('button', { name: /^Scene 5, / }).waitFor({ timeout: 120_000 });
 		await page.keyboard.press('Escape');
 		// The music first (from 0, on the first audio track).
 		await addSound(page, MUSIC, 0);

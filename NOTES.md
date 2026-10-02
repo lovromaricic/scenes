@@ -3360,7 +3360,7 @@ PNG layers.
     own functions (`window.__scenes`);
   - saves with the app's own "Save to file", as a download.
 - **Outputs:**
-  - `static/demo/casa-rossa.scenes` (about 19 MB, with all eleven files used; the full
+  - `static/demo/casa-rossa.scenes` (about 24 MB, with all twelve files used; the full
     voiceover isn't);
   - `static/demo/casa-rossa.jpg`, the Demo card's picture (the frame at 14.45 s: the tomatoes
     and the badge in, before "TOMATOES.");
@@ -3398,8 +3398,8 @@ PNG layers.
 - **Fade and slide-up last 0.5 s** (built in), so "SINCE 1962" fades in over 3.95–4.45, not 4.25.
   Words with an entrance also fade out over their last 0.25 s (built in).
 - **Scale 0%:** scale goes down to 1% (`MIN_SCALE`), so the bar, badge and tomatoes start at 1%.
-- **Picture-in-picture:** it slides in already at 95% (the 9.1 s keyframe is 95% too), then
-  grows to 100% by 12.8 s.
+- **Scene 3 is the tomato field** (`demo_video3`, from 1.0 s, muted), no longer the terrace photo.
+  The picture-in-picture is gone with it.
 - **Split screen, "filled and cropped":** layers always fill their box (cover), so the 960 ×
   1080 box crops it with no crop setting needed.
 - **Muted clips:** scene clips have volume 0. Video layers have their sound off, which is the
@@ -3408,6 +3408,31 @@ PNG layers.
   the picture's alpha). This fix from the first version of the demo is kept, as agreed. A layer's
   drop shadow is still the box's shape, not the picture's. (The first version's other editor
   changes, an optional length for `setTransition` and a shorter Your media hint, were undone.)
+
+### The tomato field (scene 3) and the terrace outro
+- **Scene 3** (8.9–13.4) is `demo_video3`, the farmer's hands cutting tomatoes off the vine,
+  from 1.0 s in the clip, muted. It uses Custom framing that zooms from 100% to 110%, Ease in
+  and out. A video's framing keyframes are in its own seconds, so they're at 1.0 and 5.5 s in
+  the clip. The picture-in-picture (the slicing clip) and its track are removed.
+- **Its words moved up:** at y = 760 and 870 (their old places), "Sun-ripened tomatoes" sat over
+  the tomatoes and the farmer's fingers in every checked frame. The hands, knife and tomatoes
+  stay below about 45% of the height and right of about 28% of the width. So both lines are
+  higher on the left, over the leaves and soft background, with the same left edge (120), sizes
+  and timing:
+  - "Sun-ripened tomatoes" at y = 290;
+  - "Hand-cut. Every time." at y = 395.
+- **The clip near its end:** only 1.0–5.5 s of it is used, so its end (a basket appears from
+  about 8 s) never shows. The last frames before the cut (13.35, 13.39) are clean.
+- **The outro** (18.8–22.0) is the terrace photo (`demo_image1`) in place of the white card.
+  It uses Custom framing that zooms from 105% to 112%, Ease out.
+- **Shade:** a black card over the whole frame at 35%, on its own "Shade" track (just above the
+  scenes, under the words). It fades in over 18.8–19.05, the second half of the crossfade into
+  the outro, so the darkening doesn't pop in.
+- **Outro words for the photo:** "Casa Rossa" white with a soft shadow, "Taste the sun." white,
+  and "Tomato sauce · Available now" white at 80%. Fonts, sizes, places and timing are kept.
+- **Checked:** stills at 9.5, 11.5, 13.0, 19.5 and 21.5 s, plus the crossfade into the outro
+  (18.6–19.0). Everything reads. The kitchen half of the split screen still ends at 18.8 (as
+  specified), so it gives way to the terrace partway through that crossfade, as before.
 
 ### The split screen ("Speed and looks", 16.8–18.8)
 - **Left half:** the kitchen clip (from 3.0 s) as a layer filling exactly the left half: 960 ×
@@ -3444,7 +3469,7 @@ PNG layers.
   5–6 dB above the music: clearly audible, though a deeper dip (for example 25%) would make it
   stand out more.
 
-### Review (stills at 0.8, 2.0, 3.2, 5.0, 7.0, 10.0, 12.0, 15.0, 17.0, 17.5, 18.5, 20.0, 21.5 s, from the exported MP4)
+### Review (stills at 0.8, 2.0, 3.2, 5.0, 7.0, 9.5, 10.0, 11.5, 12.0, 13.0, 15.0, 17.0, 17.5, 18.5, 19.5, 20.0, 21.5 s, from the exported MP4)
 - **"SINCE 1962"** would sit on the kitchen's bright window at the top left, where it's hard to
   read (seen in the first version). It's at the top right instead, over the dark cabinets
   (right edge at x = 1800, y = 110), with a soft shadow.
@@ -3467,13 +3492,16 @@ PNG layers.
 
 ### Tests
 - **Unit:** `scripts/demo.test.ts` checks the built file against the spec:
-  - the eleven files;
+  - the twelve files;
   - format, scene changes at 3.8, 8.9, 13.4, 16.8, 18.8 and 22.0, and transitions with their
     lengths;
   - the clips: muted, framed and keyframed; the hands clip from 4.0 s at 2× in Golden, framed
     into the right half;
   - the split screen: the left half's box, its slide in, and the divider (its size,
     unlinked height keyframes, and track above the left half);
+  - the tomato field (from 1.0 s, muted, 100% → 110%) with its words high on the left, and no
+    picture-in-picture; the terrace outro (105% → 112%), its 35% shade under the words, and
+    the white outro words;
   - the named tracks, layers and fonts;
   - the music's volume points, and the six voice lines at their times on "Voiceover".
   `vite.config.ts` includes `scripts/**` tests.

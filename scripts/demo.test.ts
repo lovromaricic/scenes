@@ -14,11 +14,11 @@ const read = (entry: string) => execFileSync('unzip', ['-p', FILE, entry], { max
 const project = (): Project => JSON.parse(read('project.json').toString()).project;
 
 describe('the Casa Rossa demo file', () => {
-	it('exists, with its eleven files and a picture', () => {
+	it('exists, with its twelve files and a picture', () => {
 		expect(existsSync(FILE)).toBe(true);
 		const list = execFileSync('unzip', ['-Z1', FILE]).toString().split('\n');
-		// The clips, the photo, the tomato, the music and six voice lines (not the full voiceover).
-		expect(list.filter((f) => f.startsWith('media/'))).toHaveLength(11);
+		// Three clips, the photo, the tomato, the music and six voice lines (not the full voiceover).
+		expect(list.filter((f) => f.startsWith('media/'))).toHaveLength(12);
 		expect(list).toContain('project.json');
 		expect(list).toContain('thumbnail.jpg');
 	});
@@ -28,11 +28,11 @@ describe('the Casa Rossa demo file', () => {
 		expect(p.title).toBe('Casa Rossa ad');
 		expect(p.format).toMatchObject({ width: 1920, height: 1080, fps: 24 });
 		const kinds = p.scenes.map((s) => s.kind);
-		expect(kinds).toEqual(['card', 'video', 'photo', 'card', 'video', 'card']);
+		expect(kinds).toEqual(['card', 'video', 'video', 'card', 'video', 'photo']);
 		const lengths = p.scenes.map((s) => (s.sourceEnd - s.sourceStart) / (s.kind === 'video' ? s.speed : 1));
 		const ends = lengths.map((_, i) => lengths.slice(0, i + 1).reduce((a, b) => a + b, 0));
 		expect(ends.map((t) => Math.round(t * 1000) / 1000)).toEqual([3.8, 8.9, 13.4, 16.8, 18.8, 22]);
-		expect(p.scenes.map((s) => s.card?.background ?? null)).toEqual(['#d63f1f', null, null, '#141417', null, '#ffffff']);
+		expect(p.scenes.map((s) => s.card?.background ?? null)).toEqual(['#d63f1f', null, null, '#141417', null, null]);
 		expect(p.scenes.slice(0, 5).map((s) => [s.transition.kind, s.transition.duration])).toEqual([
 			['slide', 0.4],
 			['crossfade', 0.5],
@@ -43,13 +43,19 @@ describe('the Casa Rossa demo file', () => {
 	});
 
 	it('the clips: muted, framed and animated as specified', () => {
-		const [, kitchen, terrace, , hands] = project().scenes;
+		const [, kitchen, field, , hands, terrace] = project().scenes;
 		expect(kitchen).toMatchObject({ sourceStart: 0, volume: 0, frame: { mode: 'custom' } });
 		expect(kitchen.keyframes?.map((k) => k.values.zoom)).toEqual([1, 1.15]);
-		expect(terrace.frame).toMatchObject({ mode: 'custom', zoom: 1.12 });
-		const pan = terrace.keyframes!.map((k) => k.values.x);
-		expect(pan[0]).toBeGreaterThan(0);
-		expect(pan[1]).toBeLessThan(0);
+		// The tomato field from 1.0 s, muted, zooming 100% → 110% (keyframes in its own seconds).
+		expect(field).toMatchObject({ kind: 'video', sourceStart: 1, volume: 0, frame: { mode: 'custom' } });
+		expect(field.keyframes?.map((k) => [k.time, k.values.zoom])).toEqual([
+			[1, 1],
+			[5.5, 1.1]
+		]);
+		// The outro: the terrace, 105% → 112%, eased out.
+		expect(terrace).toMatchObject({ kind: 'photo', frame: { mode: 'custom' } });
+		expect(terrace.keyframes?.map((k) => k.values.zoom)).toEqual([1.05, 1.12]);
+		expect(terrace.keyframes?.[0].easing).toEqual({ kind: 'bezier', x1: 0, y1: 0, x2: 0.58, y2: 1 });
 		expect(hands).toMatchObject({ sourceStart: 4, speed: 2, volume: 0, mood: 'golden' });
 		// Framed into the right half of the split screen, still covering the whole frame.
 		expect(hands.frame).toMatchObject({ mode: 'custom', zoom: 1.5, x: 0.25, y: 0 });
@@ -81,9 +87,16 @@ describe('the Casa Rossa demo file', () => {
 	it('named tracks, layers, words in the right fonts, and the music', () => {
 		const p = project();
 		const names = p.tracks.map((t) => t.name);
-		for (const name of ['Headlines', 'Captions', 'Picture-in-picture', 'Badge', 'Shapes', 'Tomato · large', 'Tomato · medium', 'Tomato · small', 'Split screen', 'Divider', 'Voiceover', 'Music'])
+		for (const name of ['Headlines', 'Captions', 'Shade', 'Badge', 'Shapes', 'Tomato · large', 'Tomato · medium', 'Tomato · small', 'Split screen', 'Divider', 'Voiceover', 'Music'])
 			expect(names).toContain(name);
 		expect(p.overlays).toHaveLength(8);
+		// No picture-in-picture any more: the only video layer is the split screen's left half.
+		expect(p.overlays.filter((o) => o.kind === 'video')).toHaveLength(1);
+		// The outro's shade: black over the whole frame at 35%, under the words.
+		const shade = p.overlays.find((o) => o.trackId === p.tracks.find((t) => t.name === 'Shade')!.id)!;
+		expect(shade).toMatchObject({ kind: 'card', start: 18.8, card: { background: '#000000' }, box: { x: 0, y: 0, w: 1, h: 1 } });
+		expect(shade.keyframes?.at(-1)?.values.opacity).toBeCloseTo(0.35, 6);
+		expect(p.tracks.findIndex((t) => t.name === 'Shade')).toBeGreaterThan(p.tracks.findIndex((t) => t.name === 'Headlines'));
 		// Every video layer muted.
 		expect(p.overlays.filter((o) => o.kind === 'video').every((o) => !o.sound.on)).toBe(true);
 		// Each tomato on its own track.
@@ -96,6 +109,13 @@ describe('the Casa Rossa demo file', () => {
 		expect(words['Sun-ripened tomatoes'].style).toBe('highlight');
 		expect(words['100%'].style).toBe('outline');
 		expect(words['Ready in'].style).toBe('boxed');
+		// The outro over the photo: white words, the name with a soft shadow, the line under at 80%.
+		expect(words['Casa Rossa'].colors?.fill).toEqual({ color: '#ffffff', opacity: 1 });
+		expect(words['Casa Rossa'].shadow?.on).toBe(true);
+		expect(words['Taste the sun.'].colors?.fill).toEqual({ color: '#ffffff', opacity: 1 });
+		expect(words['Tomato sauce · Available now'].colors?.fill).toEqual({ color: '#ffffff', opacity: 0.8 });
+		// The field's words high on the left, clear of the hands.
+		expect([words['Sun-ripened tomatoes'].y, words['Hand-cut. Every time.'].y].map((y) => Math.round(y * 1080))).toEqual([290, 395]);
 		expect(Object.keys(words)).toHaveLength(17);
 		const [music, ...voice] = p.sounds;
 		expect(music).toMatchObject({ kind: 'music', start: 0, sourceStart: 0, duration: 22, volume: 1 });

@@ -70,7 +70,7 @@ test.describe('The demo', () => {
 		);
 		expect(summary.duration).toBeCloseTo(22, 3);
 		expect(summary.format).toEqual({ preset: 'landscape', width: 1920, height: 1080, fps: 24 });
-		expect(summary.scenes).toEqual(['card', 'video', 'photo', 'card', 'video', 'card']);
+		expect(summary.scenes).toEqual(['card', 'video', 'video', 'card', 'video', 'photo']);
 		expect(summary.transitions).toEqual(['slide', 'crossfade', 'cut', 'zoom', 'crossfade', 'cut']);
 		expect(summary.overlays).toBe(8);
 		expect(summary.texts).toBe(17);
@@ -80,7 +80,8 @@ test.describe('The demo', () => {
 			...[0.2, 3.9, 9, 13.5, 16.9, 18.85].map((start) => ({ kind: 'voice', start }))
 		]);
 		expect(summary.tracks).toContain('Headlines');
-		expect(summary.tracks).toContain('Picture-in-picture');
+		expect(summary.tracks).toContain('Shade');
+		expect(summary.tracks).not.toContain('Picture-in-picture');
 		expect(summary.tracks.slice(-2)).toEqual(['Voiceover', 'Music']);
 
 		// It plays: the tomatoes at 15 s, red in the middle of the big one, and the card's ink
