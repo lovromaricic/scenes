@@ -3510,6 +3510,23 @@ PNG layers.
     tooltip.
   With the old code it fails (207 vs 204).
 
+## More compact Add buttons
+
+- **Buttons** (`AddButton.svelte`):
+  - 64 → 53 px tall (8 px top and bottom padding, was 10);
+  - the icon box 42 → 34 px, with the icon still 22 px at the same stroke;
+  - label and hint at the same sizes, with no gap between them and tighter line heights (1.2,
+    1.25).
+  - Below 1280 px wide: 58 → 46 px (6 px padding, a 32 px icon box).
+  - The corner radius, border and hover and active states are unchanged.
+- **Spacing** (`AddColumn.svelte`): 6 px between the buttons (was 8), and 10 px from "Add" to the
+  first button (was 16).
+- **The space goes to Your media** (measured with five files in it):
+  - at 1100 × 900, two tiles now show without scrolling (none did);
+  - at 1440 × 1080 the list grows from 162 to 218 px;
+  - at 1440 × 900 everything moves up 57 px, but the first row of tiles is still just below
+    the fold. The column has more to show than fits in a short window, and it scrolls.
+
 ## Known issues / ideas
 
 - Layers: their timing is at normal speed (no speed setting). Scenes at 0.5× or 2× become

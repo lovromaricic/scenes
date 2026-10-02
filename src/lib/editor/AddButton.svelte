@@ -46,7 +46,7 @@
 		align-items: center;
 		gap: var(--space-3);
 		width: 100%;
-		padding: 10px var(--space-3);
+		padding: var(--space-2) var(--space-3);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-card);
 		background: var(--color-bg);
@@ -70,8 +70,8 @@
 		display: grid;
 		place-items: center;
 		flex: none;
-		width: 42px;
-		height: 42px;
+		width: 34px;
+		height: 34px;
 		border-radius: var(--radius-md);
 		background: var(--color-surface);
 		transition: background-color var(--dur-fast) var(--ease-out);
@@ -83,15 +83,17 @@
 	.text {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 0;
 		min-width: 0;
 	}
 	.label {
 		font-size: var(--text-lg);
 		font-weight: var(--weight-semibold);
+		line-height: 1.2;
 	}
 	.hint {
 		font-size: var(--text-sm);
+		line-height: 1.25;
 		color: var(--color-muted);
 		white-space: nowrap;
 		overflow: hidden;
@@ -100,11 +102,11 @@
 	@media (max-width: 1279px) {
 		.add {
 			gap: var(--space-2);
-			padding: var(--space-2);
+			padding: 6px var(--space-2);
 		}
 		.glyph {
-			width: 40px;
-			height: 40px;
+			width: 32px;
+			height: 32px;
 		}
 		.label {
 			font-size: var(--text-md);

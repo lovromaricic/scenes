@@ -115,10 +115,14 @@
 		font-size: var(--text-heading);
 		line-height: 1;
 	}
+	/* A little closer to its heading than the column's other parts are to each other. */
+	.heading + .buttons {
+		margin-top: calc(10px - var(--space-4));
+	}
 	.buttons {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-2);
+		gap: 6px;
 	}
 	@media (max-width: 1279px) {
 		.add-column {
